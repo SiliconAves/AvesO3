@@ -11,8 +11,11 @@
 What's next:
 - [x] AO3 Library sorting and filtering
 - [ ] Auto index ao3 stories in chunks, so they don't need to be opened individually anymore
+- [ ] Series continous reading
+- [ ] Ao3 library fitlering based on folder structure as an option
 
 What may come in the future:
+- [ ] Locked fics support
 - [ ] Online backend that can host your library online
 - [ ] More!
 
