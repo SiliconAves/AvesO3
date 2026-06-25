@@ -9,12 +9,32 @@
 - [x] Support for line breaks
 
 What's next:
-- [ ] AO3 Library sorting and filtering
+- [x] AO3 Library sorting and filtering
 - [ ] Auto index ao3 stories in chunks, so they don't need to be opened individually anymore
 
 What may come in the future:
 - [ ] Online backend that can host your library online
 - [ ] More!
+
+# Progress on next version
+**NEW - Automatic Sort and Filter**
+<img src="docs/images/AvesO3/sortFilter.jpg" width="300" align="left" style="margin-right: 30px; border: 1px solid black;"/>
+<br>NOTE: THIS REQUIRES DELETING BOOK CACHE IF YOU PREVIOUSLY INDEXED BOOKS ON 1.2.2.
+<br><br>Automatically Filter by: <br>
++ **Fandom**
++ **Relationship** (up to 2 relationships)<br><br> 
+
+Sort by:<br>
++ **Title**
++ **Author**
++ **Word Count**
++ **Series**
++ **Date Added**<br><br>
+
+**NAVIGATION:** 
++ **Down Button** opens the filter panel.
++ Inside the panel, **holding Next/Down** will bring you to the confirm button instantly.
+<br clear="left"/> <br>
 
 # Feature Showcase
 

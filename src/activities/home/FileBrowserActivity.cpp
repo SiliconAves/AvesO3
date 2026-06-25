@@ -1,5 +1,6 @@
 #include "FileBrowserActivity.h"
 #include "BookActionActivity.h"
+#include "Ao3Librarian.h"
 
 #include <Epub.h>
 #include <FsHelpers.h>
@@ -158,6 +159,7 @@ void FileBrowserActivity::loop() {
           if (actionRes->modified) {
             if (actionRes->deleted) {
               LOG_DBG("FileBrowser", "Confirmed deletion from menu: %s", fullPath.c_str());
+              Ao3Librarian::tombstoneRecord(fullPath);
               clearFileMetadata(fullPath);
               if (Storage.remove(fullPath.c_str())) {
                 LOG_DBG("FileBrowser", "Deleted successfully");
