@@ -4,6 +4,8 @@
 #include <vector>
 #include "Ao3LibraryMetadata.h"
 
+#include "Ao3CompactIndexRecord.h"
+
 class Epub;
 
 /**
@@ -54,9 +56,26 @@ class Ao3Librarian {
    */
   static char mapWarning(const char* warningStr);
 
+  /**
+   * @brief Writes a compact record into the unified index file.
+   */
+  static bool writeIndexRecord(const CompactIndexRecord& rec);
+
+  /**
+   * @brief Marks a record as tombstoned (deleted) in the index.
+   */
+  static bool tombstoneRecord(const std::string& epubPath);
+
  private:
   /**
    * @brief Internal parser that handles the HTML streaming and anchor searching.
    */
-  static bool parseTitlePage(const Epub& epub, Ao3LibraryMetadata& meta, std::string& scrapedWorkId, std::string& scrapedDate);
+  static bool parseTitlePage(const Epub& epub,
+                             Ao3LibraryMetadata& meta,
+                             std::string& scrapedWorkId,
+                             std::string& scrapedDate,
+                             char* scrapedFandom,
+                             char* scrapedRel1,
+                             char* scrapedRel2);
 };
+

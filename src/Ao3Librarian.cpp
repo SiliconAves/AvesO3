@@ -26,6 +26,9 @@ class HtmlScraper : public Print {
   std::string scrapedWorkId;
   std::string scrapedDate;
   bool hasUpdatedDate = false;
+  char scrapedFandom[32];
+  char scrapedRel1[32];
+  char scrapedRel2[32];
 
   explicit HtmlScraper(Ao3LibraryMetadata& m) : meta(m), scrapedWorkId(""), scrapedDate(""), hasUpdatedDate(false) {
     memset(buffer, 0, sizeof(buffer));
@@ -34,7 +37,115 @@ class HtmlScraper : public Print {
     inSummary = false;
     inTag = false;
     isInProgress = false;
+    memset(scrapedFandom, 0, sizeof(scrapedFandom));
+    memset(scrapedRel1, 0, sizeof(scrapedRel1));
+    memset(scrapedRel2, 0, sizeof(scrapedRel2));
   }
+
+  void extractCommaSeparatedFields(const char* anchor, char* const outputs[], int maxCount, bool isRelationship = false) {
+    const char* pos = strstr(buffer, anchor);
+    if (!pos) return;
+
+    const char* scan = pos + strlen(anchor);
+
+    // Skip to the start of the first value: HTML tags (</dt>, <dd ...>,
+    // <a href="...">, </b>), whitespace, and leading punctuation/quotes
+    // (":", the opening '"' in FFF's quoted string, etc).
+    while (scan < buffer + bufferSize) {
+        if (*scan == '<') {
+            while (scan < buffer + bufferSize && *scan != '>') scan++;
+            if (scan < buffer + bufferSize) scan++;
+        } else if (isspace(static_cast<unsigned char>(*scan)) || *scan == ':' ||
+                   *scan == '"' || *scan == '/' || *scan == '-' || *scan == '_') {
+            scan++;
+        } else break;
+    }
+
+    int filled = 0;
+    while (filled < maxCount && scan < buffer + bufferSize) {
+        const char* comma = strchr(scan, ',');
+        const char* lt    = strchr(scan, '<');
+        const char* quote = isRelationship ? nullptr : strchr(scan, '"');
+
+        // Earliest of the three terminators that is non-null
+        const char* end = nullptr;
+        for (const char* cand : { comma, lt, quote }) {
+            if (cand && (!end || cand < end)) end = cand;
+        }
+        if (!end) break;
+
+        // Native AO3: scan sits directly on <a href="...">. Step into its
+        // text content, then re-evaluate — </a> becomes the terminator.
+        if (lt && lt == scan) {
+            while (scan < buffer + bufferSize && *scan != '>') scan++;
+            if (scan < buffer + bufferSize) scan++;
+            lt = strchr(scan, '<');
+            if (!lt) break;
+            end = lt;
+        }
+
+        size_t rawLen = (size_t)(end - scan);
+        if (rawLen == 0) {
+            // Empty token (consecutive delimiters) — skip and retry
+            scan = end + 1;
+            continue;
+        }
+
+        if (isRelationship) {
+            // If the number of quotes in the extracted token is odd, 
+            // the final quote is an unbalanced wrapping quote from FFF.
+            size_t qCount = 0;
+            for (size_t i = 0; i < rawLen; i++) {
+                if (scan[i] == '"') qCount++;
+            }
+            if (qCount % 2 != 0 && rawLen > 0 && scan[rawLen - 1] == '"') {
+                rawLen--;
+            }
+        }
+
+        // &amp; cleanup
+        size_t outIdx = 0;
+        size_t srcIdx = 0;
+        while (srcIdx < rawLen && outIdx < 31) {
+            if (scan[srcIdx] == '&' && (rawLen - srcIdx) >= 5 && 
+                strncasecmp(&scan[srcIdx], "&amp;", 5) == 0) {
+                outputs[filled][outIdx++] = '&';
+                srcIdx += 5;
+            } else {
+                outputs[filled][outIdx++] = scan[srcIdx++];
+            }
+        }
+        outputs[filled][outIdx] = '\0';
+        size_t len = outIdx;
+
+        // Trim trailing whitespace
+        for (int i = (int)len - 1;
+             i >= 0 && isspace(static_cast<unsigned char>(outputs[filled][i])); i--)
+            outputs[filled][i] = '\0';
+        //tag spillover prevention
+        if (strcmp(outputs[filled], "Status:") == 0 || 
+            strcmp(outputs[filled], "Characters:") == 0 ) {
+            outputs[filled][0] = '\0'; // Clear out the bogus metadata label
+            break;                     // Stop parsing further slots
+        }            
+        filled++;
+
+        if (end == lt) {
+            // Native AO3: skip past </a>
+            scan = lt;
+            while (scan < buffer + bufferSize && *scan != '>') scan++;
+            if (scan < buffer + bufferSize) scan++;
+        } else {
+            // FFF / plain text: skip past the comma or closing quote
+            scan = end + 1;
+        }
+        // Skip the separator: whitespace, ',', and stray '"' characters
+        // (covers native AO3's ", " between anchors and FFF's ", ")
+        while (scan < buffer + bufferSize &&
+               (isspace(static_cast<unsigned char>(*scan)) || *scan == ',' || *scan == '"')) scan++;
+    }
+  }
+
 
   size_t write(uint8_t b) override {
     char c = (char)b;
@@ -161,10 +272,91 @@ class HtmlScraper : public Print {
     });
 
     if (strstr(buffer, "Genre:")) extractTagsFromAnchor("Genre:");
-    if (!meta.tags[0][0] && strstr(buffer, "Additional Tags:")) {
+    if (!meta.tags[3][0] && strstr(buffer, "Additional Tags:")) {
       extractTagsFromAnchor("Additional Tags:");
     }
     if (strstr(buffer, "Series:")) extractSeries();
+
+    // Fandom: native AO3 uses "Fandom:" (singular, one fandom) or "Fandoms:"
+    // (plural, multiple fandoms). FFF uses "Category:".
+    // IMPORTANT: native AO3 epubs also contain a "Category:" field (M/M, F/F,
+    // Gen, etc.) that appears *before* the fandom label in the HTML. Always try
+    // both AO3 fandom labels first — falling through to "Category:" is correct
+    // only for FFF epubs, which have no "Fandom:"/"Fandoms:" label at all.
+    bool foundNativeFandom = false;
+    char* fandomTarget[1] = { scrapedFandom };
+
+    if (strstr(buffer, "Fandoms:")) {
+        extractCommaSeparatedFields("Fandoms:", fandomTarget, 1);
+        foundNativeFandom = true;
+    } else if (strstr(buffer, "Fandom:")) {
+        extractCommaSeparatedFields("Fandom:", fandomTarget, 1);
+        foundNativeFandom = true;
+    }
+
+    // Only look for Category if no native fandom tag was found in this specific chunk,
+    // AND the destination string is completely empty.
+    if (!foundNativeFandom && scrapedFandom[0] == '\0') {
+        if (strstr(buffer, "Category:")) {
+            extractCommaSeparatedFields("Category:", fandomTarget, 1);
+        }
+    }
+
+    // Relationships: native AO3 uses "Relationships:" (plural) or "Relationship:" (singular).
+    // Take up to two comma-separated values. Pass true to enable custom nickname processing.
+    if (scrapedRel1[0] == '\0' && scrapedRel2[0] == '\0') {
+        const char* relAnchor = nullptr;
+        if (strstr(buffer, "Relationships:")) {
+            relAnchor = "Relationships:";
+        } else if (strstr(buffer, "Relationship:")) {
+            relAnchor = "Relationship:";
+        }
+
+        if (relAnchor) {
+            char* targets[2] = { scrapedRel1, scrapedRel2 };
+            extractCommaSeparatedFields(relAnchor, targets, 2, true);
+        
+            for (char* rel : targets) {
+                if (rel[0] == '\0') continue;
+
+                char cleanBuf[32];
+                size_t cIdx = 0;
+                bool inParen = false;
+
+                // Look at the raw string we grabbed, but process it intelligently
+                for (size_t i = 0; rel[i] != '\0'; i++) {
+                    if (rel[i] == '(') {
+                        inParen = true;
+                        // Backtrack to remove a single space before the parenthesis if present
+                        if (cIdx > 0 && cleanBuf[cIdx - 1] == ' ') {
+                            cIdx--;
+                        }
+                    } else if (rel[i] == ')') {
+                        inParen = false;
+                    } else if (!inParen) {
+                        // The 31-character limit is evaluated here, 
+                        // after skipping everything inside parentheses!
+                        if (cIdx < 31) {
+                            // Prevent duplicate spaces caused by stripping from the middle
+                            if (rel[i] == ' ' && cIdx > 0 && cleanBuf[cIdx - 1] == ' ') {
+                                continue;
+                            }
+                            cleanBuf[cIdx++] = rel[i];
+                        }
+                    }
+                }
+                cleanBuf[cIdx] = '\0';
+
+                // Trim any leftover trailing whitespace safely
+                while (cIdx > 0 && isspace(static_cast<unsigned char>(cleanBuf[cIdx - 1]))) {
+                    cleanBuf[--cIdx] = '\0';
+                }
+
+                // Copy the isolated, clean string back into the persistent variable
+                strcpy(rel, cleanBuf);
+            }            
+        }
+    }
 
     const char* sumPos = strstr(buffer, "Summary:");
     if (sumPos && !inSummary && meta.summary[0] == '\0') {
@@ -353,7 +545,7 @@ class HtmlScraper : public Print {
     }
   }
 
-  void extractTagsFromAnchor(const char* anchor) {
+void extractTagsFromAnchor(const char* anchor) {
     const char* pos = strstr(buffer, anchor);
     if (!pos) return;
 
@@ -369,8 +561,21 @@ class HtmlScraper : public Print {
         break;
       }
     }
+    // Skip past already-extracted tags in the HTML source so the scan
+    // position stays in sync with the destination slot index.
+    int alreadyFilled = 0;
+    while (alreadyFilled < 4 && meta.tags[alreadyFilled][0]) alreadyFilled++;
 
-    int tagIdx = 0;
+    for (int i = 0; i < alreadyFilled && scan < buffer + bufferSize; i++) {
+      const char* closingA = strstr(scan, "</a>");
+      if (!closingA) break;
+      scan = closingA + 4;
+      while (scan < buffer + bufferSize && (isspace(*scan) || *scan == ',' || *scan == '"')) scan++;
+    }
+
+    // check tagIdx and find the first empty slot
+    int tagIdx = alreadyFilled;
+
     while (tagIdx < 4 && scan < buffer + bufferSize) {
       const char* comma = strchr(scan, ',');
       const char* lt = strchr(scan, '<');
@@ -380,7 +585,11 @@ class HtmlScraper : public Print {
       if (lt && lt == scan) {
         // Native AO3: scan is sitting on an <a href="...">, skip into its text content
         while (scan < buffer + bufferSize && *scan != '>') scan++;
-        if (scan < buffer + bufferSize) scan++; // skip '>'
+        
+        // boundary check after pointer advancement
+        if (scan >= buffer + bufferSize) break; 
+        scan++; // skip '>'
+        
         // Recalculate lt and actualEnd now that we're inside the tag text
         lt = strchr(scan, '<');
         if (!lt) break;
@@ -393,6 +602,19 @@ class HtmlScraper : public Print {
       size_t len = std::min(rawLen, truncated ? (size_t)14 : (size_t)15);
       strncpy(meta.tags[tagIdx], scan, len);
       meta.tags[tagIdx][len] = 0;
+      
+      // trim space
+      size_t cleanLen = len;
+      while (cleanLen > 0 && isspace(static_cast<unsigned char>(meta.tags[tagIdx][cleanLen - 1]))) {
+        meta.tags[tagIdx][--cleanLen] = '\0';
+      }
+
+      // remove Other tag and leave others blank
+      if (tagIdx == 0 && (strcmp(meta.tags[tagIdx], "Other") == 0 || strncmp(meta.tags[tagIdx], "Other", 5) == 0)) {
+        meta.tags[tagIdx][0] = '\0';
+        break; 
+      }
+
       if (truncated) {
         // Avoid "...word ." — turn trailing whitespace in the copy into dots before the truncation mark
         size_t i = len;
@@ -435,7 +657,10 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
           auto meta = std::unique_ptr<Ao3LibraryMetadata>(new Ao3LibraryMetadata());
           std::string scrapedWorkId = "";
           std::string scrapedDate = "";
-          if (parseTitlePage(epub, *meta, scrapedWorkId, scrapedDate)) {
+          char tempFandom[32] = {};
+          char tempRel1[32] = {};
+          char tempRel2[32] = {};
+          if (parseTitlePage(epub, *meta, scrapedWorkId, scrapedDate, tempFandom, tempRel1, tempRel2)) {
             if (!scrapedWorkId.empty()) {
               epub.saveAo3Info(scrapedWorkId, scrapedDate, meta->isCompleted);
             }
@@ -449,7 +674,11 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
   auto meta = std::unique_ptr<Ao3LibraryMetadata>(new Ao3LibraryMetadata());
   std::string scrapedWorkId = "";
   std::string scrapedDate = "";
-  if (!parseTitlePage(epub, *meta, scrapedWorkId, scrapedDate)) return false;
+  char scrapedFandom[32] = {};
+  char scrapedRel1[32]   = {};
+  char scrapedRel2[32]   = {};
+
+  if (!parseTitlePage(epub, *meta, scrapedWorkId, scrapedDate, scrapedFandom, scrapedRel1, scrapedRel2)) return false;
 
   strncpy(meta->filepath, epub.getPath().c_str(), 255);
   strncpy(meta->title, epub.getTitle().c_str(), 127);
@@ -466,6 +695,25 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
   if (Storage.openFileForWrite("AO3L", infoPath, f)) {
     f.write((uint8_t*)meta.get(), sizeof(Ao3LibraryMetadata));
     f.close();
+
+    CompactIndexRecord rec;
+    memset(&rec, 0, sizeof(rec));
+
+    strncpy(rec.title,         meta->title,      63);
+    strncpy(rec.author,        meta->author,     31);
+    strncpy(rec.seriesName,    meta->seriesName, 31);
+    strncpy(rec.fandom,        scrapedFandom,    31);
+    strncpy(rec.relationship1, scrapedRel1,      31);
+    strncpy(rec.relationship2, scrapedRel2,      31);
+    rec.wordCount  = meta->wordCount;
+    rec.seriesPart = meta->seriesPart;
+    rec.cacheHash  = static_cast<uint32_t>(
+                         std::hash<std::string>{}(epub.getPath()));
+
+    if (!writeIndexRecord(rec)) {
+        return false;
+    }
+
     return true;
   }
   return false;
@@ -484,11 +732,18 @@ bool Ao3Librarian::getLibraryInfo(const Epub& epub, Ao3LibraryMetadata& meta) {
   return false;
 }
 
-bool Ao3Librarian::parseTitlePage(const Epub& epub, Ao3LibraryMetadata& meta, std::string& scrapedWorkId, std::string& scrapedDate) {
+bool Ao3Librarian::parseTitlePage(const Epub& epub,
+                                  Ao3LibraryMetadata& meta,
+                                  std::string& scrapedWorkId,
+                                  std::string& scrapedDate,
+                                  char* scrapedFandom,
+                                  char* scrapedRel1,
+                                  char* scrapedRel2) {
   if (epub.getSpineItemsCount() == 0) return false;
 
   // Check up to the first 3 spine items to account for internal cover pages
   int itemsToCheck = std::min(3, epub.getSpineItemsCount());
+  bool foundInfoSpine = false;
   
   for (int i = 0; i < itemsToCheck; i++) {
     std::string href = epub.getSpineItem(i).href;
@@ -496,12 +751,26 @@ bool Ao3Librarian::parseTitlePage(const Epub& epub, Ao3LibraryMetadata& meta, st
 
     if (epub.readItemContentsToStream(href, *scraper, 8192)) {
       scraper->processBuffer();
-      // Propagate work ID and date if found in this spine item
+
+      // workId/date may be in a different spine (e.g. native AO3 preface) —
+      // propagate from whichever spine finds them first, as before.
       if (scrapedWorkId.empty() && !scraper->scrapedWorkId.empty()) {
         scrapedWorkId = scraper->scrapedWorkId;
       }
       if (scrapedDate.empty() && !scraper->scrapedDate.empty()) {
         scrapedDate = scraper->scrapedDate;
+      }
+
+      // Fandom/relationship: take both from the FIRST spine where fandom
+      // is found, as a unit — including an empty relationship as final.
+      if (!foundInfoSpine && scraper->scrapedFandom[0] != '\0') {
+        foundInfoSpine = true;
+        strncpy(scrapedFandom, scraper->scrapedFandom, 31);
+        scrapedFandom[31] = '\0';
+        strncpy(scrapedRel1, scraper->scrapedRel1, 31);
+        scrapedRel1[31] = '\0';
+        strncpy(scrapedRel2, scraper->scrapedRel2, 31);
+        scrapedRel2[31] = '\0';
       }
     }
   }
@@ -603,4 +872,155 @@ bool Ao3Librarian::hasAnyAo3Fics() {
   }
   root.close();
   return found;
+}
+
+bool Ao3Librarian::writeIndexRecord(const CompactIndexRecord& rec) {
+    const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+
+    // --- Validate existing file ---
+    bool needsCreate = false;
+    if (!Storage.exists(indexPath)) {
+        needsCreate = true;
+    } else {
+        FsFile check;
+        if (Storage.openFileForRead("AO3L", indexPath, check)) {
+            char     magic[4];
+            uint8_t  version;
+            uint16_t recordCountCheck;
+            bool readOk = check.read(magic, 4) == 4 &&
+                          check.read(&version, 1) == 1 &&
+                          check.read((uint8_t*)&recordCountCheck, 2) == 2;
+            check.close();
+            if (!readOk || memcmp(magic, "AO3X", 4) != 0 || version != 1 ||
+                recordCountCheck > MAX_LIBRARY_BOOKS) {
+                Storage.remove(indexPath);
+                needsCreate = true;
+            }
+        } else {
+            needsCreate = true;
+        }
+    }
+
+    // --- Create fresh file with empty header if needed ---
+    if (needsCreate) {
+        FsFile f;
+        if (!Storage.openFileForWrite("AO3L", indexPath, f)) return false;
+        uint8_t  v = 1,  r = 0;
+        uint16_t c = 0;
+        uint32_t s = 0;
+        f.write((uint8_t*)"AO3X", 4);
+        f.write(&v, 1);
+        f.write((uint8_t*)&c, 2);
+        f.write((uint8_t*)&s, 4);
+        f.write(&r, 1);
+        f.close();
+    }
+
+    // --- Open for read/write ---
+    FsFile f = Storage.open(indexPath, O_RDWR);
+    if (!f) return false;
+
+    char     magic[4];
+    uint8_t  version;
+    uint16_t recordCount;
+    uint32_t nextSequence;
+    uint8_t  reserved[1];
+    f.read(magic, 4);
+    f.read(&version, 1);
+    f.read((uint8_t*)&recordCount, 2);
+    f.read((uint8_t*)&nextSequence, 4);
+    f.read(reserved, 1);
+
+    int32_t  updateSlot     = -1;
+    uint32_t preservedSeq   = 0;
+    int32_t  freeSlot       = -1;
+    uint16_t liveCount      = 0;
+    CompactIndexRecord existing;
+    for (uint16_t i = 0; i < recordCount; i++) {
+        if (f.read((uint8_t*)&existing, sizeof(existing)) != sizeof(existing)) {
+            break;
+        }
+        if (existing.flags & 1) {
+            if (freeSlot < 0) freeSlot = i; 
+        } else {
+            liveCount++;
+            if (existing.cacheHash == rec.cacheHash) {
+                updateSlot   = i;
+                preservedSeq = existing.addedSequence;
+            }
+        }
+    }
+
+    CompactIndexRecord recToWrite = rec;
+
+    if (updateSlot >= 0) {
+        recToWrite.addedSequence = preservedSeq;
+        f.seek(offsetOf(updateSlot));
+        f.write((uint8_t*)&recToWrite, sizeof(recToWrite));
+        f.close();
+        return true;
+    }
+
+    recToWrite.addedSequence = nextSequence;
+    nextSequence++;
+
+    if (freeSlot >= 0) {
+        f.seek(offsetOf(freeSlot));
+        f.write((uint8_t*)&recToWrite, sizeof(recToWrite));
+    } else {
+        if (liveCount >= MAX_LIBRARY_BOOKS) {
+            f.close();
+            return false;
+        }
+        f.seek(f.size());
+        f.write((uint8_t*)&recToWrite, sizeof(recToWrite));
+        recordCount++;
+        f.seek(5); 
+        f.write((uint8_t*)&recordCount, 2);
+    }
+
+    f.seek(7); 
+    f.write((uint8_t*)&nextSequence, 4);
+
+    f.close();
+    return true;
+}
+
+bool Ao3Librarian::tombstoneRecord(const std::string& epubPath) {
+    const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+    if (!Storage.exists(indexPath)) return false;
+
+    FsFile f = Storage.open(indexPath, O_RDWR);
+    if (!f) return false;
+
+    char     magic[4];
+    uint8_t  version;
+    uint16_t recordCount;
+    bool readOk = f.read(magic, 4) == 4 &&
+                  f.read(&version, 1) == 1 &&
+                  f.read((uint8_t*)&recordCount, 2) == 2;
+
+    if (!readOk || memcmp(magic, "AO3X", 4) != 0 || version != 1) {
+        f.close();
+        return false;
+    }
+
+    uint32_t targetHash = static_cast<uint32_t>(std::hash<std::string>{}(epubPath));
+
+    CompactIndexRecord rec;
+    for (uint16_t i = 0; i < recordCount; i++) {
+        f.seek(offsetOf(i));
+        if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
+
+        if (!(rec.flags & 1) && rec.cacheHash == targetHash) {
+            rec.flags |= 1;
+            f.seek(offsetOf(i));
+            f.write((uint8_t*)&rec, sizeof(rec));
+            f.close();
+            return true;
+        }
+    }
+
+    f.close();
+    return false;
 }
