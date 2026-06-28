@@ -431,8 +431,8 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
   char headerTitle[32] = "AO3 Library";
   if (activeState.fandom[0] != '\0') {
     std::string cleanFandom(activeState.fandom);
-    if (cleanFandom.length() > 25) {
-      cleanFandom = cleanFandom.substr(0, 23) + "..";
+    if (cleanFandom.length() > 29) {
+      cleanFandom = cleanFandom.substr(0, 27) + "..";
     }
     strcpy(headerTitle, cleanFandom.c_str());
   }
