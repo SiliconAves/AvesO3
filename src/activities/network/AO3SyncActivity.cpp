@@ -260,7 +260,7 @@ void AO3SyncActivity::performDownload() {
     downloadTotal = 0;
     requestUpdate();
 
-    std::string downloadUrl = "https://archiveofourown.gay/downloads/" + workId + "/work.epub?v=1";
+    std::string downloadUrl = "https://archiveofourown.gay/downloads/" + workId + "/work.epub?v=" + scrapedDate;
     std::string tempPath = bookPath + ".tmp";
 
     LOG_INF("AO3", "Downloading: %s -> %s", downloadUrl.c_str(), tempPath.c_str());
