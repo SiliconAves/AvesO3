@@ -33,6 +33,7 @@ private:
     unsigned long searchStartTime = 0;
     size_t bytesProcessed = 0;
     bool searchFinished = false;
+    bool usingOrgFallback = false;
 
     void onWifiSelectionComplete(bool success);
     void performSearch();

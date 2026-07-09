@@ -74,9 +74,20 @@ void AO3SyncActivity::performSearch() {
         return;
     }
 
-    std::string currentUrl = "https://archiveofourown.gay/works/" + cleanWorkId + "?view_adult=true";
+    usingOrgFallback = false;
+    const std::string searchUrls[] = {
+        "https://archiveofourown.gay/works/" + cleanWorkId + "?view_adult=true",
+        "https://archiveofourown.org/works/" + cleanWorkId + "?view_adult=true"
+    };
     
     int status_code = 0;
+    for (int urlIdx = 0; urlIdx < 2; urlIdx++) {
+        if (urlIdx == 1) {
+            usingOrgFallback = true;
+            requestUpdateAndWait();
+            delay(1000);
+        }
+        std::string currentUrl = searchUrls[urlIdx];    
     int max_retries = 3;
     HTTPClient http;
     std::unique_ptr<NetworkClient> netClient;
@@ -124,8 +135,9 @@ void AO3SyncActivity::performSearch() {
     }
 
     if (status_code == 403) {
-        errorMessage = tr(STR_AO3_ERROR_LOCKED);
         http.end();
+        if (urlIdx == 0) continue; // try .org
+        errorMessage = tr(STR_AO3_ERROR_LOCKED);
         state = AO3SyncState::ERROR;
         return;
     } else if (status_code == 429) {
@@ -250,7 +262,9 @@ void AO3SyncActivity::performSearch() {
         errorMessage = tr(STR_AO3_ERROR_GENERIC);
         state = AO3SyncState::ERROR;
     }
-    requestUpdate();
+        requestUpdate();
+        break;
+    }
 }
 
 void AO3SyncActivity::performDownload() {
@@ -265,11 +279,23 @@ void AO3SyncActivity::performDownload() {
 
     LOG_INF("AO3", "Downloading: %s -> %s", downloadUrl.c_str(), tempPath.c_str());
 
-    auto result = HttpDownloader::downloadToFile(downloadUrl, tempPath, [this](size_t downloaded, size_t total) {
+        auto result = HttpDownloader::downloadToFile(downloadUrl, tempPath, [this](size_t downloaded, size_t total) {
         downloadProgress = downloaded;
         downloadTotal = total;
-        requestUpdate(true); // Fast update for progress bar
+        requestUpdate(true);
     });
+
+    if (result == HttpDownloader::HTTP_ERROR) {
+        usingOrgFallback = true;
+        requestUpdateAndWait();
+        delay(1000);
+        downloadUrl = "https://archiveofourown.org/downloads/" + workId + "/work.epub?v=" + scrapedDate;
+        result = HttpDownloader::downloadToFile(downloadUrl, tempPath, [this](size_t downloaded, size_t total) {
+            downloadProgress = downloaded;
+            downloadTotal = total;
+            requestUpdate(true);
+        });
+    }
 
     if (result == HttpDownloader::OK) {
         LOG_INF("AO3", "Download successful, verifying ZIP integrity");
@@ -383,7 +409,11 @@ void AO3SyncActivity::renderSearching() const {
     const auto& metrics = UITheme::getInstance().getMetrics();
     const auto top = (pageHeight - renderer.getLineHeight(UI_10_FONT_ID)) / 2;
 
-    renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_AO3_SEARCHING));
+    if (usingOrgFallback) {
+        renderer.drawCenteredText(UI_10_FONT_ID, top, "Retrying on .org domain...");
+    } else {
+        renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_AO3_SEARCHING));
+    }
 }
 
 void AO3SyncActivity::renderDownloading() const {
