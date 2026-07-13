@@ -51,17 +51,6 @@ Indexing/Force Reindexing a **Single Book** is available from the  **long press 
 Press **UP** to access this menu.
 <br clear="left"/> <br>
 
-**NEW - Library Auto-Index**
-<img src="docs/images/AvesO3/manageLibrary.jpg" width="300" align="left" style="margin-right: 30px; border: 1px solid black;"/><br><br>
-**NAVIGATION:**<br>
-Press **UP** to access this menu. <br><br>
-Select **Index New Books** to start indexing ao3 books found in your AO3 folder, in batches of 10, 15 or 20 books depending on your choice (you can change this in **AO3 Library Settings**).<br><br>
-Remember to **set up your AO3 folder in the AO3 Settings menu below.**
-<br><br>
-Indexing/Force Reindexing a **Single Book** is available from the  **long press Confirm** menu in File Browser/AO3 Library.<br><br>
-
-<br clear="left"/> <br>
-
 **NEW - AO3 Library Settings**
 <img src="docs/images/AvesO3/librarySettings.jpg" width="300" align="left" style="margin-right: 30px; border: 1px solid black;"/><br><br>
 **NAVIGATION:**<br>
