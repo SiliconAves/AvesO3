@@ -616,15 +616,18 @@ void extractTagsFromAnchor(const char* anchor) {
       }
 
       if (truncated) {
-        // Avoid "...word ." — turn trailing whitespace in the copy into dots before the truncation mark
-        size_t i = len;
-        while (i > 0 && isspace(static_cast<unsigned char>(meta.tags[tagIdx][i - 1]))) {
-          meta.tags[tagIdx][i - 1] = '.';
-          i--;
+        // If cleanLen was reduced by trimming a space, we have room for 2 dots to reach 15 chars
+        if (cleanLen < 14) {
+          meta.tags[tagIdx][cleanLen] = '.';
+          meta.tags[tagIdx][cleanLen + 1] = '.';
+          meta.tags[tagIdx][cleanLen + 2] = '\0';
+        } else {
+          // Normal mid-word truncation (1 dot)
+          meta.tags[tagIdx][cleanLen] = '.';
+          meta.tags[tagIdx][cleanLen + 1] = '\0';
         }
-        meta.tags[tagIdx][len] = '.';
-        meta.tags[tagIdx][len + 1] = 0;
       }
+      
       tagIdx++;
 
       if (actualEnd == lt) {

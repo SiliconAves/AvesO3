@@ -9,6 +9,7 @@
 #include "../../Ao3ViewEntry.h"
 #include "../../Ao3SortFilterState.h"
 #include "../../util/ButtonNavigator.h"
+#include "Ao3LibrarySettingsActivity.h"
 
 struct FilterHashes {
     bool     fandomActive;
@@ -49,8 +50,10 @@ class Ao3LibraryActivity final : public Activity {
     LIBRARY,
     FILTER_PANEL,
     FANDOM_PICKER,
-    RELATIONSHIP_PICKER
+    RELATIONSHIP_PICKER,
+    MANAGE_PANEL
   };
+
 
   std::vector<ViewEntry> viewEntries;
   size_t     selectorIndex = 0;
@@ -68,7 +71,12 @@ class Ao3LibraryActivity final : public Activity {
   // Filter & Sort State
   SortFilterState activeState;
   SortFilterState pendingState;
+  FilterMode filterMode = FilterMode::AUTOMATIC;
+  std::string ao3Folder;
+  std::vector<uint32_t> allowedHashes;
   int overlayRowIndex = 0; // 0=Fandom, 1=Relationship, 2=Sort By, 3=Order, 4=Confirm
+  int managePanelRowIndex = 0; // 0=Index New Books, 1=AO3 Library Settings
+
 
   // Pickers support
   std::vector<std::string> uniqueFandoms;
@@ -90,6 +98,8 @@ class Ao3LibraryActivity final : public Activity {
   void renderCompletionSymbol(int x, int y, int s, bool completed, bool tl, bool tr, bool bl, bool br, int yOffset = 0);
 
   // Sorting & Filtering helpers
+  void loadFilterMode();
+  void buildAllowedHashes(const std::string& scanPath, int maxDepth);
   void loadSortFilterState();
   void saveSortFilterState() const;
   void resortViewEntries();
@@ -104,4 +114,6 @@ class Ao3LibraryActivity final : public Activity {
   void renderLibrary(RenderLock& lock);
   void renderFilterOverlay();
   void renderPicker();
+  void renderManagePanel();
 };
+

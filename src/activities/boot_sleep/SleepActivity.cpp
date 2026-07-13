@@ -12,7 +12,7 @@
 #include "CrossPointState.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
-#include "images/Logo120.h"
+#include "images/AvesLogo.h"
 
 void SleepActivity::onEnter() {
   Activity::onEnter();
@@ -125,9 +125,13 @@ void SleepActivity::renderDefaultSleepScreen() const {
   const auto pageHeight = renderer.getScreenHeight();
 
   renderer.clearScreen();
-  renderer.drawImage(Logo120, (pageWidth - 120) / 2, (pageHeight - 120) / 2, 120, 120);
-  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 70, tr(STR_CROSSPOINT), true, EpdFontFamily::BOLD);
-  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 95, tr(STR_SLEEPING));
+  constexpr int LOGO_W = 160;
+  constexpr int LOGO_H = 192;
+  const int logoX = (pageWidth  - LOGO_W) / 2 - 12;
+  const int logoY = (pageHeight - LOGO_H) / 2 - 15;
+  renderer.drawImage(AvesLogo, logoX, logoY, LOGO_W, LOGO_H);
+  renderer.drawCenteredText(UI_10_FONT_ID, logoY + LOGO_H - 10, "AvesO3", true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(SMALL_FONT_ID,  logoY + LOGO_H + 15, tr(STR_SLEEPING));
 
   // Make sleep screen dark unless light is selected in settings
   if (SETTINGS.sleepScreen != CrossPointSettings::SLEEP_SCREEN_MODE::LIGHT) {

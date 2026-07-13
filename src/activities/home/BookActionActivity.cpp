@@ -6,6 +6,7 @@
 
 #include "../../components/UITheme.h"
 #include "../util/ConfirmationActivity.h"
+#include "Ao3IndexActivity.h"
 
 BookActionActivity::BookActionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string filePath,
                                        std::string fileName)
@@ -26,6 +27,8 @@ void BookActionActivity::onEnter() {
     f.close();
   }
 
+  hasAo3LibraryInfo = Storage.exists((cachePath + "/ao3_library_info").c_str());
+
   requestUpdate(true);
 }
 
@@ -39,6 +42,8 @@ void BookActionActivity::render(RenderLock&&) {
   auto rowTitle = [this](int index) {
     if (index == 0) {
       return std::string("Book Status: ") + getStatusLabel(currentStatus);
+    } else if (index == 1) {
+      return hasAo3LibraryInfo ? std::string("Reindex Book") : std::string("Index Book");
     }
     return std::string(tr(STR_DELETE));
   };
@@ -47,7 +52,7 @@ void BookActionActivity::render(RenderLock&&) {
                Rect{0, metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing, renderer.getScreenWidth(),
                     renderer.getScreenHeight() - metrics.headerHeight - metrics.buttonHintsHeight -
                         metrics.verticalSpacing * 2},
-               2, selectorIndex, rowTitle);
+               3, selectorIndex, rowTitle);
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_CONFIRM), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
@@ -75,7 +80,24 @@ void BookActionActivity::loop() {
       s = (s + 1) % 5;
       currentStatus = static_cast<BookStatus>(s);
       requestUpdate(true);
+    } else if (selectorIndex == 1) {
+      // Launch Ao3IndexActivity in SINGLE mode
+      auto handler = [this](const ActivityResult& res) {
+        if (const auto* indexRes = std::get_if<Ao3IndexResult>(&res.data)) {
+          if (indexRes->successfullyIndexed) {
+            BookActionResult result;
+            result.modified = true;
+            result.indexingCompleted = true;
+            setResult(ActivityResult(std::move(result)));
+            finish();
+            return;
+          }
+        }
+        requestUpdate(true);
+      };
+      startActivityForResult(std::make_unique<Ao3IndexActivity>(renderer, mappedInput, Ao3IndexMode::SINGLE, filePath), handler);
     } else {
+
       // Trigger delete confirmation
       auto handler = [this](const ActivityResult& res) {
         if (!res.isCancelled) {
@@ -95,15 +117,16 @@ void BookActionActivity::loop() {
   }
 
   buttonNavigator.onNext([this] {
-    selectorIndex = (selectorIndex < 1) ? selectorIndex + 1 : 0;
+    selectorIndex = (selectorIndex < 2) ? selectorIndex + 1 : 0;
     requestUpdate(true);
   });
 
   buttonNavigator.onPrevious([this] {
-    selectorIndex = (selectorIndex > 0) ? selectorIndex - 1 : 1;
+    selectorIndex = (selectorIndex > 0) ? selectorIndex - 1 : 2;
     requestUpdate(true);
   });
 }
+
 
 void BookActionActivity::saveStatus() {
   std::string cachePath = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(filePath));
