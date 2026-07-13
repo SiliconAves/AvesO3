@@ -80,4 +80,5 @@ class Epub {
   std::string getAo3UpdateDate() const;
   bool isAo3Completed() const;
   void saveAo3Info(const std::string& workId, const std::string& date, bool completed) const;
+  std::string sniffPublisher() const;
 };

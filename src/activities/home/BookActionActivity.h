@@ -15,6 +15,8 @@ class BookActionActivity final : public Activity {
   BookStatus currentStatus = BookStatus::START;
   BookStatus initialStatus = BookStatus::START;
   ButtonNavigator buttonNavigator;
+  bool hasAo3LibraryInfo = false;
+
 
  public:
   BookActionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string filePath,

@@ -1,3 +1,4 @@
+#include <functional>
 #include "Ao3LibraryActivity.h"
 #include "../../Ao3Librarian.h"
 #include <Epub.h>
@@ -11,6 +12,8 @@
 #include <new>
 #include <ArduinoJson.h>
 #include "BookActionActivity.h"
+#include "Ao3IndexActivity.h"
+#include "Ao3LibrarySettingsActivity.h"
 #include "../../fontIds.h"
 #include "../../MappedInputManager.h"
 #include "../../components/UITheme.h"
@@ -24,8 +27,70 @@ void Ao3LibraryActivity::onEnter() {
   buttonNavigator.setMappedInputManager(mappedInput);
   indexState = IndexState::UNKNOWN;
   screenState = ScreenState::LIBRARY;
+  loadFilterMode();
   loadSortFilterState();
   requestUpdate();
+}
+
+void Ao3LibraryActivity::loadFilterMode() {
+    filterMode = FilterMode::AUTOMATIC;
+    ao3Folder  = "";
+    allowedHashes.clear();
+
+    const char* path = "/.crosspoint/ao3_settings.json";
+    if (!Storage.exists(path)) return;
+
+    String json = Storage.readFile(path);
+    if (json.isEmpty()) return;
+
+    JsonDocument doc;
+    if (deserializeJson(doc, json)) return;
+
+    ao3Folder  = doc["ao3Folder"] | "";
+    uint8_t fm = doc["filterMode"] | 0;
+    filterMode = (fm == 1) ? FilterMode::FOLDER_TREE : FilterMode::AUTOMATIC;
+}
+
+void Ao3LibraryActivity::buildAllowedHashes(const std::string& scanPath, int maxDepth) {
+    allowedHashes.clear();
+
+    std::function<void(const std::string&, int)> scanRecursive = [&](const std::string& dirPath, int currentDepth) {
+        if (currentDepth > maxDepth) return;
+        FsFile dir = Storage.open(dirPath.c_str());
+        if (!dir || !dir.isDirectory()) { if (dir) dir.close(); return; }
+
+        char name[256];
+        FsFile file;
+        while (file = dir.openNextFile()) {
+            file.getName(name, sizeof(name));
+            std::string nameStr(name);
+            if (file.isDirectory() && name[0] != '.' && nameStr != "System Volume Information") {
+                std::string subPath = dirPath;
+                if (subPath.back() != '/') subPath += "/";
+                subPath += nameStr;
+                scanRecursive(subPath, currentDepth + 1);
+            } else if (!file.isDirectory() && currentDepth == maxDepth) {
+                size_t dotPos = nameStr.find_last_of('.');
+                if (dotPos != std::string::npos) {
+                    std::string ext = nameStr.substr(dotPos + 1);
+                    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                    if (ext == "epub") {
+                        std::string fullPath = dirPath;
+                        if (fullPath.back() != '/') fullPath += "/";
+                        fullPath += nameStr;
+                        uint32_t h = static_cast<uint32_t>(std::hash<std::string>{}(fullPath));
+                        allowedHashes.push_back(h);
+                    }
+                }
+            }
+            file.close();
+            yield();
+        }
+        dir.close();
+    };
+
+    scanRecursive(scanPath, 0);
+    std::sort(allowedHashes.begin(), allowedHashes.end());
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +178,13 @@ void Ao3LibraryActivity::loop() {
   // --- STATE: LIBRARY ---
   if (screenState == ScreenState::LIBRARY) {
 
+    if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
+      screenState = ScreenState::MANAGE_PANEL;
+      managePanelRowIndex = 0;
+      requestUpdate(true);
+      return;
+    }
+
     if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
       screenState = ScreenState::FILTER_PANEL;
       pendingState = activeState;
@@ -184,12 +256,14 @@ void Ao3LibraryActivity::loop() {
                   selectorIndex = 0;
                 }
                 cachedPage = -1; // invalidate so next render reloads page cache
-              } else {
-                // Status change only — update in-place without a full reload
-                if (static_cast<int>(selectorIndex) / 3 == cachedPage) {
-                  pageCacheStatus[selectorIndex % 3] = actionRes->newStatus;
+                } else if (actionRes->indexingCompleted) {
+                  rebuildViewEntries();
+                } else {
+                  // Status change only — update in-place without a full reload
+                  if (static_cast<int>(selectorIndex) / 3 == cachedPage) {
+                    pageCacheStatus[selectorIndex % 3] = actionRes->newStatus;
+                  }
                 }
-              }
               requestUpdate(true);
             }
           }
@@ -398,6 +472,105 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
       return;
     }
   }
+
+  // --- STATE: MANAGE_PANEL ---
+  else if (screenState == ScreenState::MANAGE_PANEL) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+      screenState = ScreenState::LIBRARY;
+      requestUpdate(true);
+      return;
+    }
+
+    // Up/Down/Left/Right all cycle between the 2 entries
+    auto cycleNext = [this] {
+      managePanelRowIndex = (managePanelRowIndex + 1) % 2;
+      requestUpdate(true);
+    };
+    auto cyclePrev = [this] {
+      managePanelRowIndex = (managePanelRowIndex + 1) % 2;
+      requestUpdate(true);
+    };
+
+    if (mappedInput.wasReleased(MappedInputManager::Button::Down) ||
+        mappedInput.wasReleased(MappedInputManager::Button::Right)) {
+      cycleNext();
+      return;
+    }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
+        mappedInput.wasReleased(MappedInputManager::Button::Left)) {
+      cyclePrev();
+      return;
+    }
+
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+      if (managePanelRowIndex == 0) {
+        // "Index New Books" — check if ao3 folder is configured first
+        const char* settingsPath = "/.crosspoint/ao3_settings.json";
+        bool hasFolder = false;
+        if (Storage.exists(settingsPath)) {
+          String json = Storage.readFile(settingsPath);
+          if (!json.isEmpty()) {
+            JsonDocument doc;
+            if (!deserializeJson(doc, json)) {
+              std::string folder = doc["ao3Folder"] | "";
+              hasFolder = !folder.empty();
+            }
+          }
+        }
+        if (!hasFolder) {
+          // Redirect to settings
+          screenState = ScreenState::MANAGE_PANEL; // close panel first
+          FilterMode oldMode = filterMode;
+          std::string oldFolder = ao3Folder;
+          auto handler = [this, oldMode, oldFolder](const ActivityResult&) {
+            loadFilterMode();
+            bool modeChanged = (oldMode != filterMode);
+            bool folderChangedInTreeMode = (filterMode == FilterMode::FOLDER_TREE && oldFolder != ao3Folder);
+            if (modeChanged || folderChangedInTreeMode) {
+                memset(activeState.fandom, 0, 32);
+                memset(activeState.relationship, 0, 32);
+                activeState.relationshipNoneOnly = false;
+                saveSortFilterState();
+                rebuildViewEntries();
+            }
+            requestUpdate(true);
+          };
+          startActivityForResult(std::make_unique<Ao3LibrarySettingsActivity>(renderer, mappedInput), handler);
+        } else {
+          // Unload ViewEntry vector to free RAM, then launch Ao3IndexActivity
+          viewEntries.clear();
+          viewEntries.shrink_to_fit();
+          indexState = IndexState::UNKNOWN; // mark for rebuild on return
+          screenState = ScreenState::LIBRARY;
+          auto handler = [this](const ActivityResult&) {
+            rebuildViewEntries();
+            requestUpdate(true);
+          };
+          startActivityForResult(std::make_unique<Ao3IndexActivity>(renderer, mappedInput, Ao3IndexMode::DIRECTORY), handler);
+        }
+      } else {
+        // "AO3 Library Settings"
+        screenState = ScreenState::MANAGE_PANEL;
+        FilterMode oldMode = filterMode;
+        std::string oldFolder = ao3Folder;
+        auto handler = [this, oldMode, oldFolder](const ActivityResult&) {
+          loadFilterMode();
+          bool modeChanged = (oldMode != filterMode);
+          bool folderChangedInTreeMode = (filterMode == FilterMode::FOLDER_TREE && oldFolder != ao3Folder);
+          if (modeChanged || folderChangedInTreeMode) {
+              memset(activeState.fandom, 0, 32);
+              memset(activeState.relationship, 0, 32);
+              activeState.relationshipNoneOnly = false;
+              saveSortFilterState();
+              rebuildViewEntries();
+          }
+          requestUpdate(true);
+        };
+        startActivityForResult(std::make_unique<Ao3LibrarySettingsActivity>(renderer, mappedInput), handler);
+      }
+      return;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -410,11 +583,13 @@ void Ao3LibraryActivity::render(RenderLock&& lock) {
     return;
   }
 
-  // Draw library view (serves as the background for the overlay as well)
+  // MANAGE_PANEL is a full-screen composited: library background + bottom slide-up panel
   renderLibrary(lock);
 
   if (screenState == ScreenState::FILTER_PANEL) {
     renderFilterOverlay();
+  } else if (screenState == ScreenState::MANAGE_PANEL) {
+    renderManagePanel();
   }
 
   renderer.displayBuffer();
@@ -444,29 +619,29 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
     renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2, "Loading...");
     return;
   }
-      // Downward triangle indicator
+    // Triangle indicator in header — pointing down when filter closed, up when open, also up for MANAGE_PANEL
     {
       const int tx = renderer.getScreenWidth() - 26;
       const int ty = 26;
       if (screenState == ScreenState::FILTER_PANEL) {
-        // triangle with black border pointing up
+        // triangle with black border pointing up (filter is open)
         const int xPts[] = { tx, tx + 12, tx + 6 };
         const int yPts[] = { ty + 5, ty + 5, ty - 5 };
         renderer.fillPolygon(xPts, yPts, 3, Black);
       } else {
-        // Solid black triangle pointing down
+        // Solid black triangle pointing down (filter accessible via Down button)
         const int xPts[] = { tx, tx + 12, tx + 6 };
         const int yPts[] = { ty - 5, ty - 5, ty + 5 };
         renderer.fillPolygon(xPts, yPts, 3, Black);
       }
-    }  
+    }
 
   if (indexState == IndexState::MISSING || (indexState == IndexState::OK && viewEntries.empty())) {
     if (activeState.fandom[0] != '\0') {
       renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2 - 12, "No matches for current filter.");
     } else {
       renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2 - 12, "No books indexed yet.");
-      renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 12, "Open a book to add it.");
+      renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 12, "Press UP to index new books.");
     }
   } else if (indexState == IndexState::CORRUPT) {
     renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2 - 12, "Library index missing or corrupt.");
@@ -510,14 +685,91 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
   }
 
   // Draw Button hints
-  const auto labels =
-      mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
-  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+
+    const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+
+    // Triangle indicator: Show 'Up' triangle when Manage Panel is closed
+    if (screenState != ScreenState::MANAGE_PANEL) {
+
+      const auto& metrics = UITheme::getInstance().getMetrics();
+      const int tx = renderer.getScreenWidth() - 26;
+      const int hintsY = renderer.getScreenHeight() - metrics.buttonHintsHeight;
+      const int ty = hintsY + metrics.buttonHintsHeight / 2;
+    
+      // ▲ pointing up
+      const int xPts[] = { tx + 6, tx, tx + 12 };
+      const int yPts[] = { ty - 5, ty + 5, ty + 5 };
+      renderer.fillPolygon(xPts, yPts, 3, Black);
+    }
 }
 
 // ---------------------------------------------------------------------------
-//  renderFilterOverlay — draws the drop-down menu overlay
+//  renderManagePanel — "Manage AO3 Library" slide-up panel from bottom
 // ---------------------------------------------------------------------------
+
+void Ao3LibraryActivity::renderManagePanel() {
+  const int screenWidth  = renderer.getScreenWidth();
+  const int screenHeight = renderer.getScreenHeight();
+  const auto& metrics    = UITheme::getInstance().getMetrics();
+
+  // Panel dimensions: 216px tall, anchored to bottom above the hints bar
+  const int panelH     = 216;
+  const int panelY     = screenHeight - panelH - metrics.buttonHintsHeight;
+  const int margin     = 20;
+  const int rowHeight  = 52;
+  const int rowGap    = 8;
+
+  // White filled background
+  renderer.fillRoundedRect(0, panelY, screenWidth, panelH + metrics.buttonHintsHeight, 0, White);
+  // Top 6px shadow line
+  for (int i = 0; i < 6; i++) {
+    renderer.drawLine(0, panelY + i, screenWidth, panelY + i);
+  }
+
+  // Panel header
+  renderer.drawText(UI_12_FONT_ID, margin + 12, panelY + 22, "Manage AO3 Library", true, EpdFontFamily::BOLD);
+
+  // Row definitions
+  const char* rowLabels[2] = { "Index New Books", "Settings" };
+  const char* rowDescs[2]  = {
+    "Scan AO3 folder & find unindexed epubs",
+    "Set AO3 folder & Filter mode"
+  };
+
+  const int firstRowY = panelY + 62;
+  for (int i = 0; i < 2; i++) {
+    const int rowY     = firstRowY + i * (rowHeight + rowGap);
+    const bool sel     = (managePanelRowIndex == i);
+
+    if (sel) {
+      renderer.fillRoundedRect(margin, rowY,
+                               screenWidth - 2 * margin, rowHeight, 6,
+                               true, true, true, true, LightGray);
+    }
+
+    renderer.drawText(UI_10_FONT_ID, margin + 12, rowY + 4, rowLabels[i], true);
+    renderer.drawText(SMALL_FONT_ID, margin + 12, rowY + 26, rowDescs[i]);
+  }
+
+  // Button hints override for the panel
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), "Select", tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+
+  // Manage panel triangle indicator — in button hints bar, same X as header triangle
+  {
+    const int tx = renderer.getScreenWidth() - 26;
+    const int hintsY = renderer.getScreenHeight() - metrics.buttonHintsHeight;
+    const int ty = hintsY + metrics.buttonHintsHeight / 2;
+    if (screenState == ScreenState::MANAGE_PANEL) {
+
+        // ▼ pointing down when panel is open
+        const int xPts[] = { tx, tx + 12, tx + 6 };
+        const int yPts[] = { ty - 5, ty - 5, ty + 5 };
+        renderer.fillPolygon(xPts, yPts, 3, Black);
+    }
+  }
+}
 
 void Ao3LibraryActivity::renderFilterOverlay() {
   const int screenWidth = renderer.getScreenWidth();
@@ -891,6 +1143,19 @@ void Ao3LibraryActivity::loadSortFilterState() {
     memset(activeState.relationship, 0, 32);
     activeState.relationshipNoneOnly = false;
   }
+
+  uint8_t persistedFm = doc["filterMode"] | 0;
+  if (activeState.fandom[0] != '\0' && persistedFm != static_cast<uint8_t>(filterMode)) {
+      memset(activeState.fandom,       0, 32);
+      memset(activeState.relationship, 0, 32);
+      activeState.relationshipNoneOnly = false;
+  }
+
+  if (filterMode == FilterMode::FOLDER_TREE && ao3Folder.empty()) {
+      memset(activeState.fandom,       0, 32);
+      memset(activeState.relationship, 0, 32);
+      activeState.relationshipNoneOnly = false;
+  }
 }
 
 void Ao3LibraryActivity::saveSortFilterState() const {
@@ -900,6 +1165,7 @@ void Ao3LibraryActivity::saveSortFilterState() const {
   doc["relationshipNoneOnly"] = activeState.relationshipNoneOnly;
   doc["sortMode"]             = static_cast<uint8_t>(activeState.sortMode);
   doc["ascending"]            = activeState.ascending;
+  doc["filterMode"]           = static_cast<uint8_t>(filterMode);
 
   String json;
   serializeJson(doc, json);
@@ -968,6 +1234,10 @@ void Ao3LibraryActivity::resortViewEntries() {
 // ---------------------------------------------------------------------------
 
 bool Ao3LibraryActivity::passesFilter(const ViewEntry& v, const FilterHashes& h) const {
+  if (filterMode == FilterMode::FOLDER_TREE) {
+      return std::binary_search(allowedHashes.begin(), allowedHashes.end(), v.cacheHash);
+  }
+
   if (h.fandomActive) {
     if (v.fandomHash != h.fandomHash) return false;
     if (h.relationshipNoneOnly) {
@@ -1019,6 +1289,23 @@ void Ao3LibraryActivity::rebuildViewEntries() {
     return;
   }
 
+  if (filterMode == FilterMode::FOLDER_TREE && allowedHashes.empty() && !ao3Folder.empty()) {
+      if (activeState.fandom[0] != '\0') {
+          std::string scanPath = ao3Folder;
+          if (scanPath.back() != '/') scanPath += "/";
+          scanPath += activeState.fandom;
+          if (activeState.relationship[0] != '\0') {
+              scanPath += "/";
+              scanPath += activeState.relationship;
+              buildAllowedHashes(scanPath, 0);
+          } else {
+              buildAllowedHashes(scanPath, 1);
+          }
+      } else {
+          buildAllowedHashes(ao3Folder, 2);
+      }
+  }
+
   const FilterHashes filterHashes = computeFilterHashes(activeState);
   viewEntries.reserve(recordCount);
 
@@ -1051,6 +1338,24 @@ void Ao3LibraryActivity::applyStateChange(const SortFilterState& prev, const Sor
       prev.sortMode  != next.sortMode ||
       prev.ascending != next.ascending;
 
+  if (filterMode == FilterMode::FOLDER_TREE && filterChanged) {
+      allowedHashes.clear();
+      if (next.fandom[0] != '\0') {
+          std::string scanPath = ao3Folder;
+          if (scanPath.back() != '/') scanPath += "/";
+          scanPath += next.fandom;
+          if (next.relationship[0] != '\0') {
+              scanPath += "/";
+              scanPath += next.relationship;
+              buildAllowedHashes(scanPath, 0);
+          } else {
+              buildAllowedHashes(scanPath, 1);
+          }
+      } else {
+          if (!ao3Folder.empty()) buildAllowedHashes(ao3Folder, 2);
+      }
+  }
+
   if (filterChanged) {
     rebuildViewEntries();
   } else if (sortChanged) {
@@ -1067,6 +1372,28 @@ void Ao3LibraryActivity::applyStateChange(const SortFilterState& prev, const Sor
 // ---------------------------------------------------------------------------
 
 void Ao3LibraryActivity::buildFandomList(std::vector<std::string>& out) const {
+  if (filterMode == FilterMode::FOLDER_TREE) {
+      if (ao3Folder.empty()) return;
+      FsFile root = Storage.open(ao3Folder.c_str());
+      if (!root || !root.isDirectory()) { if (root) root.close(); return; }
+
+      char name[256];
+      FsFile entry;
+      while (entry = root.openNextFile()) {
+          entry.getName(name, sizeof(name));
+          if (entry.isDirectory() && name[0] != '.' &&
+              strcmp(name, "System Volume Information") != 0) {
+              out.push_back(name);
+          }
+          entry.close();
+      }
+      root.close();
+      std::sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) {
+          return strcasecmp(a.c_str(), b.c_str()) < 0;
+      });
+      return;
+  }
+
   const char* indexPath = "/.crosspoint/ao3_library_index.bin";
   FsFile f;
   if (!Storage.openFileForRead("AO3L", indexPath, f)) return;
@@ -1108,6 +1435,34 @@ void Ao3LibraryActivity::buildFandomList(std::vector<std::string>& out) const {
 
 void Ao3LibraryActivity::buildRelationshipList(const char* fandom, std::vector<std::string>& out, bool& hasNoneEntries) const {
   hasNoneEntries = false;
+
+  if (filterMode == FilterMode::FOLDER_TREE) {
+      if (ao3Folder.empty() || !fandom || fandom[0] == '\0') return;
+
+      std::string fandomPath = ao3Folder;
+      if (fandomPath.back() != '/') fandomPath += "/";
+      fandomPath += fandom;
+
+      FsFile root = Storage.open(fandomPath.c_str());
+      if (!root || !root.isDirectory()) { if (root) root.close(); return; }
+
+      char name[256];
+      FsFile entry;
+      while (entry = root.openNextFile()) {
+          entry.getName(name, sizeof(name));
+          if (entry.isDirectory() && name[0] != '.' &&
+              strcmp(name, "System Volume Information") != 0) {
+              out.push_back(name);
+          }
+          entry.close();
+      }
+      root.close();
+      std::sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) {
+          return strcasecmp(a.c_str(), b.c_str()) < 0;
+      });
+      return;
+  }
+
   const char* indexPath = "/.crosspoint/ao3_library_index.bin";
   FsFile f;
   if (!Storage.openFileForRead("AO3L", indexPath, f)) return;

@@ -6,7 +6,9 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 #include "BookStatus.h"
+
 
 struct WifiResult {
   bool connected = false;
@@ -55,6 +57,7 @@ struct BookActionResult {
   bool deleted = false;
   bool modified = false;
   BookStatus newStatus = BookStatus::START;
+  bool indexingCompleted = false;
 };
 
 struct AO3Result {
@@ -64,8 +67,20 @@ struct AO3Result {
   bool downloaded = false;
 };
 
+struct FolderPickerResult {
+  std::string singlePath;              // populated in SINGLE mode
+  std::vector<std::string> multiPaths; // populated in MULTI mode
+  bool isMulti = false;
+};
+
+struct Ao3IndexResult {
+  bool indexingCompleted = false;
+  bool successfullyIndexed = false;
+};
+
 using ResultVariant = std::variant<std::monostate, WifiResult, KeyboardResult, MenuResult, ChapterResult, PercentResult,
-                                   PageResult, SyncResult, NetworkModeResult, FootnoteResult, BookActionResult, AO3Result>;
+                                   PageResult, SyncResult, NetworkModeResult, FootnoteResult, BookActionResult, AO3Result,
+                                   FolderPickerResult, Ao3IndexResult>;
 
 struct ActivityResult {
   bool isCancelled = false;
@@ -76,6 +91,12 @@ struct ActivityResult {
   template <typename ResultType, typename = std::enable_if_t<std::is_constructible_v<ResultVariant, ResultType&&>>>
   // cppcheck-suppress noExplicitConstructor
   ActivityResult(ResultType&& result) : data{std::forward<ResultType>(result)} {}
+
+  static ActivityResult cancel() {
+    ActivityResult r;
+    r.isCancelled = true;
+    return r;
+  }
 };
 
 using ActivityResultHandler = std::function<void(const ActivityResult&)>;

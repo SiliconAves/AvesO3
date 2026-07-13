@@ -1,33 +1,35 @@
 # What's Different in AvesO3
 **Before flashing: ensure your device is UNLOCKED. Do not flash through the unlocker tool.**
-- [x] AO3-style library browser, complete with summary and metadata square.
-- [x] Download new chapters directly from AO3
-- [x] Track the status of each fic directly from the File Browser (introduces 5 statuses, with a corresponding icon: Unread, Reading, Waiting for Chapter, New Chapter Available, Finished)
-- [x] Pin your longfics to the homescreen, so they aren't pushed off by your oneshots
-- [x] Added Noto Sans 10pt to replicate the experience of reading AO3 on a phone
-- [x] Improved menu navigation: hold left/right to skip multiple lines in File Browser, Reader Menu and Homescreen
-- [x] Support for line breaks
+- [x] **AO3-style library browser**, complete with summary and metadata square.
+- [x] Compatible with **Calibre+FanFicFare epubs** with <u>unmodified metadata spine</u> and **epubs from AO3**
+- [x] **Download new chapters** directly from AO3
+- [x] **Track the status** of each fic directly from the File Browser (introduces 5 statuses, with a corresponding icon: Unread, Reading, Waiting for Chapter, New Chapter Available, Finished)
+- [x] **Pin your longfics** to the homescreen, so they aren't pushed off by your oneshots
+- [x] **Added Noto Sans 10pt** to replicate the experience of reading AO3 on a phone
+- [x] **Improved menu navigation**: hold left/right to skip multiple lines in File Browser, Reader Menu and Homescreen
+- [x] Support for **line breaks**
 
-What's next:
-- [x] AO3 Library sorting and filtering
-- [ ] Auto index ao3 stories in chunks, so they don't need to be opened individually anymore
-- [ ] Series continous reading
-- [ ] Ao3 library fitlering based on folder structure as an option
+What's next in AvesO3 1.3.0:
+- [x] AO3 Library **sorting and filtering** with 2 modes (Automatic & Folder Tree)
+- [x] **Auto index ao3 stories** in chunks, so they don't need to be opened individually anymore
+- [ ] Catch up with CrossPoint 1.3.0 ---WIP---
 
 What may come in the future:
-- [ ] Locked fics support
-- [ ] Online backend that can host your library online
+- [ ] **Series continous reading**
+- [ ] **Quick Access**: Marked for Later, Bookmarked fics, Fics waiting for chapter all in one place
+- [ ] **Ascii symbols** support 
+- [ ] **Locked fics** support
+- [ ] Online backend to host your library online
 - [ ] More!
 
-# Progress on next version
+# Progress on AvesO3 v.1.3.0
 **NEW - Automatic Sort and Filter**
 <img src="docs/images/AvesO3/sortFilter.jpg" width="300" align="left" style="margin-right: 30px; border: 1px solid black;"/>
-<br>NOTE: THIS REQUIRES DELETING BOOK CACHE IF YOU PREVIOUSLY INDEXED BOOKS ON 1.2.2.
-<br><br>Automatically Filter by: <br>
+<br><br>Automatically Filter by:
 + **Fandom**
 + **Relationship** (up to 2 relationships)<br><br> 
 
-Sort by:<br>
+Sort by:
 + **Title**
 + **Author**
 + **Word Count**
@@ -35,9 +37,35 @@ Sort by:<br>
 + **Date Added**<br><br>
 
 **NAVIGATION:** 
-+ **Down Button** opens the filter panel.
++ **DOWN** button opens the filter panel.
 + Inside the panel, **holding Next/Down** will bring you to the confirm button instantly.
 <br clear="left"/> <br>
+
+**NEW - Library Auto-Index**
+<img src="docs/images/AvesO3/manageLibrary.jpg" width="300" align="left" style="margin-right: 30px; border: 1px solid black;"/><br><br>
+**NAVIGATION:**<br>
+Press **UP** to access this menu. <br><br>
+Select **Index New Books** to start indexing ao3 books found in your AO3 folder, in batches of 10, 15 or 20 books depending on your choice (you can change this in **AO3 Library Settings**).<br><br>
+Remember to **set up your AO3 folder in the AO3 Settings menu below.**
+<br><br>
+Indexing/Force Reindexing a **Single Book** is available from the  **long press Confirm** menu in File Browser/AO3 Library.<br><br>
+
+<br clear="left"/> <br>
+
+**NEW - AO3 Library Settings**
+<img src="docs/images/AvesO3/librarySettings.jpg" width="300" align="left" style="margin-right: 30px; border: 1px solid black;"/><br><br>
+**NAVIGATION:**<br>
+Select **AO3 Library Settings** from manage panel.<br><br>
+Available settings:<br>
++ **Your AO3 Folder**: select the folder where you put your AO3 books. This folder will be scanned for new epubs during indexing.
++ **Ignored Folders**: multi-select all the folders you never want to index. (useful if you keep your AO3 stories in root/ alongside other folders, such as Books, Comics, ...)
++ **Index Batch Size**: Books will be indexed in batches. You can choose the size of the batch here.
++ **Filter Mode**: Choose between AUTOMATIC/FOLDER TREE.<br>
+<br clear="left"/> <br>
+**FOLDER TREE MODE**: Choose this mode if you keep your AO3 stories organized **in this exact manner**:<br> **YourAO3Folder/Fandom/Relationship**<br>
+Your folder names will be shown when you filter your library by fandom/relationships. This is especially useful if you use the auto-folders on transfer feature from Calibre. All epubs outside of the Relationship folders will be ignored. You can name the Fandom and Relationship folders as you please, as long as you keep the structure intact.
+<br><br>
+**AUTOMATIC MODE**: Choose this mode if you DO NOT organize your books as described above, or you don't organize them at all. Fandom and Relationship will be **detected automatically**. This mode supports **up to two relationships** during filtering.
 
 # Feature Showcase
 
@@ -46,12 +74,12 @@ Sort by:<br>
 
 AO3-style library with summary and metadata, accessible from the Homescreen. 
 In the AO3 square, the top right area has been changed to display the reading status (see point 3) instead of the relationship type. <br><br>
-**Icon meaning:** <br>
-\-    | Unread <br>
-R     | Reading <br>
-F     | Finished<br>
-·     | Waiting for Chapter <br>
-·     | (Black background) New Chapter Available <br> <br> 
+**Reading Status (Top Right of AO3 square):** <br>
+White - : Unread book<br>
+▲ : Waiting for Chapter<br>
+▲+●: New Chapter Available<br>
+R + Grey: Currently reading<br>
+F + Black: Finished reading<br> <br> <br> 
 **Navigation**: hold right/down and left/up to skip a page. <br><br>
 **Warning:** in order for the stories to appear in this menu, they need to be opened **at least once**. 
 <br clear="left"/> <br>
@@ -59,7 +87,7 @@ F     | Finished<br>
 **2. Update Chapters On-Device**
 <img src="docs/images/AvesO3/newEndOfBook.jpg" width="300" align="left" style="margin-right: 15px; border: 1px solid black;"/>
 <br><br>**New End of Book screen:** when the story is marked as in-progress, a new End of Book screen appears. While connected to wi-fi, pressing **Search** will start a story update check. If it's successfull, you can choose to download the updated story directly from AO3. <br><br>
-**Warning:** locked fics are currently unsupported.
+**Warning:** locked fics are currently unsupported. <br><br>**Your local file will be overwritten with the one you downloaded from AO3.**
 <br clear="left"/>
 
 **3. File Browser Status Tracking**
@@ -68,7 +96,7 @@ F     | Finished<br>
 **Icon Meaning:** <br>
 White Book: Unread book<br>
 ▲ : Waiting for Chapter<br>
-▲ with dot: New Chapter Available<br>
+▲+●: New Chapter Available<br>
 Grey Book: Currently reading<br>
 Black with Checkmark: Finished reading<br>
 
