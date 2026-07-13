@@ -12,11 +12,11 @@
 What's next in AvesO3 1.3.0:
 - [x] AO3 Library **sorting and filtering** with 2 modes (Automatic & Folder Tree)
 - [x] **Auto index ao3 stories** in chunks, so they don't need to be opened individually anymore
-- [ ] Catch up with CrossPoint 1.3.0 ---WIP---
+- [x] Catch up with CrossPoint 1.3.0 (needs testing)
 
 What may come in the future:
 - [ ] Series continous reading
-- [ ] Quick Access: Marked for Later, Bookmarked fics, Fics waiting for chapter all in one place
+- [ ] Quick Access Menu: Marked for Later, Followed Fics (Subscriptions), Bookmarked fics
 - [ ] Ascii symbols support 
 - [ ] Locked fics support
 - [ ] Online backend that can host your library online
