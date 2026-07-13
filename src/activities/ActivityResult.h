@@ -6,6 +6,9 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
+#include "BookStatus.h"
+
 
 struct WifiResult {
   bool connected = false;
@@ -21,6 +24,7 @@ struct MenuResult {
   int action = -1;
   uint8_t orientation = 0;
   uint8_t pageTurnOption = 0;
+  BookStatus status = BookStatus::READING;
 };
 
 struct ChapterResult {
@@ -54,12 +58,45 @@ struct FilePathResult {
   std::string path;
 };
 
+struct BookActionResult {
+  bool deleted = false;
+  bool modified = false;
+  BookStatus newStatus = BookStatus::START;
+  bool indexingCompleted = false;
+};
+
+struct AO3Result {
+  std::string scrapedDate;
+  bool isCompleted = false;
+  bool updateFound = false;
+  bool downloaded = false;
+};
+
+struct FolderPickerResult {
+  std::string singlePath;              // populated in SINGLE mode
+  std::vector<std::string> multiPaths; // populated in MULTI mode
+  bool isMulti = false;
+};
+
+struct Ao3IndexResult {
+  bool indexingCompleted = false;
+  bool successfullyIndexed = false;
+};
+
+// --- Updated Variant containing your custom results ---
 using ResultVariant = std::variant<std::monostate, WifiResult, KeyboardResult, MenuResult, ChapterResult, PercentResult,
-                                   PageResult, SyncResult, NetworkModeResult, FootnoteResult, FilePathResult>;
+                                   PageResult, SyncResult, NetworkModeResult, FootnoteResult, FilePathResult, 
+                                   BookActionResult, AO3Result, FolderPickerResult, Ao3IndexResult>;
 
 struct ActivityResult {
   bool isCancelled = false;
   ResultVariant data;
+
+  static ActivityResult cancel() {
+    ActivityResult r;
+    r.isCancelled = true;
+    return r;
+  }
 
   explicit ActivityResult() = default;
 

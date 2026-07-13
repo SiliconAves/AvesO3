@@ -17,6 +17,7 @@
 #include "reader/ReaderActivity.h"
 #include "settings/OpdsServerListActivity.h"
 #include "settings/SettingsActivity.h"
+#include "home/Ao3LibraryActivity.h"
 #include "util/FullScreenMessageActivity.h"
 
 void ActivityManager::begin() {
@@ -196,6 +197,10 @@ void ActivityManager::goToBrowser() {
 void ActivityManager::goToReader(std::string path) {
   ensureSdFontLoaded();
   replaceActivity(std::make_unique<ReaderActivity>(renderer, mappedInput, std::move(path)));
+}
+
+void ActivityManager::goToAo3Library() {
+  replaceActivity(std::make_unique<Ao3LibraryActivity>(renderer, mappedInput));
 }
 
 void ActivityManager::goToSleep() {

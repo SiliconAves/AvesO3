@@ -1,9 +1,11 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
+#include "BookStatus.h"
 #include "../Activity.h"
 #include "RecentBooksStore.h"
 #include "util/ButtonNavigator.h"
@@ -33,6 +35,8 @@ class FileBrowserActivity final : public Activity {
   std::vector<std::string> files;
 
   // Data loading
+  BookStatus getBookStatus(const std::string& path);
+  std::map<int, BookStatus> visibleStatusCache;
   void loadFiles();
   size_t findEntry(const std::string& name) const;
 

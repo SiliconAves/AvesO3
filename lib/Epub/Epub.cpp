@@ -3,6 +3,7 @@
 #include <FsHelpers.h>
 #include <HalStorage.h>
 #include <JpegToBmpConverter.h>
+#include <Serialization.h>
 #include <Logging.h>
 #include <PngToBmpConverter.h>
 #include <ZipFile.h>
@@ -11,6 +12,7 @@
 #include "Epub/parsers/ContentOpfParser.h"
 #include "Epub/parsers/TocNavParser.h"
 #include "Epub/parsers/TocNcxParser.h"
+#include "../../src/Ao3Librarian.h"
 
 bool Epub::findContentOpfFile(std::string* contentOpfFile) const {
   const auto containerPath = "META-INF/container.xml";
@@ -135,6 +137,11 @@ bool Epub::parseContentOpf(BookMetadataCache::BookMetadata& bookMetadata) {
   if (!opfParser.cssFiles.empty()) {
     cssFiles = opfParser.cssFiles;
   }
+
+  // Transfer AO3 metadata
+  bookMetadata.ao3WorkId = opfParser.ao3WorkId;
+  bookMetadata.ao3UpdateDate = opfParser.ao3UpdateDate;
+  bookMetadata.ao3IsCompleted = opfParser.ao3IsCompleted;
 
   LOG_DBG("EBP", "Successfully parsed content.opf");
   return true;
@@ -334,7 +341,7 @@ void Epub::parseCssFiles() const {
 }
 
 // load in the meta data for the epub file
-bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss) {
+bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const bool skipScraping) {
   LOG_DBG("EBP", "Loading ePub: %s", filepath.c_str());
 
   // Initialize spine/TOC cache
@@ -360,6 +367,21 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss) {
       }
     }
     LOG_DBG("EBP", "Loaded ePub: %s", filepath.c_str());
+
+    // Generate AO3 sidecar if missing but ID exists in metadata
+    if (!hasAo3Info() && !bookMetadataCache->coreMetadata.ao3WorkId.empty()) {
+      saveAo3Info(bookMetadataCache->coreMetadata.ao3WorkId, bookMetadataCache->coreMetadata.ao3UpdateDate,
+                  bookMetadataCache->coreMetadata.ao3IsCompleted);
+    }
+
+    // Global Library: Generate/Fix extended metadata sidecar (FanFicFare ao3WorkId or AO3-download preface)
+    if (!skipScraping) {
+      const auto& ao3WorkId = bookMetadataCache->coreMetadata.ao3WorkId;
+      if (!ao3WorkId.empty() || Ao3Librarian::sniffNativeAo3Preface(*this)) {
+        Ao3Librarian::scrape(*this);
+      }
+    }
+
     return true;
   }
 
@@ -371,6 +393,7 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss) {
   // Cache doesn't exist or is invalid, build it
   LOG_DBG("EBP", "Cache not found, building spine/TOC cache");
   setupCacheDir();
+  Storage.remove((cachePath + "/ao3_library_info").c_str());
 
   const uint32_t indexingStart = millis();
 
@@ -459,6 +482,21 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss) {
     // Parse CSS files after cache reload
     parseCssFiles();
     Storage.removeDir((cachePath + "/sections").c_str());
+  }
+
+    // Generate AO3 sidecar if missing but ID exists in metadata
+    if (!hasAo3Info() && !bookMetadataCache->coreMetadata.ao3WorkId.empty()) {
+      saveAo3Info(bookMetadataCache->coreMetadata.ao3WorkId, bookMetadataCache->coreMetadata.ao3UpdateDate,
+                  bookMetadataCache->coreMetadata.ao3IsCompleted);
+    }
+
+  // Global Library: Generate/Fix extended metadata sidecar (FanFicFare ao3WorkId or AO3-download preface)
+  if (!skipScraping && bookMetadataCache->isLoaded()) {
+    const auto& ao3WorkId = bookMetadataCache->coreMetadata.ao3WorkId;
+    if (!ao3WorkId.empty() || Ao3Librarian::sniffNativeAo3Preface(*this)) {
+      yield();
+      Ao3Librarian::scrape(*this);
+    }
   }
 
   LOG_DBG("EBP", "Loaded ePub: %s", filepath.c_str());
@@ -885,4 +923,182 @@ int Epub::resolveHrefToSpineIndex(const std::string& href) const {
     if (spineFilename == targetFilename) return i;
   }
   return -1;
+}
+
+bool Epub::hasAo3Info() const { return Storage.exists((cachePath + "/ao3-info.bin").c_str()); }
+
+std::string Epub::getAo3WorkId() const {
+  FsFile f;
+  if (Storage.openFileForRead("EBP", cachePath + "/ao3-info.bin", f)) {
+    if (f.size() < 9) {
+      f.close();
+      return bookMetadataCache ? bookMetadataCache->coreMetadata.ao3WorkId : "";
+    }
+    bool completed;
+    std::string id;
+    serialization::readPod(f, completed);
+    serialization::readString(f, id);
+    f.close();
+    return id;
+  }
+  return bookMetadataCache ? bookMetadataCache->coreMetadata.ao3WorkId : "";
+}
+
+std::string Epub::getAo3UpdateDate() const {
+  FsFile f;
+  if (Storage.openFileForRead("EBP", cachePath + "/ao3-info.bin", f)) {
+    if (f.size() < 9) {
+      f.close();
+      return bookMetadataCache ? bookMetadataCache->coreMetadata.ao3UpdateDate : "";
+    }
+    bool completed;
+    std::string id, date;
+    serialization::readPod(f, completed);
+    serialization::readString(f, id);
+    serialization::readString(f, date);
+    f.close();
+    return date;
+  }
+  return bookMetadataCache ? bookMetadataCache->coreMetadata.ao3UpdateDate : "";
+}
+
+bool Epub::isAo3Completed() const {
+  FsFile f;
+  if (Storage.openFileForRead("EBP", cachePath + "/ao3-info.bin", f)) {
+    if (f.size() < 9) {
+      f.close();
+      return bookMetadataCache ? bookMetadataCache->coreMetadata.ao3IsCompleted : false;
+    }
+    bool completed;
+    serialization::readPod(f, completed);
+    f.close();
+    return completed;
+  }
+  return bookMetadataCache ? bookMetadataCache->coreMetadata.ao3IsCompleted : false;
+}
+
+void Epub::saveAo3Info(const std::string& workId, const std::string& date, const bool completed) const {
+  FsFile f;
+  if (Storage.openFileForWrite("EBP", cachePath + "/ao3-info.bin", f)) {
+    serialization::writePod(f, completed);
+    serialization::writeString(f, workId);
+    serialization::writeString(f, date);
+    f.close();
+  }
+}
+
+namespace {
+class PublisherParser final : public Print {
+  enum ParserState {
+    START,
+    IN_PACKAGE,
+    IN_METADATA,
+    IN_DC_PUBLISHER
+  };
+
+  size_t remainingSize;
+  XML_Parser parser = nullptr;
+  ParserState state = START;
+
+  static void startElement(void* userData, const XML_Char* name, const XML_Char** atts) {
+    auto* self = static_cast<PublisherParser*>(userData);
+    (void)atts;
+    if (self->state == START && (strcmp(name, "package") == 0 || strcmp(name, "opf:package") == 0)) {
+      self->state = IN_PACKAGE;
+      return;
+    }
+    if (self->state == IN_PACKAGE && (strcmp(name, "metadata") == 0 || strcmp(name, "opf:metadata") == 0)) {
+      self->state = IN_METADATA;
+      return;
+    }
+    if (self->state == IN_METADATA && strcmp(name, "dc:publisher") == 0) {
+      self->state = IN_DC_PUBLISHER;
+      return;
+    }
+  }
+
+  static void characterData(void* userData, const XML_Char* s, int len) {
+    auto* self = static_cast<PublisherParser*>(userData);
+    if (self->state == IN_DC_PUBLISHER) {
+      self->publisher.append(s, len);
+    }
+  }
+
+  static void endElement(void* userData, const XML_Char* name) {
+    auto* self = static_cast<PublisherParser*>(userData);
+    if (self->state == IN_DC_PUBLISHER && strcmp(name, "dc:publisher") == 0) {
+      self->state = IN_METADATA;
+    } else if (self->state == IN_METADATA && (strcmp(name, "metadata") == 0 || strcmp(name, "opf:metadata") == 0)) {
+      self->state = IN_PACKAGE;
+    } else if (self->state == IN_PACKAGE && (strcmp(name, "package") == 0 || strcmp(name, "opf:package") == 0)) {
+      self->state = START;
+    }
+  }
+
+ public:
+  std::string publisher;
+
+  explicit PublisherParser(const size_t xmlSize) : remainingSize(xmlSize) {}
+  ~PublisherParser() override {
+    if (parser) {
+      XML_StopParser(parser, XML_FALSE);
+      XML_SetElementHandler(parser, nullptr, nullptr);
+      XML_SetCharacterDataHandler(parser, nullptr);
+      XML_ParserFree(parser);
+      parser = nullptr;
+    }
+  }
+
+  bool setup() {
+    parser = XML_ParserCreate(nullptr);
+    if (!parser) return false;
+    XML_SetUserData(parser, this);
+    XML_SetElementHandler(parser, startElement, endElement);
+    XML_SetCharacterDataHandler(parser, characterData);
+    return true;
+  }
+
+  size_t write(uint8_t data) override { return write(&data, 1); }
+  size_t write(const uint8_t* buffer, size_t size) override {
+    if (!parser) return 0;
+    const uint8_t* currentBufferPos = buffer;
+    auto remainingInBuffer = size;
+    while (remainingInBuffer > 0) {
+      void* const buf = XML_GetBuffer(parser, 1024);
+      if (!buf) return 0;
+      const auto toRead = remainingInBuffer < 1024 ? remainingInBuffer : 1024;
+      memcpy(buf, currentBufferPos, toRead);
+      if (XML_ParseBuffer(parser, static_cast<int>(toRead), remainingSize == toRead) == XML_STATUS_ERROR) {
+        return 0;
+      }
+      currentBufferPos += toRead;
+      remainingInBuffer -= toRead;
+      remainingSize -= toRead;
+    }
+    return size;
+  }
+};
+} // namespace
+
+std::string Epub::sniffPublisher() const {
+  std::string opfPath;
+  if (!findContentOpfFile(&opfPath)) {
+    return "";
+  }
+
+  size_t opfSize;
+  if (!getItemSize(opfPath, &opfSize)) {
+    return "";
+  }
+
+  PublisherParser parser(opfSize);
+  if (!parser.setup()) {
+    return "";
+  }
+
+  if (!readItemContentsToStream(opfPath, parser, opfSize)) {
+    return "";
+  }
+
+  return parser.publisher;
 }

@@ -99,7 +99,7 @@ void CalibreConnectActivity::stopWebServer() {
 }
 
 void CalibreConnectActivity::loop() {
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     exitRequested = true;
   }
 
@@ -118,7 +118,7 @@ void CalibreConnectActivity::loop() {
       }
       if ((i & 0x0F) == 0x0F) {
         yield();
-        if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+        if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
           exitRequested = true;
           break;
         }

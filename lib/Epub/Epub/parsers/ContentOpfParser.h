@@ -18,6 +18,10 @@ class ContentOpfParser final : public Print {
     IN_BOOK_TITLE,
     IN_BOOK_AUTHOR,
     IN_BOOK_LANGUAGE,
+    IN_DC_IDENTIFIER,
+    IN_DC_PUBLISHER,
+    IN_DC_SUBJECT,
+    IN_DC_SOURCE,
     IN_MANIFEST,
     IN_SPINE,
     IN_GUIDE,
@@ -67,6 +71,12 @@ class ContentOpfParser final : public Print {
   std::string guideCoverPageHref;  // Guide reference with type="cover" or "cover-page" (points to XHTML wrapper)
   std::string textReferenceHref;
   std::vector<std::string> cssFiles;  // CSS stylesheet paths
+
+  // AO3 support
+  std::string ao3WorkId;
+  std::string ao3UpdateDate;
+  std::string identifierBuffer; // Temporary buffer for ID tags
+  bool ao3IsCompleted = false;
 
   explicit ContentOpfParser(const std::string& cachePath, const std::string& baseContentPath, const size_t xmlSize,
                             BookMetadataCache* cache)

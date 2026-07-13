@@ -29,10 +29,10 @@
 #include <builtinFonts/notosans_16_bolditalic.h>
 #include <builtinFonts/notosans_16_italic.h>
 #include <builtinFonts/notosans_16_regular.h>
-#include <builtinFonts/notosans_18_bold.h>
-#include <builtinFonts/notosans_18_bolditalic.h>
-#include <builtinFonts/notosans_18_italic.h>
-#include <builtinFonts/notosans_18_regular.h>
+#include <builtinFonts/notosans_10_bold.h>
+#include <builtinFonts/notosans_10_bolditalic.h>
+#include <builtinFonts/notosans_10_italic.h>
+#include <builtinFonts/notosans_10_regular.h>
 #include <builtinFonts/opendyslexic_10_bold.h>
 #include <builtinFonts/opendyslexic_10_bolditalic.h>
 #include <builtinFonts/opendyslexic_10_italic.h>

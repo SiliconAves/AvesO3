@@ -12,6 +12,34 @@ void ButtonNavigator::onPrevious(const Callback& callback) {
   onPreviousContinuous(callback);
 }
 
+void ButtonNavigator::onFrontNext(const Callback& callback) {
+  onPress(getFrontNextButtons(), callback);
+  onFrontNextContinuous(callback);
+}
+
+void ButtonNavigator::onFrontPrevious(const Callback& callback) {
+  onPress(getFrontPreviousButtons(), callback);
+  onFrontPreviousContinuous(callback);
+}
+
+void ButtonNavigator::onSideNext(const Callback& callback) {
+  onPress(getSideNextButtons(), callback);
+  onSideNextContinuous(callback);
+}
+
+void ButtonNavigator::onSidePrevious(const Callback& callback) {
+  onPress(getSidePreviousButtons(), callback);
+  onSidePreviousContinuous(callback);
+}
+
+void ButtonNavigator::onFrontNextPress(const Callback& callback) { onPress(getFrontNextButtons(), callback); }
+
+void ButtonNavigator::onFrontPreviousPress(const Callback& callback) { onPress(getFrontPreviousButtons(), callback); }
+
+void ButtonNavigator::onSideNextPress(const Callback& callback) { onPress(getSideNextButtons(), callback); }
+
+void ButtonNavigator::onSidePreviousPress(const Callback& callback) { onPress(getSidePreviousButtons(), callback); }
+
 void ButtonNavigator::onPressAndContinuous(const Buttons& buttons, const Callback& callback) {
   onPress(buttons, callback);
   onContinuous(buttons, callback);
@@ -28,6 +56,16 @@ void ButtonNavigator::onPreviousRelease(const Callback& callback) { onRelease(ge
 void ButtonNavigator::onNextContinuous(const Callback& callback) { onContinuous(getNextButtons(), callback); }
 
 void ButtonNavigator::onPreviousContinuous(const Callback& callback) { onContinuous(getPreviousButtons(), callback); }
+
+void ButtonNavigator::onFrontNextContinuous(const Callback& callback) { onContinuous(getFrontNextButtons(), callback); }
+
+void ButtonNavigator::onFrontPreviousContinuous(const Callback& callback) {
+  onContinuous(getFrontPreviousButtons(), callback);
+}
+
+void ButtonNavigator::onSideNextContinuous(const Callback& callback) { onContinuous(getSideNextButtons(), callback); }
+
+void ButtonNavigator::onSidePreviousContinuous(const Callback& callback) { onContinuous(getSidePreviousButtons(), callback); }
 
 void ButtonNavigator::onPress(const Buttons& buttons, const Callback& callback) {
   const bool wasPressed = std::any_of(buttons.begin(), buttons.end(), [](const MappedInputManager::Button button) {
@@ -121,4 +159,24 @@ int ButtonNavigator::previousPageIndex(const int currentIndex, const int totalIt
   }
 
   return lastPageIndex * itemsPerPage;
+}
+
+int ButtonNavigator::nextFourIndex(const int currentIndex, const int totalItems) {
+  if (totalItems <= 0) return 0;
+  return (currentIndex + 4) % totalItems;
+}
+
+int ButtonNavigator::previousFourIndex(const int currentIndex, const int totalItems) {
+  if (totalItems <= 0) return 0;
+  return (currentIndex + totalItems - (4 % totalItems)) % totalItems;
+}
+
+int ButtonNavigator::nextThreeIndex(const int currentIndex, const int totalItems) {
+  if (totalItems <= 0) return 0;
+  return (currentIndex + 3) % totalItems;
+}
+
+int ButtonNavigator::previousThreeIndex(const int currentIndex, const int totalItems) {
+  if (totalItems <= 0) return 0;
+  return (currentIndex + totalItems - (3 % totalItems)) % totalItems;
 }

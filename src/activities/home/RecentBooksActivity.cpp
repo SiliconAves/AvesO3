@@ -71,13 +71,23 @@ void RecentBooksActivity::loop() {
     requestUpdate();
   });
 
-  buttonNavigator.onNextContinuous([this, listSize, pageItems] {
+  buttonNavigator.onSideNextContinuous([this, listSize, pageItems] {
     selectorIndex = ButtonNavigator::nextPageIndex(static_cast<int>(selectorIndex), listSize, pageItems);
     requestUpdate();
   });
 
-  buttonNavigator.onPreviousContinuous([this, listSize, pageItems] {
+  buttonNavigator.onSidePreviousContinuous([this, listSize, pageItems] {
     selectorIndex = ButtonNavigator::previousPageIndex(static_cast<int>(selectorIndex), listSize, pageItems);
+    requestUpdate();
+  });
+
+  buttonNavigator.onFrontNextContinuous([this, listSize] {
+    selectorIndex = ButtonNavigator::nextFourIndex(static_cast<int>(selectorIndex), listSize);
+    requestUpdate();
+  });
+
+  buttonNavigator.onFrontPreviousContinuous([this, listSize] {
+    selectorIndex = ButtonNavigator::previousFourIndex(static_cast<int>(selectorIndex), listSize);
     requestUpdate();
   });
 }

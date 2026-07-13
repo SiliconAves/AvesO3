@@ -986,8 +986,8 @@ std::string GfxRenderer::truncatedText(const int fontId, const char* text, const
   if (!text || maxWidth <= 0) return "";
 
   std::string item = text;
-  // U+2026 HORIZONTAL ELLIPSIS (UTF-8: 0xE2 0x80 0xA6)
-  const char* ellipsis = "\xe2\x80\xa6";
+  // User requested ".." instead of U+2026 HORIZONTAL ELLIPSIS
+  const char* ellipsis = "..";
   int textWidth = getTextWidth(fontId, item.c_str(), style);
   if (textWidth <= maxWidth) {
     // Text fits, return as is

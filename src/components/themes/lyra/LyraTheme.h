@@ -3,6 +3,7 @@
 #include "components/themes/BaseTheme.h"
 
 class GfxRenderer;
+#include "BookStatus.h"
 
 // Lyra theme metrics (zero runtime cost)
 namespace LyraMetrics {
@@ -57,9 +58,12 @@ class LyraTheme : public BaseTheme {
                   bool selected) const override;
   void drawList(const GfxRenderer& renderer, Rect rect, int itemCount, int selectedIndex,
                 const std::function<std::string(int index)>& rowTitle,
-                const std::function<std::string(int index)>& rowSubtitle,
-                const std::function<UIIcon(int index)>& rowIcon, const std::function<std::string(int index)>& rowValue,
-                bool highlightValue, const std::function<bool(int index)>& rowDimmed = nullptr) const override;
+                const std::function<std::string(int index)>& rowSubtitle = nullptr,
+                const std::function<UIIcon(int index)>& rowIcon = nullptr,
+                const std::function<std::string(int index)>& rowValue = nullptr,
+                bool highlightValue = false,
+                const std::function<bool(int index)>& rowDimmed = nullptr,
+                const std::function<BookStatus(int index)>& rowStatus = nullptr) const override;
   void drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
                        const char* btn4) const override;
   void drawSideButtonHints(const GfxRenderer& renderer, const char* topBtn, const char* bottomBtn) const override;

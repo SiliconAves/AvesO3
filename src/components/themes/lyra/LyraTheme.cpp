@@ -209,7 +209,8 @@ void LyraTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount, 
                          const std::function<std::string(int index)>& rowSubtitle,
                          const std::function<UIIcon(int index)>& rowIcon,
                          const std::function<std::string(int index)>& rowValue, bool highlightValue,
-                         const std::function<bool(int index)>& rowDimmed) const {
+                         const std::function<bool(int index)>& rowDimmed,
+                         const std::function<BookStatus(int index)>& rowStatus) const {
   int rowHeight =
       (rowSubtitle != nullptr) ? LyraMetrics::values.listWithSubtitleRowHeight : LyraMetrics::values.listRowHeight;
   int pageItems = rect.height / rowHeight;
@@ -281,8 +282,37 @@ void LyraTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount, 
       UIIcon icon = rowIcon(i);
       const uint8_t* iconBitmap = iconForName(icon, iconSize);
       if (iconBitmap != nullptr) {
-        renderer.drawIcon(iconBitmap, rect.x + LyraMetrics::values.contentSidePadding + hPaddingInSelection,
-                          itemY + iconY, iconSize, iconSize);
+        int iconX_pos = rect.x + LyraMetrics::values.contentSidePadding + hPaddingInSelection;
+        int iconY_pos = itemY + iconY;
+        renderer.drawIcon(iconBitmap, iconX_pos, iconY_pos, iconSize, iconSize);
+
+        // Status Overlay (Second Pass)
+        if (rowStatus != nullptr && icon == UIIcon::Book && iconSize == listIconSize) {
+          BookStatus status = rowStatus(i);
+          if (status == BookStatus::READING) {
+            // Fill cover area with grayscale (top 17 pixels)
+            // Moved +2y up, changed to DarkGray
+            renderer.fillRectDither(iconX_pos + 5, iconY_pos, 14, 13, Color::DarkGray);
+          } else if (status == BookStatus::FINISHED) {
+            // Draw black badge with white tick on the cover
+            renderer.fillRect(iconX_pos + 5, iconY_pos, 14, 13, true);
+            renderer.drawLine(iconX_pos + 8, iconY_pos + 6, iconX_pos + 11, iconY_pos + 9, 3, false);
+            renderer.drawLine(iconX_pos + 11, iconY_pos + 9, iconX_pos + 16, iconY_pos + 2, 3, false);
+          } else if (status == BookStatus::WAITING_FOR_CHAPTER) {
+            // Draw upward triangle on the cover
+            // Moved +1x, -3y
+            int tx[] = {iconX_pos + 12, iconX_pos + 7, iconX_pos + 17};
+            int ty[] = {iconY_pos + 2, iconY_pos + 10, iconY_pos + 10};
+            renderer.fillPolygon(tx, ty, 3, true);
+          } else if (status == BookStatus::NEW_CHAPTER_AVAILABLE) {
+            // Draw upward triangle on the cover (same as WAITING_FOR_CHAPTER)
+            int tx[] = {iconX_pos + 12, iconX_pos + 7, iconX_pos + 17};
+            int ty[] = {iconY_pos + 2, iconY_pos + 10, iconY_pos + 10};
+            renderer.fillPolygon(tx, ty, 3, true);
+            // Notification dot on top-right corner of the book icon
+            renderer.fillRoundedRect(iconX_pos + iconSize - 8, iconY_pos - 3, 8, 7, 4, Color::Black);
+          }
+        }
       }
     }
 
@@ -473,7 +503,8 @@ void LyraTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
                                hPaddingInSelection, cornerRadius, false, false, true, true, Color::LightGray);
     }
 
-    auto titleLines = renderer.wrappedText(UI_12_FONT_ID, book.title.c_str(), textWidth, 3, EpdFontFamily::BOLD);
+    std::string displayTitle = book.pinned ? "• " + book.title : book.title;
+    auto titleLines = renderer.wrappedText(UI_12_FONT_ID, displayTitle.c_str(), textWidth, 3, EpdFontFamily::BOLD);
 
     auto author = renderer.truncatedText(UI_10_FONT_ID, book.author.c_str(), textWidth);
     const int titleLineHeight = renderer.getLineHeight(UI_12_FONT_ID);

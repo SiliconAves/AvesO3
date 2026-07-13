@@ -74,7 +74,7 @@ bool HttpDownloader::fetchUrl(const std::string& url, Stream& outContent, const 
     String encoded = base64::encode(credentials.c_str());
     http.addHeader("Authorization", "Basic " + encoded);
   }
-
+  http.setTimeout(15000);
   const int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
     LOG_ERR("HTTP", "Fetch failed: %d", httpCode);
@@ -125,7 +125,7 @@ HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& 
     String encoded = base64::encode(credentials.c_str());
     http.addHeader("Authorization", "Basic " + encoded);
   }
-
+  http.setTimeout(15000);
   const int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
     LOG_ERR("HTTP", "Download failed: %d", httpCode);

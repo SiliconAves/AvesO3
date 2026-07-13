@@ -302,11 +302,12 @@ void RoundedRaffTheme::drawKeyboardKey(const GfxRenderer& renderer, Rect rect, c
 }
 
 void RoundedRaffTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount, int selectedIndex,
-                                const std::function<std::string(int index)>& rowTitle,
-                                const std::function<std::string(int index)>& rowSubtitle,
-                                const std::function<UIIcon(int index)>& rowIcon,
-                                const std::function<std::string(int index)>& rowValue, bool highlightValue,
-                                const std::function<bool(int index)>& rowDimmed) const {
+                               const std::function<std::string(int index)>& rowTitle,
+                               const std::function<std::string(int index)>& rowSubtitle,
+                               const std::function<UIIcon(int index)>& rowIcon,
+                               const std::function<std::string(int index)>& rowValue, bool highlightValue,
+                               const std::function<bool(int index)>& rowDimmed,
+                               const std::function<BookStatus(int index)>& rowStatus) const {
   (void)rowIcon;
   (void)highlightValue;
   (void)rowDimmed;

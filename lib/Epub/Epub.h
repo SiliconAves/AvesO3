@@ -43,7 +43,7 @@ class Epub {
   }
   ~Epub() = default;
   std::string& getBasePath() { return contentBasePath; }
-  bool load(bool buildIfMissing = true, bool skipLoadingCss = false);
+  bool load(bool buildIfMissing = true, bool skipLoadingCss = false, bool skipScraping = false);
   bool clearCache() const;
   void setupCacheDir() const;
   const std::string& getCachePath() const;
@@ -73,4 +73,12 @@ class Epub {
   float calculateProgress(int currentSpineIndex, float currentSpineRead) const;
   CssParser* getCssParser() const { return cssParser.get(); }
   int resolveHrefToSpineIndex(const std::string& href) const;
+
+  // AO3 Support
+  bool hasAo3Info() const;
+  std::string getAo3WorkId() const;
+  std::string getAo3UpdateDate() const;
+  bool isAo3Completed() const;
+  void saveAo3Info(const std::string& workId, const std::string& date, bool completed) const;
+  std::string sniffPublisher() const;
 };
