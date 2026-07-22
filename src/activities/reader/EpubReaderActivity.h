@@ -37,6 +37,9 @@ class EpubReaderActivity final : public Activity {
   int lastSavedSpineIndex = -1;
   int lastSavedPageNumber = -1;
 
+  // -1 = opened from file browser; >= 0 = opened from AO3 library at this selector index.
+  int ao3LibraryReturnIndex_ = -1;
+
   // Footnote support
   std::vector<FootnoteEntry> currentPageFootnotes;
   struct SavedPosition {

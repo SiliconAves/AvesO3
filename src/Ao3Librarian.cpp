@@ -684,8 +684,27 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
   if (!parseTitlePage(epub, *meta, scrapedWorkId, scrapedDate, scrapedFandom, scrapedRel1, scrapedRel2)) return false;
 
   strncpy(meta->filepath, epub.getPath().c_str(), 255);
-  strncpy(meta->title, epub.getTitle().c_str(), 127);
-  strncpy(meta->author, epub.getAuthor().c_str(), 127);
+
+  // Clean up "&amp;" in the title
+  std::string title = epub.getTitle();
+  size_t titlePos = 0;
+  while ((titlePos = title.find("&amp;", titlePos)) != std::string::npos) {
+    title.replace(titlePos, 5, "&");
+    titlePos += 1; // Advance past the newly inserted '&'
+  }
+  strncpy(meta->title, title.c_str(), 127);
+  meta->title[127] = '\0';
+
+  // Clean up "&amp;" in the author name (covers co-authored fics!)
+  std::string author = epub.getAuthor();
+  size_t authorPos = 0;
+  while ((authorPos = author.find("&amp;", authorPos)) != std::string::npos) {
+    author.replace(authorPos, 5, "&");
+    authorPos += 1;
+  }
+  strncpy(meta->author, author.c_str(), 127);
+  meta->author[127] = '\0';
+
   strncpy(meta->updatedDate, scrapedDate.c_str(), sizeof(meta->updatedDate) - 1);
   meta->updatedDate[sizeof(meta->updatedDate) - 1] = '\0';
 

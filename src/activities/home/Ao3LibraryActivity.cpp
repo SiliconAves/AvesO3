@@ -18,6 +18,7 @@
 #include "../../MappedInputManager.h"
 #include "../../components/UITheme.h"
 #include "../../RecentBooksStore.h"
+#include "../../CrossPointState.h"
 
 // ---------------------------------------------------------------------------
 //  onEnter
@@ -27,6 +28,11 @@ void Ao3LibraryActivity::onEnter() {
   buttonNavigator.setMappedInputManager(mappedInput);
   indexState = IndexState::UNKNOWN;
   screenState = ScreenState::LIBRARY;
+  selectorIndex = initialSelectorIndex_;   // restore position when returning from reader
+  
+  // If the user arrived here by holding BACK in the reader, 
+  // the button is still physically pressed. We must ignore the subsequent release.
+  skipNextBackRelease = mappedInput.isPressed(MappedInputManager::Button::Back);
   loadFilterMode();
   loadSortFilterState();
   requestUpdate();
@@ -55,7 +61,7 @@ void Ao3LibraryActivity::buildAllowedHashes(const std::string& scanPath, int max
     allowedHashes.clear();
 
     std::function<void(const std::string&, int)> scanRecursive = [&](const std::string& dirPath, int currentDepth) {
-        if (currentDepth > maxDepth) return;
+        //if (currentDepth > maxDepth) return;
         FsFile dir = Storage.open(dirPath.c_str());
         if (!dir || !dir.isDirectory()) { if (dir) dir.close(); return; }
 
@@ -69,7 +75,7 @@ void Ao3LibraryActivity::buildAllowedHashes(const std::string& scanPath, int max
                 if (subPath.back() != '/') subPath += "/";
                 subPath += nameStr;
                 scanRecursive(subPath, currentDepth + 1);
-            } else if (!file.isDirectory() && currentDepth == maxDepth) {
+            } else if (!file.isDirectory() && currentDepth >= maxDepth) {
                 size_t dotPos = nameStr.find_last_of('.');
                 if (dotPos != std::string::npos) {
                     std::string ext = nameStr.substr(dotPos + 1);
@@ -215,7 +221,11 @@ void Ao3LibraryActivity::loop() {
     }
 
     if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-      activityManager.popActivity();
+      if (skipNextBackRelease) {
+        skipNextBackRelease = false;
+      } else {
+        activityManager.popActivity();
+      }
       return;
     }
 
@@ -272,6 +282,7 @@ void Ao3LibraryActivity::loop() {
             std::make_unique<BookActionActivity>(renderer, mappedInput, epubPath, epubTitle),
             handler);
       } else if (!epubPath.empty()) {
+        APP_STATE.ao3LibraryReturnIndex = static_cast<int>(selectorIndex);
         activityManager.goToReader(epubPath);
       }
       return;
@@ -550,7 +561,7 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
         }
       } else {
         // "AO3 Library Settings"
-        screenState = ScreenState::MANAGE_PANEL;
+        screenState = ScreenState::LIBRARY;
         FilterMode oldMode = filterMode;
         std::string oldFolder = ao3Folder;
         auto handler = [this, oldMode, oldFolder](const ActivityResult&) {
@@ -640,8 +651,8 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
     if (activeState.fandom[0] != '\0') {
       renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2 - 12, "No matches for current filter.");
     } else {
-      renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2 - 12, "No books indexed yet.");
-      renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 12, "Press UP to index new books.");
+      renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2 - 12, "No AO3 books indexed yet.");
+      renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 12, "Press SIDE UP to index new books.");
     }
   } else if (indexState == IndexState::CORRUPT) {
     renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2 - 12, "Library index missing or corrupt.");
@@ -664,7 +675,7 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
 
     int y = contentStart;
     for (int i = startIdx; i < endIdx; i++) {
-      const bool selected = (i == static_cast<int>(selectorIndex));
+      const bool selected = (i == static_cast<int>(selectorIndex)) && (screenState == ScreenState::LIBRARY);
       renderEntry(lock, y, viewEntries[i], i - startIdx, selected);
       y += entrySlot;
       if (i < endIdx - 1) {
@@ -931,6 +942,9 @@ void Ao3LibraryActivity::renderEntry(RenderLock& lock, int y, const ViewEntry& v
                                : std::string(ve.authorKey);
 
   if (metaLoaded && meta.seriesName[0] != 0) {
+    if (authorText.length() > 11) {
+      authorText = authorText.substr(0, 11) + ".";
+    }
     char seriesBuf[256];
     if (meta.seriesPart > 0) {
       sprintf(seriesBuf, " \xE2\x80\xA2 %d of %s", meta.seriesPart, meta.seriesName);

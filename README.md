@@ -1,7 +1,7 @@
 # What's Different in AvesO3
 **Before flashing: ensure your device is UNLOCKED. Do not flash through the unlocker tool.**
-- [x] **AO3-style library browser**, complete with summary and metadata square.
-- [x] Compatible with **Calibre+FanFicFare epubs** with <u>unmodified metadata spine</u> and **epubs from AO3**
+- [x] **AO3-style library browser**, complete with summary and metadata square. You can add **up to 400 books** to the AO3 library.
+- [x] Compatible with **Calibre+FanFicFare epubs** with *<u>*unmodified metadata spine*</u>* and **epubs from AO3**
 - [x] **Download new chapters** directly from AO3
 - [x] **Track the status** of each fic directly from the File Browser (introduces 5 statuses, with a corresponding icon: Unread, Reading, Waiting for Chapter, New Chapter Available, Finished)
 - [x] **Pin your longfics** to the homescreen, so they aren't pushed off by your oneshots
@@ -16,9 +16,9 @@ What's next in AvesO3 1.3.0:
 
 What may come in the future:
 - [ ] Series continous reading
-- [ ] Quick Access Menu: Marked for Later, Followed Fics (Subscriptions), Bookmarked fics
-- [ ] Ascii symbols support 
+- [ ] Quick Access Menu: Marked for Later, Followed Fics (Subscriptions)
 - [ ] Locked fics support
+- [ ] Bookmarked fics
 - [ ] Online backend that can host your library online
 - [ ] More!
 
@@ -37,7 +37,7 @@ Sort by:
 + **Date Added**<br><br>
 
 **NAVIGATION:** 
-+ **DOWN** button opens the filter panel.
++ **SIDE DOWN** button opens the filter panel.
 + Inside the panel, **holding Next/Down** will bring you to the confirm button instantly.
 <br clear="left"/> <br>
 
@@ -48,7 +48,7 @@ Remember to **set up your AO3 folder in the AO3 Settings menu below.**
 <br><br>
 Indexing/Force Reindexing a **Single Book** is available from the  **long press Confirm** menu in File Browser/AO3 Library.<br><br>
 **NAVIGATION:**<br>
-Press **UP** to access this menu.
+Press **SIDE UP** to access this menu. 
 <br clear="left"/> <br>
 
 **NEW - AO3 Library Settings**

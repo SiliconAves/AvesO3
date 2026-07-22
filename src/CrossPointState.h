@@ -16,6 +16,11 @@ class CrossPointState {
   uint8_t readerActivityLoadCount = 0;
   bool lastSleepFromReader = false;
 
+  // Transient (never persisted to disk). Set by Ao3LibraryActivity just before
+  // goToReader(); consumed and cleared by EpubReaderActivity::onEnter().
+  // -1 means the reader was not opened from the AO3 library.
+  int ao3LibraryReturnIndex = -1;
+
   // Returns true if idx was shown within the last checkCount picks.
   // Walks backwards from the most recently written slot.
   bool isRecentSleep(uint16_t idx, uint8_t checkCount) const;

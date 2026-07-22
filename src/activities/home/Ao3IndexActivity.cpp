@@ -99,9 +99,26 @@ bool Ao3IndexActivity::isExcluded(const std::string& path) const {
 
 void Ao3IndexActivity::loop() {
   // Common error or completion back/confirm navigation
-  if (state == State::ERROR || state == State::DIR_COMPLETE) {
+  if (state == State::ERROR) {
     if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
         mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+      finish();
+    }
+    return;
+  }
+  if (state == State::DIR_COMPLETE) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+      if (!failedBooks.empty()) {
+        state = State::DIR_FAILED_LIST;
+        requestUpdate(true);
+      } else {
+        finish();
+      }
+    }
+    return;
+  }
+  if (state == State::DIR_FAILED_LIST) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       finish();
     }
     return;
@@ -296,6 +313,7 @@ void Ao3IndexActivity::startDirIndexing() {
   batchCount = std::min((size_t)batchSize, pendingBooks.size());
   successCount = 0;
   failureCount = 0;
+  failedBooks.clear();
   state = State::DIR_INDEXING;
   requestUpdate(true);
 }
@@ -335,9 +353,11 @@ void Ao3IndexActivity::tickDirIndexing() {
       successCount++;
     } else {
       failureCount++;
+      if (failedBooks.size() < 10) failedBooks.push_back(filePath);
     }
   } else {
     failureCount++;
+    if (failedBooks.size() < 10) failedBooks.push_back(filePath);
   }
 
   currentBookIndex++;
@@ -436,7 +456,38 @@ void Ao3IndexActivity::render(RenderLock&&) {
     sprintf(buf, "%zu book/s processed (%zu succeeded, %zu failed).", successCount + failureCount, successCount, failureCount);
     renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 10, buf);
 
-    const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
+    const auto labels = mappedInput.mapLabels("", "Done", "", "");
+    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  }
+  else if (state == State::DIR_FAILED_LIST) {
+    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, "Failed Books");
+
+    const int entryHeight = 40;
+    const int startY = metrics.topPadding + metrics.headerHeight + 10;
+
+    for (size_t i = 0; i < failedBooks.size(); i++) {
+        const std::string& fullPath = failedBooks[i];
+
+        // Extract filename and directory from path
+        std::string filename = fullPath;
+        std::string dirPath = fullPath;
+        size_t lastSlash = fullPath.find_last_of('/');
+        if (lastSlash != std::string::npos) {
+            filename = fullPath.substr(lastSlash + 1);
+            dirPath = fullPath.substr(0, lastSlash + 1); // Keep the trailing slash to indicate a directory
+        }
+
+        // Truncate if needed
+        const int maxWidth = pageWidth - 30;
+        std::string displayName = renderer.truncatedText(UI_10_FONT_ID, filename.c_str(), maxWidth);
+        std::string displayPath = renderer.truncatedText(SMALL_FONT_ID, dirPath.c_str(), maxWidth);
+
+        const int y = startY + static_cast<int>(i) * entryHeight;
+        renderer.drawText(UI_10_FONT_ID, 15, y, displayName.c_str());
+        renderer.drawText(SMALL_FONT_ID,  15, y + 18, displayPath.c_str());
+    }
+
+    const auto labels = mappedInput.mapLabels("", "Done", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   }
 

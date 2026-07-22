@@ -31,8 +31,10 @@ inline FilterHashes computeFilterHashes(const SortFilterState& state) {
 
 class Ao3LibraryActivity final : public Activity {
  public:
-  explicit Ao3LibraryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-      : Activity("Ao3Library", renderer, mappedInput) {}
+  explicit Ao3LibraryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                              size_t initialSelectorIndex = 0)
+      : Activity("Ao3Library", renderer, mappedInput),
+        initialSelectorIndex_(initialSelectorIndex) {}
 
   void onEnter() override;
   void loop() override;
@@ -83,6 +85,9 @@ class Ao3LibraryActivity final : public Activity {
   std::vector<std::string> pickerItems;
   size_t pickerSelectedIndex = 0;
   bool pickerHasNone = false;
+
+  size_t initialSelectorIndex_ = 0;
+  bool skipNextBackRelease = false;
 
   void loadViewEntries();
   void loadPageCache(int page);

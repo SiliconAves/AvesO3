@@ -14,6 +14,7 @@
 #include <limits>
 
 #include "CrossPointSettings.h"
+#include "Ao3Librarian.h"
 #include "CrossPointState.h"
 #include "EpubReaderChapterSelectionActivity.h"
 #include "EpubReaderFootnotesActivity.h"
@@ -50,6 +51,11 @@ int clampPercent(int percent) {
 
 void EpubReaderActivity::onEnter() {
   Activity::onEnter();
+
+  // Consume the AO3 library return context. Must happen before any early return
+  // so APP_STATE.ao3LibraryReturnIndex is always cleared on entry.
+  ao3LibraryReturnIndex_ = APP_STATE.ao3LibraryReturnIndex;
+  APP_STATE.ao3LibraryReturnIndex = -1;
 
   if (!epub) {
     return;
@@ -190,9 +196,14 @@ void EpubReaderActivity::loop() {
                            });
   }
 
-  // Long press BACK (1s+) goes to file selection
+  // Long press BACK (1s+): return to AO3 library if that's where we came from,
+  // otherwise go to file browser at the epub's folder.
   if (mappedInput.isPressed(MappedInputManager::Button::Back) && mappedInput.getHeldTime() >= ReaderUtils::GO_HOME_MS) {
-    activityManager.goToFileBrowser(epub ? epub->getPath() : "");
+    if (ao3LibraryReturnIndex_ >= 0) {
+      activityManager.goToAo3Library(static_cast<size_t>(ao3LibraryReturnIndex_));
+    } else {
+      activityManager.goToFileBrowser(epub ? epub->getPath() : "");
+    }
     return;
   }
 
@@ -212,8 +223,13 @@ void EpubReaderActivity::loop() {
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       if (epub->hasAo3Info() && !epub->isAo3Completed()) {
         std::string bookPath = epub->getPath();
+        // Capture the real spine count now, before the epub object is released.
+        // The callback receives a stub Epub (not loaded), so getSpineItemsCount()
+        // returns 0 there — which would corrupt saveProgress's status detection.
+        const int spineCountBeforeDownload = epub->getSpineItemsCount();
+        const bool hadAfterword = Ao3Librarian::sniffNativeAo3Preface(*epub);
         startActivityForResult(std::make_unique<AO3SyncActivity>(renderer, mappedInput, epub->getAo3WorkId(), epub->getAo3UpdateDate(), bookPath),
-            [this, bookPath](const ActivityResult& res) {
+            [this, bookPath, spineCountBeforeDownload, hadAfterword](const ActivityResult& res) {
             // Re-create the epub object handle (without loading) so we can update the sidecar
             epub = std::make_unique<Epub>(bookPath, "/.crosspoint");
 
@@ -231,14 +247,29 @@ void EpubReaderActivity::loop() {
 
                 // Status stays as NEW_CHAPTER_AVAILABLE until the user starts reading
                 currentStatus = BookStatus::NEW_CHAPTER_AVAILABLE;
-              } else if (ao3Res.updateFound) {
-                // Found an update but user didn't download yet
-                currentStatus = BookStatus::NEW_CHAPTER_AVAILABLE;
-              }
-            }
 
-            // Persist the (potentially updated) status to disk before leaving
-            saveProgress(currentSpineIndex, nextPageNumber, epub->getSpineItemsCount());
+                // Resume at the first new chapter.
+                // If the old epub had an afterword (AO3), we subtract 1 from the old 
+                // end-of-book sentinel to land on the first new chapter.
+                // If it didn't (FFF), the old sentinel points exactly to the first new chapter.
+                int firstNewChapter = currentSpineIndex;
+                if (hadAfterword && currentSpineIndex > 0) {
+                    firstNewChapter -= 1;
+                }
+                saveProgress(firstNewChapter, 0, spineCountBeforeDownload);
+              } else {
+                if (ao3Res.updateFound) {
+                  // Found an update but user didn't download yet
+                  currentStatus = BookStatus::NEW_CHAPTER_AVAILABLE;
+                }
+                // No download: persist current position using the captured spine count
+                // so status detection inside saveProgress works correctly.
+                saveProgress(currentSpineIndex, nextPageNumber, spineCountBeforeDownload);
+              }
+            } else {
+              // Cancelled or unexpected result: preserve current position
+              saveProgress(currentSpineIndex, nextPageNumber, spineCountBeforeDownload);
+            }
             
             // Do not attempt to render the book again because the WiFi driver leaves 
             // the heap heavily fragmented, leading to crashes.

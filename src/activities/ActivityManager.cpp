@@ -199,8 +199,8 @@ void ActivityManager::goToReader(std::string path) {
   replaceActivity(std::make_unique<ReaderActivity>(renderer, mappedInput, std::move(path)));
 }
 
-void ActivityManager::goToAo3Library() {
-  replaceActivity(std::make_unique<Ao3LibraryActivity>(renderer, mappedInput));
+void ActivityManager::goToAo3Library(size_t selectorIndex) {
+  replaceActivity(std::make_unique<Ao3LibraryActivity>(renderer, mappedInput, selectorIndex));
 }
 
 void ActivityManager::goToSleep() {

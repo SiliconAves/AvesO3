@@ -137,15 +137,38 @@ void SettingsActivity::loop() {
     requestUpdate();
   });
 
-  buttonNavigator.onNextContinuous([this, &hasChangedCategory] {
+  // Up/Down held: cycle through categories (existing behaviour)
+  buttonNavigator.onSideNextContinuous([this, &hasChangedCategory] {
     hasChangedCategory = true;
     selectedCategoryIndex = ButtonNavigator::nextIndex(selectedCategoryIndex, categoryCount);
     requestUpdate();
   });
 
-  buttonNavigator.onPreviousContinuous([this, &hasChangedCategory] {
+  buttonNavigator.onSidePreviousContinuous([this, &hasChangedCategory] {
     hasChangedCategory = true;
     selectedCategoryIndex = ButtonNavigator::previousIndex(selectedCategoryIndex, categoryCount);
+    requestUpdate();
+  });
+
+  // Right held: skip 2 rows forward (enter list from tab bar if needed)
+  buttonNavigator.onFrontNextContinuous([this] {
+    if (selectedSettingIndex == 0) {
+      selectedSettingIndex = 2;  // enter list at second item
+    } else {
+      const int target = selectedSettingIndex + 2;
+      selectedSettingIndex = (target <= settingsCount) ? target : settingsCount;
+    }
+    requestUpdate();
+  });
+
+  // Left held: skip 2 rows backward (enter list from tab bar if needed)
+  buttonNavigator.onFrontPreviousContinuous([this] {
+    if (selectedSettingIndex == 0) {
+      selectedSettingIndex = settingsCount;  // enter list at last item
+    } else {
+      const int target = selectedSettingIndex - 2;
+      selectedSettingIndex = (target >= 1) ? target : 1;
+    }
     requestUpdate();
   });
 
