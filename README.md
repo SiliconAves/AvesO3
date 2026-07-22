@@ -2,21 +2,20 @@
 **Before flashing: ensure your device is UNLOCKED. Do not flash through the unlocker tool.**
 - [x] **AO3-style library browser**, complete with summary and metadata square. You can add **up to 400 books** to the AO3 library.
 - [x] Compatible with **Calibre+FanFicFare epubs** with *<u>*unmodified metadata spine*</u>* and **epubs from AO3**
+- [x] AO3 Library **sorting and filtering** with 2 modes (Automatic & Folder Tree)
 - [x] **Download new chapters** directly from AO3
+- [x] **Auto index ao3 stories** in chunks
 - [x] **Track the status** of each fic directly from the File Browser (introduces 5 statuses, with a corresponding icon: Unread, Reading, Waiting for Chapter, New Chapter Available, Finished)
 - [x] **Pin your longfics** to the homescreen, so they aren't pushed off by your oneshots
 - [x] **Added Noto Sans 10pt** to replicate the experience of reading AO3 on a phone
 - [x] **Improved menu navigation**: hold left/right to skip multiple lines in File Browser, Reader Menu and Homescreen
 - [x] Support for **line breaks**
 
-What's next in AvesO3 1.3.0:
-- [x] AO3 Library **sorting and filtering** with 2 modes (Automatic & Folder Tree)
-- [x] **Auto index ao3 stories** in chunks, so they don't need to be opened individually anymore
-- [x] Catch up with CrossPoint 1.3.0 (needs testing)
-
-What may come in the future:
+What's Next in AvesO3 1.4.0
 - [ ] Series continous reading
 - [ ] Quick Access Menu: Marked for Later, Followed Fics (Subscriptions)
+
+What may come in the future:
 - [ ] Locked fics support
 - [ ] Bookmarked fics
 - [ ] Online backend that can host your library online
