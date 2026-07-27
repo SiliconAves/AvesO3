@@ -14,6 +14,8 @@
 What's Next in AvesO3 1.4.0
 - [ ] Series continous reading
 - [ ] Quick Access Menu: Marked for Later, Followed Fics (Subscriptions)
+- [ ] AO3 max book cap increase
+- [ ] Separate AO3 font and book font
 
 What may come in the future:
 - [ ] Locked fics support
@@ -21,8 +23,8 @@ What may come in the future:
 - [ ] Online backend that can host your library online
 - [ ] More!
 
-# Progress on AvesO3 v.1.3.0
-**NEW - Automatic Sort and Filter**
+# v.1.3.0 Features
+**1. Automatic Sort and Filter**
 <img src="docs/images/AvesO3/sortFilter.jpg" width="300" align="left" style="margin-right: 30px; border: 1px solid black;"/>
 <br><br>Automatically Filter by:
 + **Fandom**
@@ -40,7 +42,7 @@ Sort by:
 + Inside the panel, **holding Next/Down** will bring you to the confirm button instantly.
 <br clear="left"/> <br>
 
-**NEW - Library Auto-Index**
+**2. Library Auto-Index**
 <img src="docs/images/AvesO3/manageLibrary.jpg" width="300" align="left" style="margin-right: 30px; border: 1px solid black;"/><br><br>
 Select **Index New Books** to start indexing ao3 books automatically, in batches of 10, 15 or 20 books depending on your choice (you can change this in **AO3 Library Settings**).<br><br>
 Remember to **set up your AO3 folder in the AO3 Settings menu below.**
@@ -50,7 +52,7 @@ Indexing/Force Reindexing a **Single Book** is available from the  **long press 
 Press **SIDE UP** to access this menu. 
 <br clear="left"/> <br>
 
-**NEW - AO3 Library Settings**
+**3. AO3 Library Settings**
 <img src="docs/images/AvesO3/librarySettings.jpg" width="300" align="left" style="margin-right: 30px; border: 1px solid black;"/><br><br>
 **NAVIGATION:**<br>
 Select **AO3 Library Settings** from manage panel.<br><br>
