@@ -284,9 +284,9 @@ void HomeActivity::loop() {
     // Calculate dynamic indices based on which options are available
     int idx = 0;
     int menuSelectedIndex = selectorIndex - static_cast<int>(recentBooks.size());
-    const int fileBrowserIdx = idx++;
-    const int recentsIdx = idx++;
     const int libraryHubIdx = (hasOpdsServers || hasAo3Library) ? idx++ : -1;
+    const int recentsIdx = idx++;
+    const int fileBrowserIdx = idx++;
     const int fileTransferIdx = idx++;
     const int settingsIdx = idx;
 
@@ -348,19 +348,19 @@ void HomeActivity::render(RenderLock&&) {
                           std::bind(&HomeActivity::storeCoverBuffer, this));
 
   // Build menu items dynamically
-  std::vector<const char*> menuItems = {tr(STR_BROWSE_FILES), tr(STR_MENU_RECENT_BOOKS), tr(STR_FILE_TRANSFER),
+  std::vector<const char*> menuItems = {tr(STR_MENU_RECENT_BOOKS), tr(STR_BROWSE_FILES), tr(STR_FILE_TRANSFER),
                                         tr(STR_SETTINGS_TITLE)};
-  std::vector<UIIcon> menuIcons = {Folder, Recent, Transfer, Settings};
+  std::vector<UIIcon> menuIcons = {Recent, Folder, Transfer, Settings};
 
-if (hasOpdsServers && hasAo3Library) {
-    menuItems.insert(menuItems.begin() + 2, "Libraries");
-    menuIcons.insert(menuIcons.begin() + 2, Library);
+  if (hasOpdsServers && hasAo3Library) {
+    menuItems.insert(menuItems.begin(), "Libraries");
+    menuIcons.insert(menuIcons.begin(), Library);
   } else if (hasOpdsServers) {
-    menuItems.insert(menuItems.begin() + 2, tr(STR_OPDS_BROWSER));
-    menuIcons.insert(menuIcons.begin() + 2, Library);
+    menuItems.insert(menuItems.begin(), tr(STR_OPDS_BROWSER));
+    menuIcons.insert(menuIcons.begin(), Library);
   } else if (hasAo3Library) {
-    menuItems.insert(menuItems.begin() + 2, "AO3 Library");
-    menuIcons.insert(menuIcons.begin() + 2, Library);
+    menuItems.insert(menuItems.begin(), "AO3 Library");
+    menuIcons.insert(menuIcons.begin(), Library);
   }
 
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
