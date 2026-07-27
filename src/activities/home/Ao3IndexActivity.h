@@ -60,6 +60,7 @@ class Ao3IndexActivity final : public Activity {
   size_t batchCount = 0;
   size_t successCount = 0;
   size_t failureCount = 0;
+  size_t unindexedCount = 0;
   std::vector<std::string> failedBooks;
   std::string currentBookTitle;
 

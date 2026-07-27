@@ -37,12 +37,31 @@ void Ao3IndexActivity::runHeapCheck() {
   if (ESP.getFreeHeap() < 80 * 1024) {
     state = State::ERROR;
     errorMessage = "Insufficient memory to run indexing (need 80KB free heap).";
-  } else {
-    if (mode == Ao3IndexMode::SINGLE) {
-      state = State::SINGLE_SNIFFING;
-    } else {
-      state = State::DIR_LOAD_SETTINGS;
+    return;
+  }
+
+  if (mode == Ao3IndexMode::SINGLE) {
+    if (isLibraryFull()) {
+      // Build index hashes to check if this specific file is already indexed
+      buildIndexedHashes();
+      uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(targetPath));
+      bool isExistingBook = std::binary_search(indexedHashes.begin(), indexedHashes.end(), hash);
+
+      if (!isExistingBook) {
+        state = State::ERROR;
+        errorMessage = "AO3 library full (400 books).";
+        return;
+      }
     }
+    state = State::SINGLE_SNIFFING;
+  } else {
+    // Directory mode: Block immediately if full (no need to waste time scanning folders)
+    if (isLibraryFull()) {
+      state = State::ERROR;
+      errorMessage = "AO3 library full (400 books).";
+      return;
+    }
+    state = State::DIR_LOAD_SETTINGS;
   }
 }
 
@@ -168,6 +187,9 @@ void Ao3IndexActivity::loop() {
 
     case State::DIR_DISCOVERY_CONFIRM:
       if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+        successCount = 0;
+        failureCount = 0;
+        failedBooks.clear();
         startDirIndexing();
       } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
         finish(); // user declined; return to library
@@ -180,10 +202,7 @@ void Ao3IndexActivity::loop() {
 
     case State::DIR_BATCH_COMPLETE:
       if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-        batchStartIndex = currentBookIndex;
-        batchCount = std::min((size_t)batchSize, pendingBooks.size() - currentBookIndex);
-        state = State::DIR_INDEXING;
-        requestUpdate(true);
+        startDirIndexing();
       } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
         finish(); // user stopped early; still triggers result handler
       }
@@ -240,14 +259,14 @@ void Ao3IndexActivity::tickDirDiscovery() {
     buildIndexedHashes();
     dirQueue.clear();
     dirQueue.push_back({ ao3Folder, 0 });
-    pendingBooks.clear();
+    unindexedCount = 0;
     initialized = true;
     requestUpdate(true);
     return;
   }
 
   if (dirQueue.empty()) {
-    if (pendingBooks.empty()) {
+    if (unindexedCount == 0) {
       state = State::DIR_COMPLETE;
     } else {
       state = State::DIR_DISCOVERY_CONFIRM;
@@ -297,7 +316,7 @@ void Ao3IndexActivity::tickDirDiscovery() {
       if (ext == "epub") {
         uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(fullChildPath));
         if (!std::binary_search(indexedHashes.begin(), indexedHashes.end(), hash)) {
-          pendingBooks.push_back(fullChildPath);
+          unindexedCount++;
         }
       }
     }
@@ -308,12 +327,88 @@ void Ao3IndexActivity::tickDirDiscovery() {
 }
 
 void Ao3IndexActivity::startDirIndexing() {
+  // Rebuild indexed hashes so books successfully indexed in previous batches are excluded.
+  buildIndexedHashes();
+  // Merge in any books that failed this session so subsequent batch walks
+  // don't retry them endlessly. failedBooks paths are preserved for the
+  // failed list screen — only their hashes are inserted here, in memory only.
+  for (const auto& path : failedBooks) {
+    uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(path));
+    auto it = std::lower_bound(indexedHashes.begin(), indexedHashes.end(), hash);
+    if (it == indexedHashes.end() || *it != hash) {
+      indexedHashes.insert(it, hash);
+    }
+  }
+
+  // Collect up to batchSize unindexed paths. This walk is synchronous because it does
+  // no epub loading — just filename hashing — and is bounded by batchSize entries.
+  pendingBooks.clear();
+  pendingBooks.reserve(batchSize);
+
+  std::vector<QueueEntry> queue;
+  queue.push_back({ ao3Folder, 0 });
+
+  while (!queue.empty() && (int)pendingBooks.size() < batchSize) {
+    QueueEntry entry = queue.back();
+    queue.pop_back();
+
+    if (isExcluded(entry.path) || entry.path.find("/.") != std::string::npos || entry.path.find(".crosspoint") != std::string::npos) {
+      continue;
+    }
+
+    auto root = Storage.open(entry.path.c_str());
+    if (!root || !root.isDirectory()) {
+      if (root) root.close();
+      continue;
+    }
+
+    root.rewindDirectory();
+    char name[256];
+    FsFile file;
+    while (file = root.openNextFile()) {
+      file.getName(name, sizeof(name));
+
+      std::string fullChildPath = entry.path;
+      if (fullChildPath.back() != '/') fullChildPath += "/";
+      fullChildPath += name;
+
+      if (file.isDirectory()) {
+        if (name[0] != '.' && entry.depth < 5 && strcmp(name, "System Volume Information") != 0 && strcmp(name, ".crosspoint") != 0) {
+          queue.push_back({ fullChildPath, entry.depth + 1 });
+        }
+      } else {
+        std::string nameStr(name);
+        std::string ext = "";
+        size_t dotPos = nameStr.find_last_of('.');
+        if (dotPos != std::string::npos) {
+          ext = nameStr.substr(dotPos + 1);
+          std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        }
+        if (ext == "epub") {
+          uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(fullChildPath));
+          if (!std::binary_search(indexedHashes.begin(), indexedHashes.end(), hash)) {
+            pendingBooks.push_back(fullChildPath);
+          }
+        }
+      }
+      file.close();
+      if ((int)pendingBooks.size() >= batchSize) break;
+    }
+    root.close();
+    yield(); // give the watchdog a breath between directories
+  }
+
+  if (pendingBooks.empty()) {
+    // No more unindexed books remain — all done.
+    state = State::DIR_COMPLETE;
+    requestUpdate(true);
+    return;
+  }
+
+  pendingBooks.shrink_to_fit();
   currentBookIndex = 0;
   batchStartIndex = 0;
-  batchCount = std::min((size_t)batchSize, pendingBooks.size());
-  successCount = 0;
-  failureCount = 0;
-  failedBooks.clear();
+  batchCount = pendingBooks.size();
   state = State::DIR_INDEXING;
   requestUpdate(true);
 }
@@ -324,14 +419,14 @@ void Ao3IndexActivity::tickDirIndexing() {
     return; // defer
   }
 
+  // Batch exhausted. If we got fewer books than requested, this was the last batch.
+  // Otherwise there may be more unindexed books — show the batch complete prompt.
   if (currentBookIndex >= pendingBooks.size()) {
-    state = State::DIR_COMPLETE;
-    requestUpdate(true);
-    return;
-  }
-
-  if (currentBookIndex >= batchStartIndex + batchCount) {
-    state = State::DIR_BATCH_COMPLETE;
+    if ((int)pendingBooks.size() < batchSize) {
+      state = State::DIR_COMPLETE;
+    } else {
+      state = State::DIR_BATCH_COMPLETE;
+    }
     requestUpdate(true);
     return;
   }
@@ -343,7 +438,9 @@ void Ao3IndexActivity::tickDirIndexing() {
     return;
   }
 
-  std::string filePath = pendingBooks[currentBookIndex];
+  // Move the path out and immediately free its heap buffer.
+  std::string filePath = std::move(pendingBooks[currentBookIndex]);
+  pendingBooks[currentBookIndex].shrink_to_fit();
   Epub epub(filePath, "/.crosspoint");
 
   if (epub.load(true, true, true)) {
@@ -392,18 +489,18 @@ void Ao3IndexActivity::render(RenderLock&&) {
   }
   else if (state == State::SINGLE_COMPLETE) {
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, "Indexing complete!");
-    const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
+    const auto labels = mappedInput.mapLabels("", "Done", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   }
   else if (state == State::DIR_DISCOVERY) {
     renderer.drawCenteredText(UI_12_FONT_ID, contentTop, "Scanning AO3 folder...", true, EpdFontFamily::BOLD);
     char buf[128];
-    sprintf(buf, "%zu books found", pendingBooks.size());
+    sprintf(buf, "%zu books found", unindexedCount);
     renderer.drawCenteredText(UI_10_FONT_ID, contentTop + 40, buf);
   }
   else if (state == State::DIR_DISCOVERY_CONFIRM) {
     char buf[128];
-    sprintf(buf, "%zu unindexed book/s found. Index now?", pendingBooks.size());
+    sprintf(buf, "%zu unindexed book/s found. Index now?", unindexedCount);
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, buf);
     const auto labels = mappedInput.mapLabels("Cancel", "Index", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
@@ -434,7 +531,7 @@ void Ao3IndexActivity::render(RenderLock&&) {
   }
   else if (state == State::DIR_BATCH_COMPLETE) {
     char buf[128];
-    sprintf(buf, "%zu / %zu books indexed. Index next %d?", currentBookIndex, pendingBooks.size(), batchSize);
+    sprintf(buf, "%zu / %zu books indexed. Index next %d?", successCount + failureCount, unindexedCount, batchSize);
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, buf);
 
     sprintf(buf, "%zu succeeded, %zu failed", successCount, failureCount);
@@ -446,7 +543,7 @@ void Ao3IndexActivity::render(RenderLock&&) {
   else if (state == State::DIR_COMPLETE) {
     if (!errorMessage.empty()) {
       renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, errorMessage.c_str());
-    } else if (pendingBooks.empty()) {
+    } else if (unindexedCount == 0) {
       renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, "No new books found in your AO3 directory.");
     } else {
       renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, "Indexing Complete!");
