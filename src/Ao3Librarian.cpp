@@ -1046,3 +1046,79 @@ bool Ao3Librarian::tombstoneRecord(const std::string& epubPath) {
     f.close();
     return false;
 }
+
+int Ao3Librarian::sanitizeIndex() {
+    const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+    if (!Storage.exists(indexPath)) return 0;
+
+    FsFile f = Storage.open(indexPath, O_RDWR);
+    if (!f) return -1;
+
+    char     magic[4];
+    uint8_t  version;
+    uint16_t recordCount;
+    bool readOk = f.read(magic, 4) == 4 &&
+                  f.read(&version, 1) == 1 &&
+                  f.read((uint8_t*)&recordCount, 2) == 2;
+
+    if (!readOk || memcmp(magic, "AO3X", 4) != 0 || version != 1 ||
+        recordCount > MAX_LIBRARY_BOOKS) {
+        f.close();
+        return -1;
+    }
+
+    // Byte offset of the filepath field inside Ao3LibraryMetadata:
+    // magic[4] + version[1] + rating[1] + warning[1] + isCompleted[1]
+    // + wordCount[4] + chapterCount[2] + seriesPart[2]
+    // + seriesName[128] + summary[512] + tags[4][16] = 720
+    static constexpr size_t kFilepathOffset = 720;
+    static constexpr size_t kFilepathLen    = 256;
+
+    int tombstoned = 0;
+    CompactIndexRecord rec;
+
+    for (uint16_t i = 0; i < recordCount; i++) {
+        f.seek(offsetOf(i));
+        if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
+
+        if (rec.flags & 0x01) continue; // already tombstoned
+
+        // Check whether the sidecar exists for this hash.
+        std::string sidecarPath = "/.crosspoint/epub_";
+        sidecarPath += std::to_string(rec.cacheHash);
+        sidecarPath += "/ao3_library_info";
+
+        bool valid = false;
+        if (Storage.exists(sidecarPath.c_str())) {
+            // Read only the filepath field — avoids a full 1232-byte struct on the stack.
+            FsFile sf;
+            if (Storage.openFileForRead("AO3L", sidecarPath, sf)) {
+                if (sf.seek(kFilepathOffset)) {
+                    char filepath[kFilepathLen];
+                    memset(filepath, 0, sizeof(filepath));
+                    sf.read((uint8_t*)filepath, kFilepathLen - 1);
+                    if (filepath[0] != '\0' && Storage.exists(filepath)) {
+                        valid = true;
+                    }
+                }
+                sf.close();
+            }
+        }
+
+        if (!valid) {
+            rec.flags |= 0x01;
+            f.seek(offsetOf(i));
+            f.write((uint8_t*)&rec, sizeof(rec));
+            tombstoned++;
+            LOG_DBG("AO3L", "sanitizeIndex: tombstoned ghost record (hash %u)", rec.cacheHash);
+        }
+
+        yield();
+    }
+
+    f.close();
+    if (tombstoned > 0) {
+        LOG_INF("AO3L", "sanitizeIndex: removed %d ghost record(s)", tombstoned);
+    }
+    return tombstoned;
+}

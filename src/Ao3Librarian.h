@@ -66,6 +66,13 @@ class Ao3Librarian {
    */
   static bool tombstoneRecord(const std::string& epubPath);
 
+  /**
+   * @brief Tombstones any index record whose epub file or ao3_library_info
+   *        sidecar no longer exists on disk (e.g. book was moved/renamed).
+   * @return Number of records tombstoned, or -1 on index open failure.
+   */
+  static int sanitizeIndex();
+
  private:
   /**
    * @brief Internal parser that handles the HTML streaming and anchor searching.
