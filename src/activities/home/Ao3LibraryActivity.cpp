@@ -542,8 +542,8 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
                 memset(activeState.relationship, 0, 32);
                 activeState.relationshipNoneOnly = false;
                 saveSortFilterState();
-                rebuildViewEntries();
             }
+            rebuildViewEntries();
             requestUpdate(true);
           };
           startActivityForResult(std::make_unique<Ao3LibrarySettingsActivity>(renderer, mappedInput), handler);
@@ -573,8 +573,8 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
               memset(activeState.relationship, 0, 32);
               activeState.relationshipNoneOnly = false;
               saveSortFilterState();
-              rebuildViewEntries();
           }
+          rebuildViewEntries();
           requestUpdate(true);
         };
         startActivityForResult(std::make_unique<Ao3LibrarySettingsActivity>(renderer, mappedInput), handler);
