@@ -3,6 +3,7 @@
 #include <vector>
 #include "../Activity.h"
 #include "../../util/ButtonNavigator.h"
+#include "../../Ao3Librarian.h"
 
 enum class FilterMode : uint8_t {
     AUTOMATIC   = 0,
@@ -16,6 +17,9 @@ class Ao3LibrarySettingsActivity final : public Activity {
   std::vector<std::string> excludedFolders;
   int batchSize = 10;
   FilterMode filterMode = FilterMode::AUTOMATIC;
+  bool showingCleanupResult = false;
+  bool cleaningUpIndex = false;
+  int cleanupRemovedCount = 0;
 
   void loadSettings();
   void saveSettings();

@@ -86,6 +86,15 @@ void Ao3LibrarySettingsActivity::onEnter() {
 }
 
 void Ao3LibrarySettingsActivity::loop() {
+  if (showingCleanupResult) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
+        mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+      showingCleanupResult = false;
+      requestUpdate(true);
+    }
+    return;
+  }
+
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     saveSettings();
     finish();
@@ -124,7 +133,7 @@ void Ao3LibrarySettingsActivity::loop() {
       std::string startPath = ao3Folder.empty() ? "/" : ao3Folder;
       startActivityForResult(std::make_unique<Ao3FolderPickerActivity>(renderer, mappedInput, "Select Folders to Exclude", PickerMode::MULTI, excludedFolders, startPath), handler);
     } else if (selectorIndex == 2) {
-      const int sizes[] = {10, 15, 20};
+      const int sizes[] = {10, 25, 50};
       int current = 0;
       for (int i = 0; i < 3; i++) {
         if (sizes[i] == batchSize) { current = i; break; }
@@ -138,17 +147,31 @@ void Ao3LibrarySettingsActivity::loop() {
                      : FilterMode::AUTOMATIC;
       saveSettings();
       requestUpdate();
+    } else if (selectorIndex == 4) {
+      // Step 1: Show "Cleaning up index..." on the display
+      cleaningUpIndex = true;
+      requestUpdate(true);
+      render(RenderLock()); // Force frame update immediately before heavy execution
+
+      // Step 2: Run the cleanup work
+      cleanupRemovedCount = Ao3Librarian::sanitizeIndex();
+
+      // Step 3: Transition to the result screen
+      cleaningUpIndex = false;
+      showingCleanupResult = true;
+      requestUpdate(true);
+      return;
     }
     return;
   }
 
   buttonNavigator.onNextRelease([this] {
-    selectorIndex = (selectorIndex + 1) % 4;
+    selectorIndex = (selectorIndex + 1) % 5;
     requestUpdate();
   });
 
   buttonNavigator.onPreviousRelease([this] {
-    selectorIndex = (selectorIndex + 3) % 4;
+    selectorIndex = (selectorIndex + 4) % 5;
     requestUpdate();
   });
 
@@ -164,6 +187,36 @@ void Ao3LibrarySettingsActivity::loop() {
 }
 
 void Ao3LibrarySettingsActivity::render(RenderLock&&) {
+  if (cleaningUpIndex) {
+    renderer.clearScreen();
+    const auto pageHeight = renderer.getScreenHeight();
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.headerHeight}, "Library Cleanup");
+    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "Cleaning up index...");
+    renderer.displayBuffer();
+    return;
+  }
+
+  if (showingCleanupResult) {
+    renderer.clearScreen();
+    const auto pageHeight = renderer.getScreenHeight();
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.headerHeight}, "Library Cleanup");
+    if (cleanupRemovedCount < 0) {
+      renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "Index not found.");
+    } else if (cleanupRemovedCount == 0) {
+      renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "Nothing to clean up.");
+    } else {
+      char buf[64];
+      sprintf(buf, "%d ghost entr%s removed.", cleanupRemovedCount, cleanupRemovedCount == 1 ? "y" : "ies");
+      renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, buf);
+    }
+    const auto labels = mappedInput.mapLabels("", "Done", "", "");
+    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    renderer.displayBuffer();
+    return;
+  }
+
   renderer.clearScreen();
 
   const auto pageWidth = renderer.getScreenWidth();
@@ -177,7 +230,8 @@ void Ao3LibrarySettingsActivity::render(RenderLock&&) {
     "Your AO3 Folder",
     "Ignored Folders",
     "Index Batch Size",
-    "Filter Mode"
+    "Filter Mode",
+    "Library Cleanup"
   };
 
   auto rowTitle = [&rows](int index) {
@@ -189,13 +243,14 @@ void Ao3LibrarySettingsActivity::render(RenderLock&&) {
     if (index == 1) return formatExclusionsPill();
     if (index == 2) return std::to_string(batchSize);
     if (index == 3) return (filterMode == FilterMode::FOLDER_TREE) ? "Folder Tree" : "Automatic";
+    if (index == 4) return "";
     return "";
   };
 
   int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
   int contentHeight = pageHeight - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing * 2;
 
-  GUI.drawList(renderer, Rect{0, contentTop, pageWidth, contentHeight}, 4, selectorIndex,
+  GUI.drawList(renderer, Rect{0, contentTop, pageWidth, contentHeight}, 5, selectorIndex,
                rowTitle, nullptr, nullptr, rowValue, true);
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), "Select", tr(STR_DIR_UP), tr(STR_DIR_DOWN));
