@@ -227,7 +227,7 @@ void HomeActivity::loop() {
     });
 
     buttonNavigator.onFrontPreviousContinuous([this, menuCount] {
-      selectorIndex = ButtonNavigator::previousIndex(selectorIndex, menuCount);
+      selectorIndex = (selectorIndex - 2 + menuCount) % menuCount;
       requestUpdate();
     });
 
@@ -263,7 +263,7 @@ void HomeActivity::loop() {
       if (selectorIndex == booksCount && booksCount > 0) {
         selectorIndex = 0;  // Jump to first book
       } else {
-        selectorIndex = ButtonNavigator::previousIndex(selectorIndex, menuCount);
+        selectorIndex = (selectorIndex - 2 + menuCount) % menuCount;
       }
       requestUpdate();
     });

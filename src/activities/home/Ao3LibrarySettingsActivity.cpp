@@ -151,6 +151,16 @@ void Ao3LibrarySettingsActivity::loop() {
     selectorIndex = (selectorIndex + 3) % 4;
     requestUpdate();
   });
+
+  buttonNavigator.onNextContinuous([this] {
+    selectorIndex = (selectorIndex + 2) % 4;
+    requestUpdate();
+  });
+
+  buttonNavigator.onPreviousContinuous([this] {
+    selectorIndex = (selectorIndex + 2) % 4;
+    requestUpdate();
+  });
 }
 
 void Ao3LibrarySettingsActivity::render(RenderLock&&) {
