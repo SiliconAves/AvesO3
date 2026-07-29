@@ -19,6 +19,7 @@ class Ao3LibrarySettingsActivity final : public Activity {
   FilterMode filterMode = FilterMode::AUTOMATIC;
   bool showingCleanupResult = false;
   bool cleaningUpIndex = false;
+  bool showingCleanupConfirm = false;
   int cleanupRemovedCount = 0;
 
   void loadSettings();

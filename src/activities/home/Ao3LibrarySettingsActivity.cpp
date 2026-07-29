@@ -86,6 +86,23 @@ void Ao3LibrarySettingsActivity::onEnter() {
 }
 
 void Ao3LibrarySettingsActivity::loop() {
+  if (showingCleanupConfirm) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+      showingCleanupConfirm = false;
+      requestUpdate(true);
+    } else if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+      showingCleanupConfirm = false;
+      cleaningUpIndex = true;
+      requestUpdate(true);
+      render(RenderLock());
+      cleanupRemovedCount = Ao3Librarian::sanitizeIndex();
+      cleaningUpIndex = false;
+      showingCleanupResult = true;
+      requestUpdate(true);
+    }
+    return;
+  }
+
   if (showingCleanupResult) {
     if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
         mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
@@ -148,17 +165,7 @@ void Ao3LibrarySettingsActivity::loop() {
       saveSettings();
       requestUpdate();
     } else if (selectorIndex == 4) {
-      // Step 1: Show "Cleaning up index..." on the display
-      cleaningUpIndex = true;
-      requestUpdate(true);
-      render(RenderLock()); // Force frame update immediately before heavy execution
-
-      // Step 2: Run the cleanup work
-      cleanupRemovedCount = Ao3Librarian::sanitizeIndex();
-
-      // Step 3: Transition to the result screen
-      cleaningUpIndex = false;
-      showingCleanupResult = true;
+      showingCleanupConfirm = true;
       requestUpdate(true);
       return;
     }
@@ -176,12 +183,12 @@ void Ao3LibrarySettingsActivity::loop() {
   });
 
   buttonNavigator.onNextContinuous([this] {
-    selectorIndex = (selectorIndex + 2) % 4;
+    selectorIndex = (selectorIndex + 2) % 5;
     requestUpdate();
   });
 
   buttonNavigator.onPreviousContinuous([this] {
-    selectorIndex = (selectorIndex + 2) % 4;
+    selectorIndex = (selectorIndex + 2) % 5;
     requestUpdate();
   });
 }
@@ -192,7 +199,22 @@ void Ao3LibrarySettingsActivity::render(RenderLock&&) {
     const auto pageHeight = renderer.getScreenHeight();
     const auto& metrics = UITheme::getInstance().getMetrics();
     GUI.drawHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.headerHeight}, "Library Cleanup");
-    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "Cleaning up index...");
+    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "Please Wait. Cleaning up library...");
+    renderer.displayBuffer();
+    return;
+  }
+
+  if (showingCleanupConfirm) {
+    renderer.clearScreen();
+    const auto pageHeight = renderer.getScreenHeight();
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.headerHeight}, "Library Cleanup");
+    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 10,
+      "The cleanup process will remove");
+    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 14,
+      "ghost books from your AO3 Library.");
+    const auto labels = mappedInput.mapLabels("Cancel", "Start", "", "");
+    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
     renderer.displayBuffer();
     return;
   }
