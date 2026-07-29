@@ -598,9 +598,40 @@ void extractTagsFromAnchor(const char* anchor) {
 
       size_t rawLen = (size_t)(actualEnd - scan);
       if (rawLen == 0) { scan = lt; continue; } // empty text node, skip
-      bool truncated = rawLen > 15;
-      size_t len = std::min(rawLen, truncated ? (size_t)14 : (size_t)15);
-      strncpy(meta.tags[tagIdx], scan, len);
+
+      char tempTag[64] = {0};
+      size_t processLen = rawLen;
+      
+      const char* auPrefix = "Alternate Universe - ";
+      const size_t auLen = 21;
+      
+      const char* irPrefix = "Implied/Referenced ";
+      const size_t irLen = 19;
+
+      if (rawLen > auLen && strncasecmp(scan, auPrefix, auLen) == 0) {
+        // Handle "Alternate Universe - "
+        strcpy(tempTag, "AU-");
+        size_t remaining = std::min((size_t)(rawLen - auLen), (size_t)(sizeof(tempTag) - 4));
+        strncpy(tempTag + 3, scan + auLen, remaining);
+        processLen = 3 + remaining;
+        
+      } else if (rawLen > irLen && strncasecmp(scan, irPrefix, irLen) == 0) {
+        // Handle "Implied/Referenced "
+        strcpy(tempTag, "I/R ");
+        size_t remaining = std::min((size_t)(rawLen - irLen), (size_t)(sizeof(tempTag) - 5));
+        strncpy(tempTag + 4, scan + irLen, remaining);
+        processLen = 4 + remaining;
+        
+      } else {
+        // Standard tag processing
+        size_t maxCopy = std::min(rawLen, (size_t)(sizeof(tempTag) - 1));
+        strncpy(tempTag, scan, maxCopy);
+        processLen = maxCopy;
+      }
+
+      bool truncated = processLen > 15;
+      size_t len = std::min(processLen, truncated ? (size_t)14 : (size_t)15);
+      strncpy(meta.tags[tagIdx], tempTag, len);
       meta.tags[tagIdx][len] = 0;
 
       // trim space
