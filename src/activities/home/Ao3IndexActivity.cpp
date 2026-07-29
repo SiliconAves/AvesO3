@@ -8,6 +8,7 @@
 #include "../../fontIds.h"
 
 namespace {
+
 bool isLibraryFull() {
   const char* indexPath = "/.crosspoint/ao3_library_index.bin";
   if (!Storage.exists(indexPath)) return false;
@@ -17,8 +18,16 @@ bool isLibraryFull() {
     uint8_t version;
     uint16_t recordCount;
     if (f.read(magic, 4) == 4 && f.read(&version, 1) == 1 && f.read((uint8_t*)&recordCount, 2) == 2) {
+      // Skip remaining header bytes to reach records
+      f.seek(12);
+      uint16_t liveCount = 0;
+      CompactIndexRecord rec;
+      for (uint16_t i = 0; i < recordCount; i++) {
+        if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
+        if (!(rec.flags & 0x01)) liveCount++;
+      }
       f.close();
-      return recordCount >= 400;
+      return liveCount >= 400;
     }
     f.close();
   }
@@ -491,12 +500,6 @@ void Ao3IndexActivity::render(RenderLock&&) {
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, "Indexing complete!");
     const auto labels = mappedInput.mapLabels("", "Done", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-  }
-  else if (state == State::DIR_DISCOVERY) {
-    renderer.drawCenteredText(UI_12_FONT_ID, contentTop, "Scanning AO3 folder...", true, EpdFontFamily::BOLD);
-    char buf[128];
-    sprintf(buf, "%zu books found", unindexedCount);
-    renderer.drawCenteredText(UI_10_FONT_ID, contentTop + 40, buf);
   }
   else if (state == State::DIR_DISCOVERY_CONFIRM) {
     char buf[128];
