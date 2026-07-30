@@ -1,5 +1,5 @@
 # What's Different in AvesO3
-**Before flashing: DO NOT INSTALL ON A LOCKED X3.** Some x3 devices need different display drivers, and the fix will be merged in a future release.
+**NOT COMPATIBLE WITH DEVICES WITH THE NEW DISPLAY CONTROLLER** New x3/x4 batches are shipped  with a new display controller. This will be fixed in a future release.
 
 - [x] **AO3-style library browser**, complete with summary and metadata square. You can add **up to 400 books** to the AO3 library.
 - [x] Compatible with **Calibre+FanFicFare epubs** with *<u>*unmodified metadata spine*</u>* and **epubs from AO3**
@@ -112,7 +112,7 @@ Black with Checkmark: Finished reading<br>
 <br><br>Pinned fics are marked with a **bullet dot [·]** before the title.
 <br clear="left"/>
 
-## Installing (DO NOT INSTALL ON LOCKED X3!!!)
+## Installing (DO NOT INSTALL ON DEVICES WITH THE NEW DISPLAY CONTROLLER)
 
 ### Web (latest firmware)
 
