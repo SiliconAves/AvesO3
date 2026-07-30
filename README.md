@@ -28,7 +28,7 @@ What may come in the future:
 <img src="docs/images/AvesO3/sortFilter.jpg" width="300" align="left" style="margin-right: 30px; border: 1px solid black;"/>
 <br><br>Automatically Filter by:
 + **Fandom**
-+ **Relationship** (up to 2 relationships)<br><br> 
++ **Relationship** (up to 2 relationships per fic in Automatic Mode)<br><br> 
 
 Sort by:
 + **Title**
@@ -61,6 +61,7 @@ Available settings:<br>
 + **Ignored Folders**: multi-select all the folders you never want to index. (useful if you keep your AO3 stories in root/ alongside other folders, such as Books, Comics, ...)
 + **Index Batch Size**: Books will be indexed in batches. You can choose the size of the batch here.
 + **Filter Mode**: Choose between AUTOMATIC/FOLDER TREE.<br>
++ **Library Cleanup**: Use this option to remove ghost book entries or non-functional entries in your AO3 Library.
 <br clear="left"/> <br>
 **FOLDER TREE MODE**: Choose this mode if you keep your AO3 stories organized **in this exact manner**:<br><br> **YourAO3Folder/Fandom/Relationship**<br><br>
 Your folder names will be shown when you filter your library by fandom/relationships. This is especially useful if you use the auto-folders on transfer feature from Calibre. All epubs outside of the Relationship folders will be ignored. You can name the Fandom and Relationship folders as you please, as long as you keep the structure intact.
