@@ -1,5 +1,6 @@
 # What's Different in AvesO3
-**NOT COMPATIBLE WITH DEVICES WITH THE NEW DISPLAY CONTROLLER** New x3/x4 batches are shipped  with a new display controller. This will be fixed in a future release.
+> [!WARNING]
+> **NOT COMPATIBLE WITH DEVICES WITH THE NEW DISPLAY CONTROLLER** New x3/x4 batches are shipped  with a new display controller. This will be fixed in a future release.
 
 - [x] **AO3-style library browser**, complete with summary and metadata square. You can add **up to 400 books** to the AO3 library.
 - [x] Compatible with **Calibre+FanFicFare epubs** with *<u>*unmodified metadata spine*</u>* and **epubs from AO3**
