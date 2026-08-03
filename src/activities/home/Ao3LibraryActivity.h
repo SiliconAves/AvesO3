@@ -62,6 +62,7 @@ class Ao3LibraryActivity final : public Activity {
   IndexState indexState    = IndexState::UNKNOWN;
   ScreenState screenState  = ScreenState::LIBRARY;
   ButtonNavigator buttonNavigator;
+  bool swapNavButtons = false;
 
   // Page cache
   Ao3LibraryMetadata      pageCache[3];

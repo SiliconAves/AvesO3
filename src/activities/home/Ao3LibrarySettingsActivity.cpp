@@ -25,6 +25,7 @@ void Ao3LibrarySettingsActivity::loadSettings() {
   batchSize = doc["batchSize"] | 10;
   filterMode = static_cast<FilterMode>(doc["filterMode"] | 0);
   if (filterMode > FilterMode::FOLDER_TREE) filterMode = FilterMode::AUTOMATIC;
+  swapNavButtons = doc["swapNavButtons"] | false;
   JsonArray arr = doc["excludedFolders"];
   if (!arr.isNull()) {
     for (JsonVariant val : arr) {
@@ -38,6 +39,7 @@ void Ao3LibrarySettingsActivity::saveSettings() {
   doc["ao3Folder"] = ao3Folder;
   doc["batchSize"] = batchSize;
   doc["filterMode"] = static_cast<uint8_t>(filterMode);
+  doc["swapNavButtons"] = swapNavButtons;
   JsonArray arr = doc["excludedFolders"].to<JsonArray>();
   for (const auto& folder : excludedFolders) {
     arr.add(folder);
@@ -165,6 +167,10 @@ void Ao3LibrarySettingsActivity::loop() {
       saveSettings();
       requestUpdate();
     } else if (selectorIndex == 4) {
+      swapNavButtons = !swapNavButtons;
+      saveSettings();
+      requestUpdate();
+    } else if (selectorIndex == 5) {
       showingCleanupConfirm = true;
       requestUpdate(true);
       return;
@@ -173,22 +179,22 @@ void Ao3LibrarySettingsActivity::loop() {
   }
 
   buttonNavigator.onNextRelease([this] {
-    selectorIndex = (selectorIndex + 1) % 5;
+    selectorIndex = (selectorIndex + 1) % 6;
     requestUpdate();
   });
 
   buttonNavigator.onPreviousRelease([this] {
-    selectorIndex = (selectorIndex + 4) % 5;
+    selectorIndex = (selectorIndex + 5) % 6;
     requestUpdate();
   });
 
   buttonNavigator.onNextContinuous([this] {
-    selectorIndex = (selectorIndex + 2) % 5;
+    selectorIndex = (selectorIndex + 2) % 6;
     requestUpdate();
   });
 
   buttonNavigator.onPreviousContinuous([this] {
-    selectorIndex = (selectorIndex + 2) % 5;
+    selectorIndex = (selectorIndex + 2) % 6;
     requestUpdate();
   });
 }
@@ -250,9 +256,10 @@ void Ao3LibrarySettingsActivity::render(RenderLock&&) {
   // Two rows: Your AO3 Folder and Non-AO3 Folders
   std::vector<std::string> rows = {
     "Your AO3 Folder",
-    "Ignored Folders",
+    "Never Index",
     "Index Batch Size",
     "Filter Mode",
+    "Side Button Layout",
     "Library Cleanup"
   };
 
@@ -265,14 +272,15 @@ void Ao3LibrarySettingsActivity::render(RenderLock&&) {
     if (index == 1) return formatExclusionsPill();
     if (index == 2) return std::to_string(batchSize);
     if (index == 3) return (filterMode == FilterMode::FOLDER_TREE) ? "Folder Tree" : "Automatic";
-    if (index == 4) return "";
+    if (index == 4) return swapNavButtons ? "Scroll List" : "Open Panels";
+    if (index == 5) return "";
     return "";
   };
 
   int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
   int contentHeight = pageHeight - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing * 2;
 
-  GUI.drawList(renderer, Rect{0, contentTop, pageWidth, contentHeight}, 5, selectorIndex,
+  GUI.drawList(renderer, Rect{0, contentTop, pageWidth, contentHeight}, 6, selectorIndex,
                rowTitle, nullptr, nullptr, rowValue, true);
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), "Select", tr(STR_DIR_UP), tr(STR_DIR_DOWN));

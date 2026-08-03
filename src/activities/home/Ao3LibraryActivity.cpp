@@ -42,6 +42,7 @@ void Ao3LibraryActivity::loadFilterMode() {
     filterMode = FilterMode::AUTOMATIC;
     ao3Folder  = "";
     allowedHashes.clear();
+    swapNavButtons = false;
 
     const char* path = "/.crosspoint/ao3_settings.json";
     if (!Storage.exists(path)) return;
@@ -55,6 +56,7 @@ void Ao3LibraryActivity::loadFilterMode() {
     ao3Folder  = doc["ao3Folder"] | "";
     uint8_t fm = doc["filterMode"] | 0;
     filterMode = (fm == 1) ? FilterMode::FOLDER_TREE : FilterMode::AUTOMATIC;
+    swapNavButtons = doc["swapNavButtons"] | false;
 }
 
 void Ao3LibraryActivity::buildAllowedHashes(const std::string& scanPath, int maxDepth) {
@@ -184,40 +186,96 @@ void Ao3LibraryActivity::loop() {
   // --- STATE: LIBRARY ---
   if (screenState == ScreenState::LIBRARY) {
 
-    if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
-      screenState = ScreenState::MANAGE_PANEL;
-      managePanelRowIndex = 0;
-      requestUpdate(true);
-      return;
-    }
-
-    if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
-      screenState = ScreenState::FILTER_PANEL;
-      pendingState = activeState;
-      overlayRowIndex = 0;
-      requestUpdate(true);
-      return;
-    }
-    const int total = static_cast<int>(viewEntries.size());
-    if (total > 0) {
-      // Tap: step one entry using Right and Left buttons only
-      buttonNavigator.onPress({MappedInputManager::Button::Right}, [this, total] {
-        selectorIndex = (selectorIndex + 1) % total;
-        requestUpdate();
-      });
-      buttonNavigator.onPress({MappedInputManager::Button::Left}, [this, total] {
-        selectorIndex = (selectorIndex + total - 1) % total;
-        requestUpdate();
-      });
-      // Hold: jump a full page using Right and Left buttons only
-      buttonNavigator.onContinuous({MappedInputManager::Button::Right}, [this, total] {
-        selectorIndex = ButtonNavigator::nextPageIndex(selectorIndex, total, 3);
-        requestUpdate();
-      });
-      buttonNavigator.onContinuous({MappedInputManager::Button::Left}, [this, total] {
-        selectorIndex = ButtonNavigator::previousPageIndex(selectorIndex, total, 3);
-        requestUpdate();
-      });
+    if (!swapNavButtons) {
+      // Default: side buttons open panels, front left/right scroll
+      if (mappedInput.wasReleased(MappedInputManager::Button::Up ) &&
+          mappedInput.getHeldTime() < 500) {
+        screenState = ScreenState::MANAGE_PANEL;
+        managePanelRowIndex = 0;
+        requestUpdate(true);
+        return;
+      }
+      if (mappedInput.wasReleased(MappedInputManager::Button::Down)&&
+          mappedInput.getHeldTime() < 500) {
+        screenState = ScreenState::FILTER_PANEL;
+        pendingState = activeState;
+        overlayRowIndex = 0;
+        requestUpdate(true);
+        return;
+      }
+      const int total = static_cast<int>(viewEntries.size());
+      if (total > 0) {
+        buttonNavigator.onPress({MappedInputManager::Button::Right}, [this, total] {
+          selectorIndex = (selectorIndex + 1) % total;
+          requestUpdate();
+        });
+        buttonNavigator.onPress({MappedInputManager::Button::Left}, [this, total] {
+          selectorIndex = (selectorIndex + total - 1) % total;
+          requestUpdate();
+        });
+        buttonNavigator.onContinuous({MappedInputManager::Button::Right}, [this, total] {
+          selectorIndex = ButtonNavigator::nextPageIndex(selectorIndex, total, 3);
+          requestUpdate();
+        });
+        buttonNavigator.onContinuous({MappedInputManager::Button::Left}, [this, total] {
+          selectorIndex = ButtonNavigator::previousPageIndex(selectorIndex, total, 3);
+          requestUpdate();
+        });
+        // Page skip on hold for panel buttons 
+        buttonNavigator.onContinuous({MappedInputManager::Button::Down}, [this, total] {
+          selectorIndex = ButtonNavigator::nextPageIndex(selectorIndex, total, 3);
+          requestUpdate();
+        });
+        buttonNavigator.onContinuous({MappedInputManager::Button::Up}, [this, total] {
+          selectorIndex = ButtonNavigator::previousPageIndex(selectorIndex, total, 3);
+          requestUpdate();
+        });
+      }
+    } else {
+      // Swapped: front left/right open panels, side buttons scroll
+      if (mappedInput.wasReleased(MappedInputManager::Button::Right) &&
+          mappedInput.getHeldTime() < 500) {
+        screenState = ScreenState::FILTER_PANEL;
+        pendingState = activeState;
+        overlayRowIndex = 0;
+        requestUpdate(true);
+        return;
+      }
+      if (mappedInput.wasReleased(MappedInputManager::Button::Left) &&
+          mappedInput.getHeldTime() < 500) {
+        screenState = ScreenState::MANAGE_PANEL;
+        managePanelRowIndex = 0;
+        requestUpdate(true);
+        return;
+      }
+      const int total = static_cast<int>(viewEntries.size());
+      if (total > 0) {
+        buttonNavigator.onPress({MappedInputManager::Button::Down}, [this, total] { 
+          selectorIndex = (selectorIndex + 1) % total;
+          requestUpdate();
+        });
+        buttonNavigator.onPress({MappedInputManager::Button::Up}, [this, total] { 
+          selectorIndex = (selectorIndex + total - 1) % total;
+          requestUpdate();
+        });
+        buttonNavigator.onSideNextContinuous([this, total] {
+          selectorIndex = ButtonNavigator::nextPageIndex(selectorIndex, total, 3);
+          requestUpdate();
+        });
+        buttonNavigator.onSidePreviousContinuous([this, total] {
+          selectorIndex = ButtonNavigator::previousPageIndex(selectorIndex, total, 3);
+          requestUpdate();
+        });
+        // Page skip on hold for panel buttons
+        buttonNavigator.onContinuous({MappedInputManager::Button::Right}, [this, total] {
+          selectorIndex = ButtonNavigator::nextPageIndex(selectorIndex, total, 3);
+          requestUpdate();
+        });
+        buttonNavigator.onContinuous({MappedInputManager::Button::Left}, [this, total] {
+          selectorIndex = ButtonNavigator::previousPageIndex(selectorIndex, total, 3);
+          requestUpdate();
+        });
+      }
     }
 
     if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
@@ -697,7 +755,9 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
 
   // Draw Button hints
 
-    const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+    const auto labels = (swapNavButtons && screenState == ScreenState::LIBRARY)
+      ? mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), "Manage", "Filter")
+      : mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
     // Triangle indicator: Show 'Up' triangle when Manage Panel is closed
