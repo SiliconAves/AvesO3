@@ -390,16 +390,18 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
       return;
     }
 
-    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       if (overlayRowIndex == 0) {
-        // Fandom row: cycle if <= 3, open picker if >= 4
-        std::vector<std::string> fandoms;
-        buildFandomList(fandoms);
-        if (fandoms.size() <= 4) {
-          pickerItems.clear();
-          pickerItems.push_back("Any");
-          for (const auto& f : fandoms) pickerItems.push_back(f);
-
+        // Fandom row: cycle if <= 4 fandoms, open full picker if > 4
+        pickerItems.clear();
+        pickerItems.push_back("Any");
+        {
+          std::vector<std::string> fandoms;
+          buildFandomList(fandoms);
+          pickerItems.reserve(fandoms.size() + 1);
+          for (auto& f : fandoms) pickerItems.push_back(std::move(f));
+        }
+        if (pickerItems.size() <= 5) {
           size_t currentIdx = 0;
           for (size_t i = 0; i < pickerItems.size(); i++) {
             if (strcmp(pendingState.fandom, pickerItems[i].c_str()) == 0) {
@@ -420,10 +422,6 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
           }
         } else {
           screenState = ScreenState::FANDOM_PICKER;
-          pickerItems.clear();
-          pickerItems.push_back("Any");
-          for (const auto& f : fandoms) pickerItems.push_back(f);
-
           pickerSelectedIndex = 0;
           for (size_t i = 0; i < pickerItems.size(); i++) {
             if (strcmp(pendingState.fandom, pickerItems[i].c_str()) == 0) {
@@ -436,14 +434,15 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
         // Relationship row: always opens a list picker if fandom is active
         if (pendingState.fandom[0] != '\0') {
           screenState = ScreenState::RELATIONSHIP_PICKER;
-          std::vector<std::string> rels;
-          buildRelationshipList(pendingState.fandom, rels, pickerHasNone);
-
           pickerItems.clear();
           pickerItems.push_back("Any");
-          if (pickerHasNone) pickerItems.push_back("None");
-          for (const auto& r : rels) pickerItems.push_back(r);
-
+          {
+            std::vector<std::string> rels;
+            buildRelationshipList(pendingState.fandom, rels, pickerHasNone);
+            if (pickerHasNone) pickerItems.push_back("None");
+            pickerItems.reserve(pickerItems.size() + rels.size());
+            for (auto& r : rels) pickerItems.push_back(std::move(r));
+          }
           pickerSelectedIndex = 0;
           if (pendingState.relationshipNoneOnly) {
             if (pickerHasNone) pickerSelectedIndex = 1;
@@ -1255,7 +1254,7 @@ void Ao3LibraryActivity::resortViewEntries() {
 
     case SortMode::ALPHABETIC:
       std::sort(viewEntries.begin(), viewEntries.end(), [&](const ViewEntry& a, const ViewEntry& b) {
-        int cmp = strncasecmp(a.title, b.title, 32);
+        int cmp = strncasecmp(a.title, b.title, 12);
       return activeState.ascending ? cmp < 0 : cmp > 0;
       });
       break;
@@ -1264,7 +1263,7 @@ void Ao3LibraryActivity::resortViewEntries() {
       std::sort(viewEntries.begin(), viewEntries.end(), [&](const ViewEntry& a, const ViewEntry& b) {
         if (a.wordCount != b.wordCount)
           return activeState.ascending ? a.wordCount < b.wordCount : a.wordCount > b.wordCount;
-        return strncmp(a.title, b.title, 32) < 0;
+        return strncmp(a.title, b.title, 12) < 0;
       });
       break;
 
@@ -1272,7 +1271,7 @@ void Ao3LibraryActivity::resortViewEntries() {
       std::sort(viewEntries.begin(), viewEntries.end(), [&](const ViewEntry& a, const ViewEntry& b) {
         if (a.addedSequence != b.addedSequence)
           return activeState.ascending ? a.addedSequence < b.addedSequence : a.addedSequence > b.addedSequence;
-        return strncmp(a.title, b.title, 32) < 0;
+        return strncmp(a.title, b.title, 12) < 0;
       });
       break;
 
@@ -1288,16 +1287,16 @@ void Ao3LibraryActivity::resortViewEntries() {
         if (a.seriesPart != b.seriesPart)
           return a.seriesPart < b.seriesPart; // always ascending seriesPart
 
-        return strncmp(a.title, b.title, 32) < 0;
+        return strncmp(a.title, b.title, 12) < 0;
       });
       break;
 
     case SortMode::AUTHOR:
       std::sort(viewEntries.begin(), viewEntries.end(), [&](const ViewEntry& a, const ViewEntry& b) {
-        int cmp = strncmp(a.authorKey, b.authorKey, 16);
+        int cmp = strncmp(a.authorKey, b.authorKey, 8);
         if (cmp != 0)
           return activeState.ascending ? cmp < 0 : cmp > 0;
-        return strncmp(a.title, b.title, 32) < 0;
+        return strncmp(a.title, b.title, 12) < 0;
       });
       break;
   }
@@ -1385,10 +1384,9 @@ void Ao3LibraryActivity::rebuildViewEntries() {
 
   CompactIndexRecord rec;
   for (uint16_t i = 0; i < recordCount; i++) {
-    const uint32_t offset = offsetOf(i);
     if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
     if (rec.flags & 0x01) continue; // Skip tombstone
-    ViewEntry v = buildViewEntry(rec, offset);
+    ViewEntry v = buildViewEntry(rec);
     if (passesFilter(v, filterHashes)) {
       viewEntries.push_back(v);
     }

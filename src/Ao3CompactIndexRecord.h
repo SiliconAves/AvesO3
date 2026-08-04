@@ -20,7 +20,7 @@ struct CompactIndexRecord {
 // Exactly 239 bytes on disk
 static_assert(sizeof(CompactIndexRecord) == 239, "CompactIndexRecord must be exactly 239 bytes");
 
-constexpr uint16_t MAX_LIBRARY_BOOKS = 400;
+constexpr uint16_t MAX_LIBRARY_BOOKS = 1000;
 constexpr uint32_t INDEX_HEADER_SIZE = 12;
 
 inline uint32_t offsetOf(uint16_t i) {

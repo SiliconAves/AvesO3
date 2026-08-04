@@ -27,7 +27,7 @@ bool isLibraryFull() {
         if (!(rec.flags & 0x01)) liveCount++;
       }
       f.close();
-      return liveCount >= 400;
+      return liveCount >= MAX_LIBRARY_BOOKS;
     }
     f.close();
   }
@@ -58,7 +58,7 @@ void Ao3IndexActivity::runHeapCheck() {
 
       if (!isExistingBook) {
         state = State::ERROR;
-        errorMessage = "AO3 library full (400 books).";
+        errorMessage = "AO3 library full (1000 books).";
         return;
       }
     }
@@ -67,7 +67,7 @@ void Ao3IndexActivity::runHeapCheck() {
     // Directory mode: Block immediately if full (no need to waste time scanning folders)
     if (isLibraryFull()) {
       state = State::ERROR;
-      errorMessage = "AO3 library full (400 books).";
+      errorMessage = "AO3 library full (1000 books).";
       return;
     }
     state = State::DIR_LOAD_SETTINGS;
@@ -442,7 +442,7 @@ void Ao3IndexActivity::tickDirIndexing() {
 
   if (isLibraryFull()) {
     state = State::DIR_COMPLETE;
-    errorMessage = "AO3 library full (400 books).";
+    errorMessage = "AO3 library full (1000 books).";
     requestUpdate(true);
     return;
   }
