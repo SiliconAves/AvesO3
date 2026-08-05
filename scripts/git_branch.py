@@ -86,7 +86,7 @@ def inject_version(env):
     base_version = get_base_version(project_dir)
     branch = get_git_branch(project_dir)
     short_sha = get_git_short_sha(project_dir)
-    version_string = f'1.4.0-14-Preview 2'
+    version_string = f'1.4.0-16-Preview 2'
     # version_string = f'{base_version}-dev-{branch}-{short_sha}'
 
     env.Append(CPPDEFINES=[('CROSSPOINT_VERSION', f'\\"{version_string}\\"')])
