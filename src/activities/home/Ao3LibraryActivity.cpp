@@ -543,21 +543,35 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
   const int total = static_cast<int>(pickerItems.size());
     if (total > 0) {
       // Tap: step one item
-      buttonNavigator.onPress({MappedInputManager::Button::Down, MappedInputManager::Button::Right}, [this, total] {
+      buttonNavigator.onNextPress([this, total] {
         pickerSelectedIndex = (pickerSelectedIndex + 1) % total;
         requestUpdate(true);
       });
-      buttonNavigator.onPress({MappedInputManager::Button::Up, MappedInputManager::Button::Left}, [this, total] {
+      buttonNavigator.onPreviousPress([this, total] {
         pickerSelectedIndex = (pickerSelectedIndex + total - 1) % total;
         requestUpdate(true);
       });
-      // Hold: skip 2 items continuously without lifting finger
-      buttonNavigator.onContinuous({MappedInputManager::Button::Down, MappedInputManager::Button::Right}, [this, total] {
+      // Hold front buttons: skip 2 items continuously
+      buttonNavigator.onFrontNextContinuous([this, total] {
         pickerSelectedIndex = (pickerSelectedIndex + 2) % total;
         requestUpdate(true);
       });
-      buttonNavigator.onContinuous({MappedInputManager::Button::Up, MappedInputManager::Button::Left}, [this, total] {
+      buttonNavigator.onFrontPreviousContinuous([this, total] {
         pickerSelectedIndex = (pickerSelectedIndex + total - 2) % total;
+        requestUpdate(true);
+      });
+      // Hold side buttons: skip a full page (16 items) on multi-page lists,
+      // falling back to the 2-item skip (original behavior) on single-page lists
+      buttonNavigator.onSideNextContinuous([this, total] {
+        pickerSelectedIndex = (total > 16)
+            ? ButtonNavigator::nextPageIndex(pickerSelectedIndex, total, 16)
+            : (pickerSelectedIndex + 2) % total;
+        requestUpdate(true);
+      });
+      buttonNavigator.onSidePreviousContinuous([this, total] {
+        pickerSelectedIndex = (total > 16)
+            ? ButtonNavigator::previousPageIndex(pickerSelectedIndex, total, 16)
+            : (pickerSelectedIndex + total - 2) % total;
         requestUpdate(true);
       });
     }
@@ -574,6 +588,9 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
           pendingState.relationship[0] = '\0';
           pendingState.relationshipNoneOnly = false;
         }
+        // Advance to relationship row when returning to the filter panel
+        // (skip it if no fandom is selected, since it would be disabled)
+        overlayRowIndex = (pendingState.fandom[0] != '\0') ? 1 : 2;
       } else {
         if (pickerSelectedIndex == 0) {
           pendingState.relationship[0] = '\0';
@@ -586,6 +603,8 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
           pendingState.relationship[31] = '\0';
           pendingState.relationshipNoneOnly = false;
         }
+        // Advance to sort-by row when returning to the filter panel
+        overlayRowIndex = 2;
       }
       screenState = ScreenState::FILTER_PANEL;
       requestUpdate(true);
@@ -922,8 +941,8 @@ void Ao3LibraryActivity::renderFilterOverlay() {
       renderer.fillRoundedRect(margin, rowY - 6, screenWidth - (2 * margin), 34, 6, true, true, true, true, LightGray);
     }
 
-    // Label text
-    renderer.drawText(UI_10_FONT_ID, margin + 12, rowY, label, !disabled);
+    // Label text — always draw in black; dimming is handled via checkerboard dither below
+    renderer.drawText(UI_10_FONT_ID, margin + 12, rowY, label, true);
 
     // Value text
     if (isSelected && !disabled) {
@@ -934,9 +953,17 @@ void Ao3LibraryActivity::renderFilterOverlay() {
       renderer.fillRoundedRect(pillX, rowY - 6, pillW, 34, 6, Black);
       renderer.drawText(UI_10_FONT_ID, pillX + 12, rowY - 1, val, false);
     } else {
-      // Plain right-aligned value text
+      // Plain right-aligned value text — always draw in black; dimming handled below
       int valW = renderer.getTextWidth(UI_10_FONT_ID, val);
-      renderer.drawText(UI_10_FONT_ID, screenWidth - margin - valW - 12, rowY, val, !disabled);
+      renderer.drawText(UI_10_FONT_ID, screenWidth - margin - valW - 12, rowY, val, true);
+    }
+
+    // Apply checkerboard dither over the entire row to create a dimmed/grayed-out effect
+    if (disabled) {
+      const int lineH = renderer.getLineHeight(UI_10_FONT_ID);
+      for (int py = rowY; py < rowY + lineH; py++)
+        for (int px = margin + 12; px < screenWidth - margin - 12; px++)
+          if ((px + py) % 2 == 0) renderer.drawPixel(px, py, false);
     }
   };
 
