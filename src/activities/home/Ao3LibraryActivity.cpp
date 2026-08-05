@@ -1,5 +1,6 @@
 #include <functional>
 #include "Ao3LibraryActivity.h"
+#include "../../Ao3TagMergeStore.h"
 #include "../../Ao3Librarian.h"
 #include <Epub.h>
 #include <FsHelpers.h>
@@ -38,6 +39,7 @@ void Ao3LibraryActivity::onEnter() {
   skipNextBackRelease = mappedInput.isPressed(MappedInputManager::Button::Back);
   autoIndexLaunched_ = false;
   loadFilterMode();
+  Ao3TagMergeStore::load();
   loadSortFilterState();
   requestUpdate();
 }
@@ -105,6 +107,11 @@ void Ao3LibraryActivity::buildAllowedHashes(const std::string& scanPath, int max
 
     scanRecursive(scanPath, 0);
     std::sort(allowedHashes.begin(), allowedHashes.end());
+}
+
+void Ao3LibraryActivity::onExit() {
+    Activity::onExit();
+    Ao3TagMergeStore::unload();
 }
 
 // ---------------------------------------------------------------------------
@@ -1357,11 +1364,12 @@ bool Ao3LibraryActivity::passesFilter(const ViewEntry& v, const FilterHashes& h)
   }
 
   if (h.fandomActive) {
-    if (v.fandomHash != h.fandomHash) return false;
+    if (Ao3TagMergeStore::resolveFandom(v.fandomHash) != h.fandomHash) return false;
     if (h.relationshipNoneOnly) {
       if (v.rel1Hash != 0 || v.rel2Hash != 0) return false;
     } else if (h.relationshipActive) {
-      if (v.rel1Hash != h.relationshipHash && v.rel2Hash != h.relationshipHash) return false;
+      if (Ao3TagMergeStore::resolveRelationship(v.rel1Hash) != h.relationshipHash &&
+        Ao3TagMergeStore::resolveRelationship(v.rel2Hash) != h.relationshipHash) return false;
     }
   }
   return true;
@@ -1534,6 +1542,7 @@ void Ao3LibraryActivity::buildFandomList(std::vector<std::string>& out) const {
   for (uint16_t i = 0; i < recordCount; i++) {
     if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
     if (rec.flags & 0x01 || rec.fandom[0] == '\0') continue;
+    if (Ao3TagMergeStore::isSubFandom(fnv1a(rec.fandom))) continue;
 
     bool found = false;
     for (const auto& s : out) {
@@ -1611,6 +1620,7 @@ void Ao3LibraryActivity::buildRelationshipList(const char* fandom, std::vector<s
 
     for (const char* rel : { rec.relationship1, rec.relationship2 }) {
       if (rel[0] == '\0') continue;
+      if (Ao3TagMergeStore::isSubRelationship(fnv1a(rel))) continue;
       bool found = false;
       for (const auto& s : out) {
         if (s == rel) {
