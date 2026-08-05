@@ -16,6 +16,8 @@
 #include "util/StringUtils.h"
 #include "util/UrlUtils.h"
 
+#include "activities/home/Ao3LibraryActivity.h"
+
 namespace {
 constexpr int PAGE_ITEMS = 23;
 }
@@ -278,6 +280,10 @@ void OpdsBookBrowserActivity::downloadBook(const OpdsEntry& book) {
 
   if (result == HttpDownloader::OK) {
     Epub(filename, "/.crosspoint").clearCache();
+
+    // Flag the library so this newly downloaded book gets indexed
+    Ao3LibraryActivity::pendingTransferScan = true;
+
     state = BrowserState::BROWSING;
   } else {
     state = BrowserState::ERROR;

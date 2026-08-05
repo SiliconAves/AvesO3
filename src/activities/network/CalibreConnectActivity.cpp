@@ -11,6 +11,8 @@
 #include "components/UITheme.h"
 #include "fontIds.h"
 
+#include "activities/home/Ao3LibraryActivity.h"
+
 namespace {
 constexpr const char* HOSTNAME = "crosspoint";
 }  // namespace
@@ -50,6 +52,9 @@ void CalibreConnectActivity::onEnter() {
 
 void CalibreConnectActivity::onExit() {
   Activity::onExit();
+
+  // Flag pending scan so the library indexes newly sent books
+  Ao3LibraryActivity::pendingTransferScan = true;
 
   stopWebServer();
   MDNS.end();

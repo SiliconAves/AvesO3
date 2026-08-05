@@ -17,6 +17,8 @@
 #include "fontIds.h"
 #include "util/QrUtils.h"
 
+#include "activities/home/Ao3LibraryActivity.h"
+
 namespace {
 // AP Mode configuration
 constexpr const char* AP_SSID = "CrossPoint-Reader";
@@ -75,6 +77,9 @@ void CrossPointWebServerActivity::onExit() {
 
   state = WebServerActivityState::SHUTTING_DOWN;
 
+  // Flag pending scan so browser/hotspot uploads are indexed
+  Ao3LibraryActivity::pendingTransferScan = true;
+  
   // Stop the web server first (before disconnecting WiFi)
   stopWebServer();
 
