@@ -128,6 +128,10 @@ bool Ao3IndexActivity::isExcluded(const std::string& path) const {
 void Ao3IndexActivity::loop() {
   // Common error or completion back/confirm navigation
   if (state == State::ERROR) {
+    if (headless_) {
+      finish(); // Exit silently on background discovery error
+      return;
+    }
     if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
         mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       finish();
@@ -276,9 +280,18 @@ void Ao3IndexActivity::tickDirDiscovery() {
 
   if (dirQueue.empty()) {
     if (unindexedCount == 0) {
+      if (autoFinishIfEmpty_) {
+        // Stay on current screen without requesting a render update,
+        // so no blank frame appears before the handler loads the library.
+        finish();
+        return;
+      }
       state = State::DIR_COMPLETE;
     } else {
       state = State::DIR_DISCOVERY_CONFIRM;
+      if (headless_) {
+        headless_ = false; // Disable headless mode so "X books found" screen renders!
+      }
     }
     requestUpdate(true);
     return;
@@ -470,7 +483,10 @@ void Ao3IndexActivity::tickDirIndexing() {
   requestUpdate(true);
 }
 
-void Ao3IndexActivity::render(RenderLock&&) {
+void Ao3IndexActivity::render(RenderLock&& lock) {
+  if (headless_) {
+    return; // Keep the library's "Loading..." screen visible during background check
+  }
   renderer.clearScreen();
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
@@ -482,7 +498,7 @@ void Ao3IndexActivity::render(RenderLock&&) {
   int contentTop = metrics.topPadding + metrics.headerHeight + 40;
 
   if (state == State::HEAP_CHECK) {
-    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "Checking free memory...");
+    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "Checking AO3 Folder...");
   }
   else if (state == State::ERROR) {
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, "Error");

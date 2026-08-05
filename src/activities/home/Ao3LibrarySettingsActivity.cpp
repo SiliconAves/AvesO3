@@ -23,6 +23,7 @@ void Ao3LibrarySettingsActivity::loadSettings() {
 
   ao3Folder = doc["ao3Folder"] | "";
   batchSize = doc["batchSize"] | 10;
+  autoIndexOnOpen = doc["autoIndexOnOpen"] | false;
   filterMode = static_cast<FilterMode>(doc["filterMode"] | 0);
   if (filterMode > FilterMode::FOLDER_TREE) filterMode = FilterMode::AUTOMATIC;
   swapNavButtons = doc["swapNavButtons"] | false;
@@ -38,6 +39,7 @@ void Ao3LibrarySettingsActivity::saveSettings() {
   JsonDocument doc;
   doc["ao3Folder"] = ao3Folder;
   doc["batchSize"] = batchSize;
+  doc["autoIndexOnOpen"] = autoIndexOnOpen;
   doc["filterMode"] = static_cast<uint8_t>(filterMode);
   doc["swapNavButtons"] = swapNavButtons;
   JsonArray arr = doc["excludedFolders"].to<JsonArray>();
@@ -161,16 +163,20 @@ void Ao3LibrarySettingsActivity::loop() {
       saveSettings();
       requestUpdate();
     } else if (selectorIndex == 3) {
+      autoIndexOnOpen = !autoIndexOnOpen;
+      saveSettings();
+      requestUpdate();
+    } else if (selectorIndex == 4) {
       filterMode = (filterMode == FilterMode::AUTOMATIC)
                      ? FilterMode::FOLDER_TREE
                      : FilterMode::AUTOMATIC;
       saveSettings();
       requestUpdate();
-    } else if (selectorIndex == 4) {
+    } else if (selectorIndex == 5) {
       swapNavButtons = !swapNavButtons;
       saveSettings();
       requestUpdate();
-    } else if (selectorIndex == 5) {
+    } else if (selectorIndex == 6) {
       showingCleanupConfirm = true;
       requestUpdate(true);
       return;
@@ -179,22 +185,22 @@ void Ao3LibrarySettingsActivity::loop() {
   }
 
   buttonNavigator.onNextRelease([this] {
-    selectorIndex = (selectorIndex + 1) % 6;
+    selectorIndex = (selectorIndex + 1) % 7;
     requestUpdate();
   });
 
   buttonNavigator.onPreviousRelease([this] {
-    selectorIndex = (selectorIndex + 5) % 6;
+    selectorIndex = (selectorIndex + 6) % 7;
     requestUpdate();
   });
 
   buttonNavigator.onNextContinuous([this] {
-    selectorIndex = (selectorIndex + 2) % 6;
+    selectorIndex = (selectorIndex + 2) % 7;
     requestUpdate();
   });
 
   buttonNavigator.onPreviousContinuous([this] {
-    selectorIndex = (selectorIndex + 2) % 6;
+    selectorIndex = (selectorIndex + 5) % 7;
     requestUpdate();
   });
 }
@@ -258,6 +264,7 @@ void Ao3LibrarySettingsActivity::render(RenderLock&&) {
     "Your AO3 Folder",
     "Never Index",
     "Index Batch Size",
+    "Auto-Index on Library Open",
     "Filter Mode",
     "Side Button Layout",
     "Library Cleanup"
@@ -271,16 +278,17 @@ void Ao3LibrarySettingsActivity::render(RenderLock&&) {
     if (index == 0) return formatFolderPill();
     if (index == 1) return formatExclusionsPill();
     if (index == 2) return std::to_string(batchSize);
-    if (index == 3) return (filterMode == FilterMode::FOLDER_TREE) ? "Folder Tree" : "Automatic";
-    if (index == 4) return swapNavButtons ? "Scroll List" : "Open Panels";
-    if (index == 5) return "";
+    if (index == 3) return autoIndexOnOpen ? "ON" : "OFF";
+    if (index == 4) return (filterMode == FilterMode::FOLDER_TREE) ? "Folder Tree" : "Automatic";
+    if (index == 5) return swapNavButtons ? "Scroll List" : "Open Panels";
+    if (index == 6) return "";
     return "";
   };
 
   int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
   int contentHeight = pageHeight - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing * 2;
 
-  GUI.drawList(renderer, Rect{0, contentTop, pageWidth, contentHeight}, 6, selectorIndex,
+  GUI.drawList(renderer, Rect{0, contentTop, pageWidth, contentHeight}, 7, selectorIndex,
                rowTitle, nullptr, nullptr, rowValue, true);
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), "Select", tr(STR_DIR_UP), tr(STR_DIR_DOWN));

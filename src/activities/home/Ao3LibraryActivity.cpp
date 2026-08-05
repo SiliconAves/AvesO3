@@ -24,6 +24,9 @@
 //  onEnter
 // ---------------------------------------------------------------------------
 
+// Initialize static member to false on startup
+bool Ao3LibraryActivity::pendingTransferScan = false;
+
 void Ao3LibraryActivity::onEnter() {
   buttonNavigator.setMappedInputManager(mappedInput);
   indexState = IndexState::UNKNOWN;
@@ -33,6 +36,7 @@ void Ao3LibraryActivity::onEnter() {
   // If the user arrived here by holding BACK in the reader, 
   // the button is still physically pressed. We must ignore the subsequent release.
   skipNextBackRelease = mappedInput.isPressed(MappedInputManager::Button::Back);
+  autoIndexLaunched_ = false;
   loadFilterMode();
   loadSortFilterState();
   requestUpdate();
@@ -43,6 +47,7 @@ void Ao3LibraryActivity::loadFilterMode() {
     ao3Folder  = "";
     allowedHashes.clear();
     swapNavButtons = false;
+    autoIndexOnOpen_ = false;
 
     const char* path = "/.crosspoint/ao3_settings.json";
     if (!Storage.exists(path)) return;
@@ -57,6 +62,7 @@ void Ao3LibraryActivity::loadFilterMode() {
     uint8_t fm = doc["filterMode"] | 0;
     filterMode = (fm == 1) ? FilterMode::FOLDER_TREE : FilterMode::AUTOMATIC;
     swapNavButtons = doc["swapNavButtons"] | false;
+    autoIndexOnOpen_ = doc["autoIndexOnOpen"] | false;
 }
 
 void Ao3LibraryActivity::buildAllowedHashes(const std::string& scanPath, int maxDepth) {
@@ -178,6 +184,45 @@ void Ao3LibraryActivity::loadPageCache(int page) {
 void Ao3LibraryActivity::loop() {
   // Still loading — loadViewEntries() will flip indexState on first call
   if (indexState == IndexState::UNKNOWN) {
+    if (autoIndexOnOpen_ && !autoIndexLaunched_ && !ao3Folder.empty()) {
+      bool full = false;
+      {
+        FsFile f;
+        if (Storage.openFileForRead("AO3L", "/.crosspoint/ao3_library_index.bin", f)) {
+          char magic[4]; uint8_t version; uint16_t recordCount;
+          if (f.read(magic, 4) == 4 && f.read(&version, 1) == 1 &&
+              f.read((uint8_t*)&recordCount, 2) == 2 &&
+              memcmp(magic, "AO3X", 4) == 0) {
+            f.seek(12); // skip rest of header
+            uint16_t liveCount = 0;
+            CompactIndexRecord rec;
+            for (uint16_t i = 0; i < recordCount; i++) {
+              if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
+              if (!(rec.flags & 0x01)) liveCount++;
+            }
+            full = (liveCount >= MAX_LIBRARY_BOOKS);
+          }
+          f.close();
+        }
+      }
+      if (pendingTransferScan && !full) {
+        pendingTransferScan = false; // Reset the flag so it won't scan again until a new book is added
+        autoIndexLaunched_ = true;
+        viewEntries.clear();
+        viewEntries.shrink_to_fit();
+        auto handler = [this](const ActivityResult&) {
+          indexState = IndexState::UNKNOWN;
+          rebuildViewEntries();
+          requestUpdate();
+        };
+
+        // Pass autoFinishIfEmpty = true, headless = true
+        startActivityForResult(
+            std::make_unique<Ao3IndexActivity>(renderer, mappedInput, Ao3IndexMode::DIRECTORY, "", true, true),
+            handler);
+        return;
+      }
+    }
     loadViewEntries();
     requestUpdate();
     return;

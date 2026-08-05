@@ -66,6 +66,8 @@ class Ao3IndexActivity final : public Activity {
 
   int batchSize = 10;
   bool initialized = false;
+  bool autoFinishIfEmpty_ = false;
+  bool headless_{false};
 
   void runHeapCheck();
   void startSingleSniffing();
@@ -82,8 +84,13 @@ class Ao3IndexActivity final : public Activity {
   bool isExcluded(const std::string& path) const;
 
  public:
-  Ao3IndexActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, Ao3IndexMode mode, std::string targetPath = "")
-      : Activity("Ao3Index", renderer, mappedInput), mode(mode), targetPath(std::move(targetPath)) {}
+  Ao3IndexActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, Ao3IndexMode mode,
+                   std::string targetPath = "", bool autoFinishIfEmpty = false, bool headless = false)
+      : Activity("Ao3Index", renderer, mappedInput),
+        mode(mode),
+        targetPath(std::move(targetPath)),
+        autoFinishIfEmpty_(autoFinishIfEmpty),
+        headless_(headless) {}
 
   void onEnter() override;
   void loop() override;

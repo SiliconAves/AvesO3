@@ -39,6 +39,7 @@ class Ao3LibraryActivity final : public Activity {
   void onEnter() override;
   void loop() override;
   void render(RenderLock&&) override;
+  static bool pendingTransferScan;
 
  private:
   enum class IndexState {
@@ -89,6 +90,8 @@ class Ao3LibraryActivity final : public Activity {
 
   size_t initialSelectorIndex_ = 0;
   bool skipNextBackRelease = false;
+  bool autoIndexOnOpen_ = false;
+  bool autoIndexLaunched_ = false;
 
   void loadViewEntries();
   void loadPageCache(int page);
