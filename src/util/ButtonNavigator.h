@@ -59,19 +59,16 @@ class ButtonNavigator final {
   [[nodiscard]] static int nextPageIndex(int currentIndex, int totalItems, int itemsPerPage);
   [[nodiscard]] static int previousPageIndex(int currentIndex, int totalItems, int itemsPerPage);
 
-  [[nodiscard]] static int nextFourIndex(int currentIndex, int totalItems);
+[[nodiscard]] static int nextFourIndex(int currentIndex, int totalItems);
   [[nodiscard]] static int previousFourIndex(int currentIndex, int totalItems);
 
   [[nodiscard]] static int nextThreeIndex(int currentIndex, int totalItems);
   [[nodiscard]] static int previousThreeIndex(int currentIndex, int totalItems);
 
-
-  [[nodiscard]] static Buttons getNextButtons() {
-    return {MappedInputManager::Button::Down, MappedInputManager::Button::Right};
-  }
-  [[nodiscard]] static Buttons getPreviousButtons() {
-    return {MappedInputManager::Button::Up, MappedInputManager::Button::Left};
-  }
+  // Navigation uses the logical NavNext / NavPrevious buttons; MappedInputManager::mapButton resolves
+  // them to physical buttons and applies any orientation-based direction swap, so this stays settings-free.
+  [[nodiscard]] static Buttons getNextButtons() { return {MappedInputManager::Button::NavNext}; }
+  [[nodiscard]] static Buttons getPreviousButtons() { return {MappedInputManager::Button::NavPrevious}; }
 
   [[nodiscard]] static Buttons getFrontNextButtons() { return {MappedInputManager::Button::Right}; }
   [[nodiscard]] static Buttons getFrontPreviousButtons() { return {MappedInputManager::Button::Left}; }

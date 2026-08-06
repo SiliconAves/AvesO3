@@ -23,7 +23,7 @@ class KOReaderSyncActivity final : public Activity {
  public:
   explicit KOReaderSyncActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const std::string& epubPath,
                                 int currentSpineIndex, int currentPage, int totalPagesInSpine,
-                                KOReaderPosition localKoPos, std::string localChapterName,
+                                SavedProgressPosition localKoPos, std::string localChapterName,
                                 std::optional<uint16_t> currentParagraphIndex = std::nullopt)
       : Activity("KOReaderSync", renderer, mappedInput),
         epubPath(epubPath),
@@ -73,10 +73,16 @@ class KOReaderSyncActivity final : public Activity {
   CrossPointPosition remotePosition;
 
   // Local progress as KOReader format (pre-computed before Epub was released)
-  KOReaderPosition localProgress;
+  SavedProgressPosition localProgress;
 
   // Selection in result screen (0=Apply, 1=Upload)
   int selectedOption = 0;
+
+  // Tracks whether this session activated WiFi. Set in onEnter past the credentials
+  // check; checked in onExit to decide whether to silent-reboot. Can't rely on
+  // WiFi.getMode() because performUpload() calls esp_wifi_stop() on the way out,
+  // which makes WiFi.getMode() return WIFI_MODE_NULL.
+  bool wifiActivated = false;
 
   void onWifiSelectionComplete(bool success);
   void performSync();

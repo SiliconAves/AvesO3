@@ -9,13 +9,15 @@
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
 
+struct Rect;
+struct ThemeMetrics;
+
 // Structure to hold WiFi network information
 struct WifiNetworkInfo {
   std::string ssid;
   int32_t rssi;
   bool isEncrypted;
   bool hasSavedPassword;  // Whether we have saved credentials for this network
-  std::string ipAddress;  // Populated after connection for display
 };
 
 // WiFi selection states
@@ -80,13 +82,13 @@ class WifiSelectionActivity final : public Activity {
   static constexpr unsigned long CONNECTION_TIMEOUT_MS = 15000;
   unsigned long connectionStartTime = 0;
 
-  void renderNetworkList() const;
-  void renderPasswordEntry() const;
-  void renderConnecting() const;
-  void renderConnected() const;
-  void renderSavePrompt() const;
-  void renderConnectionFailed() const;
-  void renderForgetPrompt() const;
+  void renderNetworkList(const Rect* screen, const ThemeMetrics* metrics) const;
+  void renderPasswordEntry(const Rect* screen, const ThemeMetrics* metrics) const;
+  void renderConnecting(const Rect* screen, const ThemeMetrics* metrics) const;
+  void renderConnected(const Rect* screen, const ThemeMetrics* metrics) const;
+  void renderSavePrompt(const Rect* screen, const ThemeMetrics* metrics) const;
+  void renderConnectionFailed(const Rect* screen, const ThemeMetrics* metrics) const;
+  void renderForgetPrompt(const Rect* screen, const ThemeMetrics* metrics) const;
 
   void startWifiScan();
   void processWifiScanResults();

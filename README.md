@@ -114,9 +114,6 @@ Black with Checkmark: Finished reading<br>
 <br clear="left"/>
 
 ## Installing (DO NOT INSTALL ON DEVICES WITH THE NEW DISPLAY CONTROLLER)
-
-### Web (latest firmware)
-
 1. Download the .bin file from the Releases section
 2. Connect your Xteink X4 to your computer via USB-C and wake/unlock the device
 3. Go to https://xteink.dve.al/ and click "Flash CrossPoint firmware"
@@ -124,79 +121,12 @@ Black with Checkmark: Finished reading<br>
 To revert back to the official firmware, you can flash the latest official firmware from https://xteink.dve.al/, or swap
 back to the other partition using the "Swap boot partition" button here https://xteink.dve.al/debug.
 
-### Web (specific firmware version)
-
-1. Connect your Xteink X4 to your computer via USB-C
-2. Download the `firmware.bin` file from the release of your choice via the [releases page](https://github.com/crosspoint-reader/crosspoint-reader/releases)
-3. Go to https://xteink.dve.al/ and flash the firmware file using the "OTA fast flash controls" section
-
-To revert back to the official firmware, you can flash the latest official firmware from https://xteink.dve.al/, or swap
-back to the other partition using the "Swap boot partition" button here https://xteink.dve.al/debug.
-
-### Manual
-
-See [Development](#development) below.
-
-## Development
-
-### Prerequisites
-
-* **PlatformIO Core** (`pio`) or **VS Code + PlatformIO IDE**
-* Python 3.8+
-* USB-C cable for flashing the ESP32-C3
-* Xteink X4
-
-### Checking out the code
-
-CrossPoint uses PlatformIO for building and flashing the firmware. To get started, clone the repository:
-
-```
-git clone --recursive https://github.com/crosspoint-reader/crosspoint-reader
-
-# Or, if you've already cloned without --recursive:
-git submodule update --init --recursive
-```
-
-### Flashing your device
-
-Connect your Xteink X4 to your computer via USB-C and run the following command.
-
-```sh
-pio run --target upload
-```
-### Debugging
-
-After flashing the new features, it’s recommended to capture detailed logs from the serial port.
-
-First, make sure all required Python packages are installed:
-
-```python
-python3 -m pip install pyserial colorama matplotlib
-```
-after that run the script:
-```sh
-# For Linux
-# This was tested on Debian and should work on most Linux systems.
-python3 scripts/debugging_monitor.py
-
-# For macOS
-python3 scripts/debugging_monitor.py /dev/cu.usbmodem2101
-```
-Minor adjustments may be required for Windows.
-
-## Internals
-
-CrossPoint Reader is pretty aggressive about caching data down to the SD card to minimise RAM usage. The ESP32-C3 only
-has ~380KB of usable RAM, so we have to be careful. A lot of the decisions made in the design of the firmware were based
-on this constraint.
-
 ### Data caching
 
-The first time chapters of a book are loaded, they are cached to the SD card. Subsequent loads are served from the 
+The first time chapters of a book are loaded, they are cached to the SD card. Subsequent loads are served from the
 cache. This cache directory exists at `.crosspoint` on the SD card. The structure is as follows:
 
-
-```
+```text
 .crosspoint/
 ├── epub_12471232/               # Each EPUB is cached to a subdirectory named `epub_<hash>`
 │   ├── progress.bin             # Stores reading progress (chapter, page, etc.)
@@ -208,12 +138,10 @@ cache. This cache directory exists at `.crosspoint` on the SD card. The structur
 │       ├── 0.bin                # Chapter data (screen count, all text layout info, etc.)
 │       ├── 1.bin                #     files are named by their index in the spine
 │       └── ...
-│
-└── epub_189013891/
+├── settings.json        # device settings
+├── state.json           # resume/runtime state
+└── recent.json          # recent books list
 ```
 
-Deleting the `.crosspoint` directory will clear the entire cache. 
-
-Due the way it's currently implemented, the cache is not automatically cleared when a book is deleted and moving a book
-file will use a new cache directory, resetting the reading progress.
+Removing `/.crosspoint` clears all cached metadata and forces a full regeneration on next open. Book deletes, overwrites, and moves done through the firmware or web UI clear or re-key matching caches; manual SD-card edits may leave stale cache directories behind.
 

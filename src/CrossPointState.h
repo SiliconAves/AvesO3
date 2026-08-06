@@ -15,6 +15,7 @@ class CrossPointState {
   uint8_t recentSleepFill = 0;                          // valid entries (0..SLEEP_RECENT_COUNT)
   uint8_t readerActivityLoadCount = 0;
   bool lastSleepFromReader = false;
+  bool showBootScreen = true;
 
   // Transient (never persisted to disk). Set by Ao3LibraryActivity just before
   // goToReader(); consumed and cleared by EpubReaderActivity::onEnter().

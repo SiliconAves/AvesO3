@@ -14,9 +14,19 @@
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "images/AvesLogo.h"
+#include "images/MoonIcon.h"
 
 void SleepActivity::onEnter() {
   Activity::onEnter();
+
+  const bool renderQuickResume =
+      SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::QUICK_RESUME ||
+      (fromTimeout &&
+       SETTINGS.quickResumeSleepScreen == CrossPointSettings::QUICK_RESUME_SLEEP_SCREEN::QUICK_RESUME_AFTER_TIMEOUT);
+
+  if (renderQuickResume) {
+    return renderLastScreenSleepScreen();
+  }
 
   // Show popup with reader orientation only when going to sleep from reader
   if (APP_STATE.lastSleepFromReader) {
@@ -53,7 +63,7 @@ void SleepActivity::renderCustomSleepScreen() const {
   // Look for sleep.bmp on the root of the sd card to determine if we should
   // render a custom sleep screen instead of the default.
   // This takes priority over the /sleep folder.
-  FsFile file;
+  HalFile file;
   if (Storage.openFileForRead("SLP", "/sleep.bmp", file)) {
     Bitmap bitmap(file, true);
     if (bitmap.parseHeaders() == BmpReaderError::Ok) {
@@ -119,7 +129,7 @@ void SleepActivity::renderCustomSleepScreen() const {
       APP_STATE.pushRecentSleep(randomFileIndex);
       APP_STATE.saveToFile();
       const auto filename = std::string(sleepDir) + "/" + files[randomFileIndex];
-      FsFile randFile;
+      HalFile randFile;
       if (Storage.openFileForRead("SLP", filename, randFile)) {
         LOG_DBG("SLP", "Randomly loading: %s/%s", sleepDir, files[randomFileIndex].c_str());
         delay(100);
@@ -212,7 +222,15 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap) const {
     renderer.invertScreen();
   }
 
-  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+  if (hasGreyscale) {
+    // OEM grayscale pipeline base: on X3 this displays the frame with the
+    // dedicated "AA-pre-BW(mid)" differential waveform, leaving every pixel
+    // in the calibrated state the gray nudge refresh expects; on X4 it is a
+    // plain HALF refresh (previous behavior).
+    renderer.displayGrayscaleBase(HalDisplay::HALF_REFRESH);
+  } else {
+    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+  }
 
   if (hasGreyscale) {
     bitmap.rewindToData();
@@ -298,7 +316,7 @@ void SleepActivity::renderCoverSleepScreen() const {
     return (this->*renderNoCoverSleepScreen)();
   }
 
-  FsFile file;
+  HalFile file;
   if (Storage.openFileForRead("SLP", coverBmpPath, file)) {
     Bitmap bitmap(file);
     if (bitmap.parseHeaders() == BmpReaderError::Ok) {
@@ -309,6 +327,12 @@ void SleepActivity::renderCoverSleepScreen() const {
   }
 
   return (this->*renderNoCoverSleepScreen)();
+}
+
+void SleepActivity::renderLastScreenSleepScreen() const {
+  const auto pageHeight = renderer.getScreenHeight();
+  renderer.drawImage(MoonIcon, 0, pageHeight - MOONICON_HEIGHT, MOONICON_WIDTH, MOONICON_HEIGHT);
+  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }
 
 void SleepActivity::renderBlankSleepScreen() const {
