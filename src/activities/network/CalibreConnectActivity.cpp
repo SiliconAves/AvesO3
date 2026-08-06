@@ -60,10 +60,16 @@ void CalibreConnectActivity::onExit() {
   stopWebServer();
   MDNS.end();
 
+  // Brief wait for LWIP stack to flush pending packets
+  delay(50);
+
+  // Skip WiFi teardown if it was never activated
   if (WiFi.getMode() != WIFI_MODE_NULL) {
-    WiFi.disconnect(false);
-    delay(30);
-    silentRestart();
+    WiFi.disconnect(true); // Gracefully disconnects and clears credentials from RAM
+    delay(30);             // Allow disconnect frame to be sent
+
+    WiFi.mode(WIFI_OFF);   // Power down the WiFi radio
+    delay(30);             // Allow WiFi hardware to power down
   }
 }
 

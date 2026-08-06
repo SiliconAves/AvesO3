@@ -47,9 +47,10 @@ void OpdsBookBrowserActivity::onExit() {
   navigationHistory.clear();
 
   if (WiFi.getMode() != WIFI_MODE_NULL) {
-    WiFi.disconnect(false);
-    delay(30);
-    silentRestart();
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    // delay(30);
+    // silentRestart();
   }
 }
 
