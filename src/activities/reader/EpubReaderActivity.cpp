@@ -266,15 +266,25 @@ if (skipNextButtonCheck) {
 
   if (SETTINGS.removeReadBooksFromRecents) {
     if (atEndOfBook && !recentsEntryRemoved) {
-      recentsEntryRemoved = RECENT_BOOKS.removeByPath(epub->getPath());
+        
+        // Split Logic: Only remove standard books or fully completed AO3 fics.
+        // If it's an incomplete AO3 fic, keep it in recents
+        if (!(epub->hasAo3Info() && !epub->isAo3Completed())) {
+            recentsEntryRemoved = RECENT_BOOKS.removeByPath(epub->getPath());
+        }
+        
     } else if (!atEndOfBook && recentsEntryRemoved) {
-      RECENT_BOOKS.addBook(epub->getPath(), epub->getTitle(), epub->getAuthor(), epub->getThumbBmpPath());
-      recentsEntryRemoved = false;
+        RECENT_BOOKS.addBook(epub->getPath(), epub->getTitle(), epub->getAuthor(), epub->getThumbBmpPath());
+        recentsEntryRemoved = false;
     }
-  }
+}
 
   if (atEndOfBook) {
-    pendingReadFolderMove = SETTINGS.moveFinishedToReadFolder && !isInReadFolder(epub->getPath());
+    // Split Logic: Exempt all AO3 books from being moved to the /read/ folder
+    // to protect their custom folder structures and index hashes.
+    pendingReadFolderMove = SETTINGS.moveFinishedToReadFolder && 
+                            !isInReadFolder(epub->getPath()) && 
+                            !epub->hasAo3Info();
   } else {
     pendingReadFolderMove = false;
   }
