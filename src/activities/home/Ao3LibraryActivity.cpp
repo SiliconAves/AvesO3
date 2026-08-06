@@ -72,11 +72,11 @@ void Ao3LibraryActivity::buildAllowedHashes(const std::string& scanPath, int max
 
     std::function<void(const std::string&, int)> scanRecursive = [&](const std::string& dirPath, int currentDepth) {
         //if (currentDepth > maxDepth) return;
-        FsFile dir = Storage.open(dirPath.c_str());
+        HalFile dir = Storage.open(dirPath.c_str());
         if (!dir || !dir.isDirectory()) { if (dir) dir.close(); return; }
 
         char name[256];
-        FsFile file;
+        HalFile file;
         while (file = dir.openNextFile()) {
             file.getName(name, sizeof(name));
             std::string nameStr(name);
@@ -129,7 +129,7 @@ void Ao3LibraryActivity::loadViewEntries() {
 
 BookStatus Ao3LibraryActivity::getBookStatus(uint32_t cacheHash) {
   std::string cachePath = "/.crosspoint/epub_" + std::to_string(cacheHash) + "/progress.bin";
-  FsFile f;
+  HalFile f;
   if (Storage.openFileForRead("AO3L", cachePath, f)) {
     uint8_t data[7];
     if (f.read(data, 7) >= 7) {
@@ -159,7 +159,7 @@ void Ao3LibraryActivity::loadPageCache(int page) {
     const int slot = i - startIdx;
     std::string infoPath =
         "/.crosspoint/epub_" + std::to_string(viewEntries[i].cacheHash) + "/ao3_library_info";
-    FsFile f;
+    HalFile f;
     if (Storage.openFileForRead("AO3L", infoPath, f)) {
       f.read((uint8_t*)&pageCache[slot], sizeof(Ao3LibraryMetadata));
       f.close();
@@ -194,7 +194,7 @@ void Ao3LibraryActivity::loop() {
     if (autoIndexOnOpen_ && !autoIndexLaunched_ && !ao3Folder.empty()) {
       bool full = false;
       {
-        FsFile f;
+        HalFile f;
         if (Storage.openFileForRead("AO3L", "/.crosspoint/ao3_library_index.bin", f)) {
           char magic[4]; uint8_t version; uint16_t recordCount;
           if (f.read(magic, 4) == 4 && f.read(&version, 1) == 1 &&
@@ -1411,7 +1411,7 @@ void Ao3LibraryActivity::rebuildViewEntries() {
     return;
   }
 
-  FsFile f;
+  HalFile f;
   if (!Storage.openFileForRead("AO3L", indexPath, f)) {
     indexState = IndexState::CORRUPT;
     return;
@@ -1526,11 +1526,11 @@ void Ao3LibraryActivity::applyStateChange(const SortFilterState& prev, const Sor
 void Ao3LibraryActivity::buildFandomList(std::vector<std::string>& out) const {
   if (filterMode == FilterMode::FOLDER_TREE) {
       if (ao3Folder.empty()) return;
-      FsFile root = Storage.open(ao3Folder.c_str());
+      HalFile root = Storage.open(ao3Folder.c_str());
       if (!root || !root.isDirectory()) { if (root) root.close(); return; }
 
       char name[256];
-      FsFile entry;
+      HalFile entry;
       while (entry = root.openNextFile()) {
           entry.getName(name, sizeof(name));
           if (entry.isDirectory() && name[0] != '.' &&
@@ -1547,7 +1547,7 @@ void Ao3LibraryActivity::buildFandomList(std::vector<std::string>& out) const {
   }
 
   const char* indexPath = "/.crosspoint/ao3_library_index.bin";
-  FsFile f;
+  HalFile f;
   if (!Storage.openFileForRead("AO3L", indexPath, f)) return;
 
   char     magic[4];
@@ -1596,11 +1596,11 @@ void Ao3LibraryActivity::buildRelationshipList(const char* fandom, std::vector<s
       if (fandomPath.back() != '/') fandomPath += "/";
       fandomPath += fandom;
 
-      FsFile root = Storage.open(fandomPath.c_str());
+      HalFile root = Storage.open(fandomPath.c_str());
       if (!root || !root.isDirectory()) { if (root) root.close(); return; }
 
       char name[256];
-      FsFile entry;
+      HalFile entry;
       while (entry = root.openNextFile()) {
           entry.getName(name, sizeof(name));
           if (entry.isDirectory() && name[0] != '.' &&
@@ -1617,7 +1617,7 @@ void Ao3LibraryActivity::buildRelationshipList(const char* fandom, std::vector<s
   }
 
   const char* indexPath = "/.crosspoint/ao3_library_index.bin";
-  FsFile f;
+  HalFile f;
   if (!Storage.openFileForRead("AO3L", indexPath, f)) return;
 
   char     magic[4];

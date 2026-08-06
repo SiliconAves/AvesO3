@@ -9,7 +9,7 @@
 #include <I18n.h>
 #include <JsonSettingsIO.h>
 #include <Logging.h>
-#include "Memory.h"
+#include "../../../lib/Memory/Memory.h"
 #include <esp_system.h>
 
 #include <algorithm>

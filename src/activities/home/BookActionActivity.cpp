@@ -17,7 +17,7 @@ void BookActionActivity::onEnter() {
 
   // Load current status
   std::string cachePath = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(filePath));
-  FsFile f;
+  HalFile f;
   if (Storage.openFileForRead("BROWSER", cachePath + "/progress.bin", f)) {
     uint8_t data[7];
     if (f.read(data, 7) >= 7) {
@@ -130,7 +130,7 @@ void BookActionActivity::loop() {
 
 void BookActionActivity::saveStatus() {
   std::string cachePath = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(filePath));
-  FsFile f;
+  HalFile f;
 
   uint8_t data[7] = {0, 0, 0, 0, 0, 0, static_cast<uint8_t>(currentStatus)};
 

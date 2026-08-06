@@ -744,7 +744,7 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
     epub.saveAo3Info(scrapedWorkId, scrapedDate, meta->isCompleted);
   }
 
-  FsFile f;
+  HalFile f;
   if (Storage.openFileForWrite("AO3L", infoPath, f)) {
     f.write((uint8_t*)meta.get(), sizeof(Ao3LibraryMetadata));
     f.close();
@@ -774,7 +774,7 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
 
 bool Ao3Librarian::getLibraryInfo(const Epub& epub, Ao3LibraryMetadata& meta) {
   const std::string infoPath = epub.getCachePath() + "/ao3_library_info";
-  FsFile f;
+  HalFile f;
   if (Storage.openFileForRead("AO3L", infoPath, f)) {
     if (f.read((uint8_t*)&meta, sizeof(meta)) == sizeof(meta)) {
       f.close();
@@ -874,17 +874,17 @@ char Ao3Librarian::mapWarning(const char* s) {
 
 void Ao3Librarian::scanGlobalLibrary(std::vector<Ao3LibraryMetadata>& out) {
   const char* cacheRoot = "/.crosspoint";
-  FsFile root = Storage.open(cacheRoot);
+  HalFile root = Storage.open(cacheRoot);
   if (!root || !root.isDirectory()) return;
 
-  FsFile entry;
+  HalFile entry;
   while (entry = root.openNextFile()) {
     char name[64];
     entry.getName(name, sizeof(name));
     if (entry.isDirectory() && strncmp(name, "epub_", 5) == 0) {
       std::string infoPath = std::string(cacheRoot) + "/" + name + "/ao3_library_info";
       if (Storage.exists(infoPath.c_str())) {
-        FsFile f;
+        HalFile f;
         if (Storage.openFileForRead("AO3L", infoPath, f)) {
           Ao3LibraryMetadata meta;
           if (f.read((uint8_t*)&meta, sizeof(meta)) == sizeof(meta)) {
@@ -904,11 +904,11 @@ void Ao3Librarian::scanGlobalLibrary(std::vector<Ao3LibraryMetadata>& out) {
 
 bool Ao3Librarian::hasAnyAo3Fics() {
   const char* cacheRoot = "/.crosspoint";
-  FsFile root = Storage.open(cacheRoot);
+  HalFile root = Storage.open(cacheRoot);
   if (!root || !root.isDirectory()) return false;
 
   bool found = false;
-  FsFile entry;
+  HalFile entry;
   while (entry = root.openNextFile()) {
     char name[64];
     entry.getName(name, sizeof(name));
@@ -935,7 +935,7 @@ bool Ao3Librarian::writeIndexRecord(const CompactIndexRecord& rec) {
     if (!Storage.exists(indexPath)) {
         needsCreate = true;
     } else {
-        FsFile check;
+        HalFile check;
         if (Storage.openFileForRead("AO3L", indexPath, check)) {
             char     magic[4];
             uint8_t  version;
@@ -956,7 +956,7 @@ bool Ao3Librarian::writeIndexRecord(const CompactIndexRecord& rec) {
 
     // --- Create fresh file with empty header if needed ---
     if (needsCreate) {
-        FsFile f;
+        HalFile f;
         if (!Storage.openFileForWrite("AO3L", indexPath, f)) return false;
         uint8_t  v = 1,  r = 0;
         uint16_t c = 0;
@@ -970,7 +970,7 @@ bool Ao3Librarian::writeIndexRecord(const CompactIndexRecord& rec) {
     }
 
     // --- Open for read/write ---
-    FsFile f = Storage.open(indexPath, O_RDWR);
+    HalFile f = Storage.open(indexPath, O_RDWR);
     if (!f) return false;
 
     char     magic[4];
@@ -1043,7 +1043,7 @@ bool Ao3Librarian::tombstoneRecord(const std::string& epubPath) {
     const char* indexPath = "/.crosspoint/ao3_library_index.bin";
     if (!Storage.exists(indexPath)) return false;
 
-    FsFile f = Storage.open(indexPath, O_RDWR);
+    HalFile f = Storage.open(indexPath, O_RDWR);
     if (!f) return false;
 
     char     magic[4];
@@ -1082,7 +1082,7 @@ int Ao3Librarian::sanitizeIndex() {
     const char* indexPath = "/.crosspoint/ao3_library_index.bin";
     if (!Storage.exists(indexPath)) return 0;
 
-    FsFile f = Storage.open(indexPath, O_RDWR);
+    HalFile f = Storage.open(indexPath, O_RDWR);
     if (!f) return -1;
 
     char     magic[4];
@@ -1122,7 +1122,7 @@ int Ao3Librarian::sanitizeIndex() {
         bool valid = false;
         if (Storage.exists(sidecarPath.c_str())) {
             // Read only the filepath field — avoids a full 1232-byte struct on the stack.
-            FsFile sf;
+            HalFile sf;
             if (Storage.openFileForRead("AO3L", sidecarPath, sf)) {
                 if (sf.seek(kFilepathOffset)) {
                     char filepath[kFilepathLen];

@@ -66,7 +66,7 @@ void Ao3TagMergeActivity::saveMergeData() {
 
 void Ao3TagMergeActivity::loadAllTagsForActiveTab(std::vector<std::string>& out) const {
     const char* indexPath = "/.crosspoint/ao3_library_index.bin";
-    FsFile f;
+    HalFile f;
     if (!Storage.openFileForRead("TMG", indexPath, f)) return;
 
     char magic[4]; uint8_t version; uint16_t recordCount;
@@ -105,7 +105,7 @@ void Ao3TagMergeActivity::loadAllTagsForActiveTab(std::vector<std::string>& out)
 
 void Ao3TagMergeActivity::loadFandomsForRelTab(std::vector<std::string>& out) const {
     const char* indexPath = "/.crosspoint/ao3_library_index.bin";
-    FsFile f;
+    HalFile f;
     if (!Storage.openFileForRead("TMG", indexPath, f)) return;
 
     char magic[4]; uint8_t version; uint16_t recordCount;
@@ -154,7 +154,7 @@ void Ao3TagMergeActivity::loadRelationshipsForFandom(const std::string& fandom,
     }
 
     const char* indexPath = "/.crosspoint/ao3_library_index.bin";
-    FsFile f;
+    HalFile f;
     if (!Storage.openFileForRead("TMG", indexPath, f)) return;
 
     char magic[4]; uint8_t version; uint16_t recordCount;

@@ -18,7 +18,7 @@ void Ao3FolderPickerActivity::loadDirectories() {
 
   root.rewindDirectory();
   char name[256];
-  FsFile file;
+  HalFile file;
   while (file = root.openNextFile()) {
     file.getName(name, sizeof(name));
     if (name[0] != '.' && file.isDirectory() && strcmp(name, "System Volume Information") != 0 && strcmp(name, ".crosspoint") != 0) {

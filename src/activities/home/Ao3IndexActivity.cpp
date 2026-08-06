@@ -12,7 +12,7 @@ namespace {
 bool isLibraryFull() {
   const char* indexPath = "/.crosspoint/ao3_library_index.bin";
   if (!Storage.exists(indexPath)) return false;
-  FsFile f;
+  HalFile f;
   if (Storage.openFileForRead("AO3L", indexPath, f)) {
     char magic[4];
     uint8_t version;
@@ -98,7 +98,7 @@ void Ao3IndexActivity::buildIndexedHashes() {
   const char* indexPath = "/.crosspoint/ao3_library_index.bin";
   if (!Storage.exists(indexPath)) return;
 
-  FsFile f;
+  HalFile f;
   if (!Storage.openFileForRead("AO3L", indexPath, f)) return;
 
   char magic[4];
@@ -315,7 +315,7 @@ void Ao3IndexActivity::tickDirDiscovery() {
 
   root.rewindDirectory();
   char name[256];
-  FsFile file;
+  HalFile file;
   while (file = root.openNextFile()) {
     file.getName(name, sizeof(name));
 
@@ -386,7 +386,7 @@ void Ao3IndexActivity::startDirIndexing() {
 
     root.rewindDirectory();
     char name[256];
-    FsFile file;
+    HalFile file;
     while (file = root.openNextFile()) {
       file.getName(name, sizeof(name));
 
