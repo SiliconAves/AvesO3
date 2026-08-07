@@ -202,7 +202,7 @@ void HomeActivity::loop() {
   if (SETTINGS.uiTheme == CrossPointSettings::LYRA_3_COVERS) {
     const int booksCount = static_cast<int>(recentBooks.size());
 
-    // Horizontal (Front buttons) - Linear (Release) | Jump to Menu (Hold Right)
+    // Horizontal (Front buttons) - Linear (Release) | Jump to Menu / Skip 2 (Hold)
     buttonNavigator.onRelease(ButtonNavigator::getFrontNextButtons(), [this, menuCount] {
       selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);
       requestUpdate();
@@ -232,7 +232,7 @@ void HomeActivity::loop() {
       if (selectorIndex < booksCount) {
         selectorIndex = booksCount;  // Jump to menu
       } else {
-        selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount); // Advance 1 item normally
+        selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);  // Advance 1 item normally
       }
       requestUpdate();
     });
@@ -241,7 +241,7 @@ void HomeActivity::loop() {
       if (selectorIndex < booksCount) {
         selectorIndex = booksCount;  // Jump to menu
       } else {
-        selectorIndex = (selectorIndex + 2) % menuCount; // Skip 2 menu entries
+        selectorIndex = (selectorIndex + 2) % menuCount;  // Skip 2 menu entries
       }
       requestUpdate();
     });
@@ -264,7 +264,11 @@ void HomeActivity::loop() {
       requestUpdate();
     });
   } else {
-    // Original linear behavior for Classic/Lyra themes
+    // Classic, Lyra, RoundedRaff: same hold-action shortcuts, mapped through
+    // the unified NavNext/NavPrevious logical buttons (front + side combined).
+    const int booksCount = static_cast<int>(recentBooks.size());
+
+    // Release: step one item at a time
     buttonNavigator.onNextRelease([this, menuCount] {
       selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);
       requestUpdate();
@@ -272,6 +276,26 @@ void HomeActivity::loop() {
 
     buttonNavigator.onPreviousRelease([this, menuCount] {
       selectorIndex = ButtonNavigator::previousIndex(selectorIndex, menuCount);
+      requestUpdate();
+    });
+
+    // Hold Next: jump from book section to menu, then skip 2 within menu
+    buttonNavigator.onNextContinuous([this, booksCount, menuCount] {
+      if (selectorIndex < booksCount) {
+        selectorIndex = booksCount;  // Jump to menu
+      } else {
+        selectorIndex = (selectorIndex + 2) % menuCount;  // Skip 2 menu entries
+      }
+      requestUpdate();
+    });
+
+    // Hold Previous: jump from first menu item back to book, then skip 2 backwards
+    buttonNavigator.onPreviousContinuous([this, booksCount, menuCount] {
+      if (selectorIndex == booksCount && booksCount > 0) {
+        selectorIndex = 0;  // Jump to first book
+      } else {
+        selectorIndex = (selectorIndex - 2 + menuCount) % menuCount;
+      }
       requestUpdate();
     });
   }
