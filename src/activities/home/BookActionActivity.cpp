@@ -7,6 +7,7 @@
 #include "../../components/UITheme.h"
 #include "../util/ConfirmationActivity.h"
 #include "Ao3IndexActivity.h"
+#include "../../Ao3Librarian.h"
 
 BookActionActivity::BookActionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string filePath,
                                        std::string fileName)
@@ -144,5 +145,14 @@ void BookActionActivity::saveStatus() {
   if (Storage.openFileForWrite("BROWSER", cachePath + "/progress.bin", f)) {
     f.write(data, 7);
     f.close();
+  }
+
+  // Sync finished flag to AO3 index (only on boundary crossing)
+  if (hasAo3LibraryInfo) {
+    bool isNowFinished  = (currentStatus == BookStatus::FINISHED);
+    bool wasFinished    = (initialStatus  == BookStatus::FINISHED);
+    if (isNowFinished != wasFinished) {
+      Ao3Librarian::setRecordFinished(filePath, isNowFinished);
+    }
   }
 }

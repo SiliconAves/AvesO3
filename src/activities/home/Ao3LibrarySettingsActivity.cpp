@@ -25,6 +25,7 @@ void Ao3LibrarySettingsActivity::loadSettings() {
   ao3Folder = doc["ao3Folder"] | "";
   batchSize = doc["batchSize"] | 10;
   autoIndexOnOpen = doc["autoIndexOnOpen"] | false;
+  hideFinished = doc["hideFinished"] | false;
   filterMode = static_cast<FilterMode>(doc["filterMode"] | 0);
   if (filterMode > FilterMode::FOLDER_TREE) filterMode = FilterMode::AUTOMATIC;
   swapNavButtons = doc["swapNavButtons"] | false;
@@ -41,6 +42,7 @@ void Ao3LibrarySettingsActivity::saveSettings() {
   doc["ao3Folder"] = ao3Folder;
   doc["batchSize"] = batchSize;
   doc["autoIndexOnOpen"] = autoIndexOnOpen;
+  doc["hideFinished"] = hideFinished;
   doc["filterMode"] = static_cast<uint8_t>(filterMode);
   doc["swapNavButtons"] = swapNavButtons;
   JsonArray arr = doc["excludedFolders"].to<JsonArray>();
@@ -166,23 +168,27 @@ void Ao3LibrarySettingsActivity::loop() {
       saveSettings();
       requestUpdate();
     } else if (selectorIndex == 4) {
+      hideFinished = !hideFinished;
+      saveSettings();
+      requestUpdate();
+    } else if (selectorIndex == 5) {
       filterMode = (filterMode == FilterMode::AUTOMATIC)
                      ? FilterMode::FOLDER_TREE
                      : FilterMode::AUTOMATIC;
       saveSettings();
       requestUpdate();
-    } else if (selectorIndex == 5) {
+    } else if (selectorIndex == 6) {
       // Merge Similar Tags — only active in Automatic mode
       if (filterMode == FilterMode::AUTOMATIC) {
         auto handler = [this](const ActivityResult&) { requestUpdate(true); };
         startActivityForResult(std::make_unique<Ao3TagMergeActivity>(renderer, mappedInput), handler);
       }
       return;
-    } else if (selectorIndex == 6) {
+    } else if (selectorIndex == 7) {
       swapNavButtons = !swapNavButtons;
       saveSettings();
       requestUpdate();
-    } else if (selectorIndex == 7) {
+    } else if (selectorIndex == 8) {
       showingCleanupConfirm = true;
       requestUpdate(true);
       return;
@@ -191,37 +197,37 @@ void Ao3LibrarySettingsActivity::loop() {
 }
 
   buttonNavigator.onNextRelease([this] {
-    selectorIndex = (selectorIndex + 1) % 8;
+    selectorIndex = (selectorIndex + 1) % 9;
     // Skip "Merge Similar Tags" if disabled (moving forward)
-    if (selectorIndex == 5 && filterMode != FilterMode::AUTOMATIC) {
-      selectorIndex = 6;
+    if (selectorIndex == 6 && filterMode != FilterMode::AUTOMATIC) {
+      selectorIndex = 7;
     }
     requestUpdate();
   });
 
   buttonNavigator.onPreviousRelease([this] {
-    selectorIndex = (selectorIndex + 7) % 8;
+    selectorIndex = (selectorIndex + 8) % 9;
     // Skip "Merge Similar Tags" if disabled (moving backward)
-    if (selectorIndex == 5 && filterMode != FilterMode::AUTOMATIC) {
-      selectorIndex = 4;
+    if (selectorIndex == 6 && filterMode != FilterMode::AUTOMATIC) {
+      selectorIndex = 5;
     }
     requestUpdate();
   });
 
   buttonNavigator.onNextContinuous([this] {
-    selectorIndex = (selectorIndex + 2) % 8;
+    selectorIndex = (selectorIndex + 2) % 9;
     // Skip "Merge Similar Tags" if disabled (fast scrolling forward)
-    if (selectorIndex == 5 && filterMode != FilterMode::AUTOMATIC) {
-      selectorIndex = 6;
+    if (selectorIndex == 6 && filterMode != FilterMode::AUTOMATIC) {
+      selectorIndex = 7;
     }
     requestUpdate();
   });
 
   buttonNavigator.onPreviousContinuous([this] {
-    selectorIndex = (selectorIndex + 6) % 8;
+    selectorIndex = (selectorIndex + 7) % 9;
     // Skip "Merge Similar Tags" if disabled (fast scrolling backward)
-    if (selectorIndex == 5 && filterMode != FilterMode::AUTOMATIC) {
-      selectorIndex = 4;
+    if (selectorIndex == 6 && filterMode != FilterMode::AUTOMATIC) {
+      selectorIndex = 5;
     }
     requestUpdate();
   });
@@ -287,6 +293,7 @@ void Ao3LibrarySettingsActivity::render(RenderLock&&) {
     "Never Index",
     "Index Batch Size",
     "Auto-Index on Library Open",
+    "Hide Finished Fics",
     "Filter Mode",
     "Merge Similar Tags",
     "Side Button Layout",
@@ -302,20 +309,21 @@ void Ao3LibrarySettingsActivity::render(RenderLock&&) {
     if (index == 1) return formatExclusionsPill();
     if (index == 2) return std::to_string(batchSize);
     if (index == 3) return autoIndexOnOpen ? "ON" : "OFF";
-    if (index == 4) return (filterMode == FilterMode::FOLDER_TREE) ? "Folder Tree" : "Automatic";
-    if (index == 5) return "";
-    if (index == 6) return swapNavButtons ? "Scroll List" : "Open Panels";
+    if (index == 4) return hideFinished ? "ON" : "OFF";
+    if (index == 5) return (filterMode == FilterMode::FOLDER_TREE) ? "Folder Tree" : "Automatic";
+    if (index == 6) return "";
+    if (index == 7) return swapNavButtons ? "Scroll List" : "Open Panels";
     return "";
 };
 
   auto rowDimmed = [this](int index) -> bool {
-    return index == 5 && filterMode != FilterMode::AUTOMATIC;
+    return index == 6 && filterMode != FilterMode::AUTOMATIC;
 };
 
   int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
   int contentHeight = pageHeight - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing * 2;
 
-  GUI.drawList(renderer, Rect{0, contentTop, pageWidth, contentHeight}, 8, selectorIndex,
+  GUI.drawList(renderer, Rect{0, contentTop, pageWidth, contentHeight}, 9, selectorIndex,
                rowTitle, nullptr, nullptr, rowValue, true, rowDimmed);
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), "Select", tr(STR_DIR_UP), tr(STR_DIR_DOWN));

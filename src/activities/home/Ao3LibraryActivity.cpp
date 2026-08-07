@@ -1462,10 +1462,25 @@ void Ao3LibraryActivity::rebuildViewEntries() {
   const FilterHashes filterHashes = computeFilterHashes(activeState);
   viewEntries.reserve(recordCount);
 
+  bool hideFinished = false;
+  {
+    const char* settingsPath = "/.crosspoint/ao3_settings.json";
+    if (Storage.exists(settingsPath)) {
+      String json = Storage.readFile(settingsPath);
+      if (!json.isEmpty()) {
+        JsonDocument doc;
+        if (!deserializeJson(doc, json)) {
+          hideFinished = doc["hideFinished"] | false;
+        }
+      }
+    }
+  }
+
   CompactIndexRecord rec;
   for (uint16_t i = 0; i < recordCount; i++) {
     if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
-    if (rec.flags & 0x01) continue; // Skip tombstone
+    if (rec.flags & 0x01) continue;           // Skip tombstone
+    if (hideFinished && (rec.flags & 0x02)) continue; // Skip finished
     ViewEntry v = buildViewEntry(rec);
     if (passesFilter(v, filterHashes)) {
       viewEntries.push_back(v);

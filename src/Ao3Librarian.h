@@ -65,6 +65,7 @@ class Ao3Librarian {
    * @brief Marks a record as tombstoned (deleted) in the index.
    */
   static bool tombstoneRecord(const std::string& epubPath);
+  static bool setRecordFinished(const std::string& epubPath, bool finished);
 
   /**
    * @brief Tombstones any index record whose epub file or ao3_library_info

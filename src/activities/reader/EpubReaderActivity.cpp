@@ -342,10 +342,16 @@ if (showBookmarkMessage && (millis() - bookmarkMessageTime) >= ReaderUtils::BOOK
                                applyOrientation(menu.orientation);
                                toggleAutoPageTurn(menu.pageTurnOption);
                                if (currentStatus != menu.status) {
+                                 const bool crossingFinished =
+                                     (menu.status == BookStatus::FINISHED) !=
+                                     (currentStatus == BookStatus::FINISHED);
+                                 if (crossingFinished && epub->hasAo3Info()) {
+                                   Ao3Librarian::setRecordFinished(epub->getPath(),
+                                       menu.status == BookStatus::FINISHED);
+                                 }
                                  currentStatus = menu.status;
                                  statusManuallySet = true;
-                               }
-                               if (!result.isCancelled) {
+                               }                               if (!result.isCancelled) {
                                  onReaderMenuConfirm(static_cast<EpubReaderMenuActivity::MenuAction>(menu.action));
                                }
                                skipNextButtonCheck = true;
@@ -1122,6 +1128,10 @@ bool EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageC
           currentStatus = BookStatus::WAITING_FOR_CHAPTER;
         } else {
           currentStatus = BookStatus::FINISHED;
+          // Sync to AO3 index on exit (completed fics only)
+          if (epub->hasAo3Info()) {
+            Ao3Librarian::setRecordFinished(epub->getPath(), true);
+          }
         }
         currentPage = 0;  // Normalize for finished state
         pageCount = 0;

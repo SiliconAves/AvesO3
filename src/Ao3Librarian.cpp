@@ -1078,6 +1078,49 @@ bool Ao3Librarian::tombstoneRecord(const std::string& epubPath) {
     return false;
 }
 
+bool Ao3Librarian::setRecordFinished(const std::string& epubPath, bool finished) {
+    const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+    if (!Storage.exists(indexPath)) return false;
+
+    HalFile f = Storage.open(indexPath, O_RDWR);
+    if (!f) return false;
+
+    char     magic[4];
+    uint8_t  version;
+    uint16_t recordCount;
+    bool readOk = f.read(magic, 4) == 4 &&
+                  f.read(&version, 1) == 1 &&
+                  f.read((uint8_t*)&recordCount, 2) == 2;
+
+    if (!readOk || memcmp(magic, "AO3X", 4) != 0 || version != 1) {
+        f.close();
+        return false;
+    }
+
+    uint32_t targetHash = static_cast<uint32_t>(std::hash<std::string>{}(epubPath));
+
+    CompactIndexRecord rec;
+    for (uint16_t i = 0; i < recordCount; i++) {
+        f.seek(offsetOf(i));
+        if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
+
+        if (!(rec.flags & 0x01) && rec.cacheHash == targetHash) {
+            if (finished) {
+                rec.flags |= 0x02;
+            } else {
+                rec.flags &= ~0x02;
+            }
+            f.seek(offsetOf(i));
+            f.write((uint8_t*)&rec, sizeof(rec));
+            f.close();
+            return true;
+        }
+    }
+
+    f.close();
+    return false;
+}
+
 int Ao3Librarian::sanitizeIndex() {
     const char* indexPath = "/.crosspoint/ao3_library_index.bin";
     if (!Storage.exists(indexPath)) return 0;

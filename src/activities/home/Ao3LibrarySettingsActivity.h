@@ -17,6 +17,7 @@ class Ao3LibrarySettingsActivity final : public Activity {
   std::vector<std::string> excludedFolders;
   int batchSize = 10;
   bool autoIndexOnOpen = false;
+  bool hideFinished = false;
   bool swapNavButtons = false;
   FilterMode filterMode = FilterMode::AUTOMATIC;
   bool showingCleanupResult = false;
