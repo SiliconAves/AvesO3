@@ -599,34 +599,47 @@ void extractTagsFromAnchor(const char* anchor) {
       size_t rawLen = (size_t)(actualEnd - scan);
       if (rawLen == 0) { scan = lt; continue; } // empty text node, skip
 
+      // Decode HTML entities while copying into dst.
+      // Currently handles &amp; → &. Returns decoded byte count.
+      auto decodeEntities = [](char* dst, size_t dstMax, const char* src, size_t srcLen) -> size_t {
+        size_t out = 0, in = 0;
+        while (in < srcLen && out < dstMax) {
+          if (src[in] == '&' && srcLen - in >= 5 &&
+              strncasecmp(src + in, "&amp;", 5) == 0) {
+            dst[out++] = '&';
+            in += 5;
+          } else {
+            dst[out++] = src[in++];
+          }
+        }
+        dst[out] = '\0';
+        return out;
+      };
+
       char tempTag[64] = {0};
-      size_t processLen = rawLen;
-      
+      size_t processLen = 0;
+
       const char* auPrefix = "Alternate Universe - ";
       const size_t auLen = 21;
-      
+
       const char* irPrefix = "Implied/Referenced ";
       const size_t irLen = 19;
 
       if (rawLen > auLen && strncasecmp(scan, auPrefix, auLen) == 0) {
-        // Handle "Alternate Universe - "
         strcpy(tempTag, "AU-");
-        size_t remaining = std::min((size_t)(rawLen - auLen), (size_t)(sizeof(tempTag) - 4));
-        strncpy(tempTag + 3, scan + auLen, remaining);
-        processLen = 3 + remaining;
-        
+        size_t decoded = decodeEntities(tempTag + 3, sizeof(tempTag) - 4,
+                                  scan + auLen, rawLen - auLen);
+        processLen = 3 + decoded;
+
       } else if (rawLen > irLen && strncasecmp(scan, irPrefix, irLen) == 0) {
-        // Handle "Implied/Referenced "
         strcpy(tempTag, "I/R ");
-        size_t remaining = std::min((size_t)(rawLen - irLen), (size_t)(sizeof(tempTag) - 5));
-        strncpy(tempTag + 4, scan + irLen, remaining);
-        processLen = 4 + remaining;
-        
+        size_t decoded = decodeEntities(tempTag + 4, sizeof(tempTag) - 5,
+                                        scan + irLen, rawLen - irLen);
+        processLen = 4 + decoded;
+
       } else {
-        // Standard tag processing
-        size_t maxCopy = std::min(rawLen, (size_t)(sizeof(tempTag) - 1));
-        strncpy(tempTag, scan, maxCopy);
-        processLen = maxCopy;
+        // Standard tag: decode entities before measuring/truncating
+        processLen = decodeEntities(tempTag, sizeof(tempTag) - 1, scan, rawLen);
       }
 
       bool truncated = processLen > 15;
