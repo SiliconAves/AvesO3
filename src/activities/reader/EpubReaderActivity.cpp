@@ -20,6 +20,10 @@
 #include "BookmarkEntry.h"
 #include "CrossPointSettings.h"
 #include "Ao3Librarian.h"
+
+#include "Ao3ViewEntry.h"  // for fnv1a
+#include "Ao3EndOfBookSeriesActivity.h"  // adjust path if needed
+
 #include "CrossPointState.h"
 #include "EpubReaderBookmarksActivity.h"
 #include "EpubReaderChapterSelectionActivity.h"
@@ -264,29 +268,29 @@ if (skipNextButtonCheck) {
   // finished. Two independent finished-book features key off this same condition.
   const bool atEndOfBook = currentSpineIndex > 0 && currentSpineIndex >= epub->getSpineItemsCount();
 
-  if (SETTINGS.removeReadBooksFromRecents) {
-    if (atEndOfBook && !recentsEntryRemoved) {
-        
+  if (atEndOfBook && !eobProcessed) {
+    if (SETTINGS.removeReadBooksFromRecents) {
         // Split Logic: Only remove standard books or fully completed AO3 fics.
         // If it's an incomplete AO3 fic, keep it in recents
         if (!(epub->hasAo3Info() && !epub->isAo3Completed())) {
             recentsEntryRemoved = RECENT_BOOKS.removeByPath(epub->getPath());
         }
-        
-    } else if (!atEndOfBook && recentsEntryRemoved) {
-        RECENT_BOOKS.addBook(epub->getPath(), epub->getTitle(), epub->getAuthor(), epub->getThumbBmpPath());
-        recentsEntryRemoved = false;
     }
-}
 
-  if (atEndOfBook) {
     // Split Logic: Exempt all AO3 books from being moved to the /read/ folder
     // to protect their custom folder structures and index hashes.
     pendingReadFolderMove = SETTINGS.moveFinishedToReadFolder && 
                             !isInReadFolder(epub->getPath()) && 
                             !epub->hasAo3Info();
-  } else {
+
+    eobProcessed = true;
+  } else if (!atEndOfBook && eobProcessed) {
+    if (SETTINGS.removeReadBooksFromRecents && recentsEntryRemoved) {
+        RECENT_BOOKS.addBook(epub->getPath(), epub->getTitle(), epub->getAuthor(), epub->getThumbBmpPath());
+        recentsEntryRemoved = false;
+    }
     pendingReadFolderMove = false;
+    eobProcessed = false;
   }
 
   if (automaticPageTurnActive) {
@@ -348,6 +352,10 @@ if (showBookmarkMessage && (millis() - bookmarkMessageTime) >= ReaderUtils::BOOK
                                  if (crossingFinished && epub->hasAo3Info()) {
                                    Ao3Librarian::setRecordFinished(epub->getPath(),
                                        menu.status == BookStatus::FINISHED);
+                                       // Reset the flag if they manually un-finished the book
+                                       if (menu.status != BookStatus::FINISHED) {
+                                          ao3FinishedRecordWritten = false;
+                                          }
                                  }
                                  currentStatus = menu.status;
                                  statusManuallySet = true;
@@ -402,6 +410,11 @@ if (showBookmarkMessage && (millis() - bookmarkMessageTime) >= ReaderUtils::BOOK
       mappedInput.getHeldTime() < ReaderUtils::GO_HOME_MS) {
     if (footnoteDepth > 0) {
       restoreSavedPosition();
+      return;
+    }
+    // At EOB with a series: open the series view instead of going home
+    if (currentSpineIndex >= epub->getSpineItemsCount() && ao3HasSeries) {
+      launchAo3SeriesActivity();
       return;
     }
     onGoHome();
@@ -899,27 +912,70 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   }
 
 // Show end of book screen
-  if (currentSpineIndex == epub->getSpineItemsCount()) {
-    renderer.clearScreen();
+if (currentSpineIndex == epub->getSpineItemsCount()) {
+  renderer.clearScreen();
 
-    if (epub->hasAo3Info() && !epub->isAo3Completed()) {
-      renderer.drawCenteredText(UI_12_FONT_ID, 280, tr(STR_AO3_END_REACHED), true, EpdFontFamily::BOLD);
-      renderer.drawCenteredText(UI_12_FONT_ID, 320, tr(STR_AO3_LOOK_FOR_UPDATES), true, EpdFontFamily::BOLD);
+  // Load series info once on first EOB render
+  if (!ao3SeriesInfoLoaded) {
+    ao3SeriesInfoLoaded = true;
+    Ao3LibraryMetadata seriesMeta;
+    if (Ao3Librarian::getLibraryInfo(*epub, seriesMeta) &&
+        seriesMeta.seriesPart > 0 && seriesMeta.seriesName[0] != '\0') {
+      ao3HasSeries = true;
+      ao3SeriesPart = seriesMeta.seriesPart;
+      strncpy(ao3SeriesName, seriesMeta.seriesName, sizeof(ao3SeriesName) - 1);
+      ao3SeriesName[sizeof(ao3SeriesName) - 1] = '\0';
+    }
+  }
 
-      // Only label the Confirm button as "Search"
-      const auto labels = mappedInput.mapLabels("", tr(STR_AO3_SEARCH), "", "");
-      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-    } else {
-      renderer.drawCenteredText(UI_12_FONT_ID, 300, tr(STR_END_OF_BOOK), true, EpdFontFamily::BOLD);
+  const int lh12 = renderer.getLineHeight(UI_12_FONT_ID);
+  const int lh10 = renderer.getLineHeight(UI_10_FONT_ID);
+
+  if (epub->hasAo3Info() && !epub->isAo3Completed()) {
+    // WIP AO3 fic
+    const int mainY = 280;
+    renderer.drawCenteredText(UI_12_FONT_ID, mainY,      tr(STR_AO3_END_REACHED),      true, EpdFontFamily::BOLD);
+    renderer.drawCenteredText(UI_12_FONT_ID, mainY + 40, tr(STR_AO3_LOOK_FOR_UPDATES), true, EpdFontFamily::BOLD);
+
+    if (ao3HasSeries) {
+      char seriesBuf[160];
+      snprintf(seriesBuf, sizeof(seriesBuf), "Book %d of %s", ao3SeriesPart, ao3SeriesName);
+      int seriesY = mainY + 40 + lh12 + lh10;  // one blank line below the second title line
+      for (const auto& line : renderer.wrappedText(UI_10_FONT_ID, seriesBuf, renderer.getScreenWidth() - 40, 2)) {
+        renderer.drawCenteredText(UI_10_FONT_ID, seriesY, line.c_str());
+        seriesY += lh10;
+      }
     }
 
-    renderer.displayBuffer();
+    const auto labels = mappedInput.mapLabels(
+        ao3HasSeries ? tr(STR_EOB_SERIES_BUTTON) : "", tr(STR_AO3_SEARCH), "", "");
+    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
-    automaticPageTurnActive = false;
-    showPendingSyncSaveError();
-    saveProgress(currentSpineIndex, 0, 0);
-    return;
+  } else {
+    // Normal book or completed AO3 fic
+    const int mainY = 300;
+    renderer.drawCenteredText(UI_12_FONT_ID, mainY, tr(STR_END_OF_BOOK), true, EpdFontFamily::BOLD);
+
+    if (ao3HasSeries) {
+      char seriesBuf[160];
+      snprintf(seriesBuf, sizeof(seriesBuf), "Book %d of %s", ao3SeriesPart, ao3SeriesName);
+      int seriesY = mainY + lh12 + lh10;  // one blank line below the title
+      for (const auto& line : renderer.wrappedText(UI_10_FONT_ID, seriesBuf, renderer.getScreenWidth() - 40, 2)) {
+        renderer.drawCenteredText(UI_10_FONT_ID, seriesY, line.c_str());
+        seriesY += lh10;
+      }
+
+      const auto labels = mappedInput.mapLabels(tr(STR_EOB_SERIES_BUTTON), "", "", "");
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    }
   }
+
+  renderer.displayBuffer();
+  automaticPageTurnActive = false;
+  showPendingSyncSaveError();
+  saveProgress(currentSpineIndex, 0, 0);
+  return;
+}
 
   // Apply screen viewable areas and additional padding
   int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
@@ -1129,7 +1185,8 @@ bool EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageC
         } else {
           currentStatus = BookStatus::FINISHED;
           // Sync to AO3 index on exit (completed fics only)
-          if (epub->hasAo3Info()) {
+          if (epub->hasAo3Info() && !ao3FinishedRecordWritten) {
+            ao3FinishedRecordWritten = true;
             Ao3Librarian::setRecordFinished(epub->getPath(), true);
           }
         }
@@ -1143,6 +1200,7 @@ bool EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageC
       // If the user started reading (not at start and not at end), revert to READING.
       if (!((spineIndex == 0 && currentPage == 0) || spineIndex >= epub->getSpineItemsCount())) {
           currentStatus = BookStatus::READING;
+          ao3FinishedRecordWritten = false;
       }
     }
   }
@@ -1557,4 +1615,25 @@ CrossPointPosition EpubReaderActivity::getCurrentPosition() const {
     localPos.hasParagraphIndex = true;
   }
   return localPos;
+}
+
+void EpubReaderActivity::launchAo3SeriesActivity() {
+  if (!epub) { onGoHome(); return; }
+
+  const std::string originPath = epub->getPath();
+  const uint32_t originHash = static_cast<uint32_t>(std::hash<std::string>{}(originPath));
+
+  // CompactIndexRecord.seriesName is truncated to 31 chars on write, so the hash
+  // must be computed from the same truncated string to match index records.
+  char truncatedName[32];
+  strncpy(truncatedName, ao3SeriesName, 31);
+  truncatedName[31] = '\0';
+  const uint32_t seriesHash = fnv1a(truncatedName);
+
+  activityManager.replaceActivity(std::make_unique<Ao3EndOfBookSeriesActivity>(
+      renderer, mappedInput,
+      std::string(ao3SeriesName),  // full name for the header
+      seriesHash,
+      originHash,
+      originPath));
 }

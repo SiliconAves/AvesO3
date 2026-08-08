@@ -36,11 +36,18 @@ class EpubReaderActivity final : public Activity {
   bool skipNextButtonCheck = false;  // Skip button processing for one frame after subactivity exit
   bool automaticPageTurnActive = false;
   bool statusManuallySet = false;
+  bool ao3FinishedRecordWritten = false;
   int lastSavedSpineIndex = -1;
   int lastSavedPageNumber = -1;
 
   // -1 = opened from file browser; >= 0 = opened from AO3 library at this selector index.
   int ao3LibraryReturnIndex_ = -1;
+
+  // Series info for the EOB screen — loaded once when EOB is first reached
+  bool ao3SeriesInfoLoaded = false;
+  bool ao3HasSeries = false;
+  uint16_t ao3SeriesPart = 0;
+  char ao3SeriesName[128] = {};
 
   bool showBookmarkMessage = false;
   bool ignoreNextConfirmRelease = false;
@@ -50,6 +57,8 @@ class EpubReaderActivity final : public Activity {
   // Tracks whether this book is currently removed from Recent Books by the
   // removeReadBooksFromRecents feature (set at End-of-Book, cleared if paged back in).
   bool recentsEntryRemoved = false;
+  // Guards the EOB-specific checks (like SD card queries) so they evaluate exactly once
+  bool eobProcessed = false;
   unsigned long bookmarkMessageTime = 0UL;
   // Set when the reader is left at end-of-book and SETTINGS.moveFinishedToReadFolder is on.
   // Consumed in onExit() to relocate the finished book into /Read/.
@@ -86,6 +95,7 @@ class EpubReaderActivity final : public Activity {
   // Footnote navigation
   void navigateToHref(const std::string& href, bool savePosition = false);
   void restoreSavedPosition();
+  void launchAo3SeriesActivity();
 
  public:
   explicit EpubReaderActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::unique_ptr<Epub> epub)
