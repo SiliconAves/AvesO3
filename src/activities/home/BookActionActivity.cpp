@@ -9,6 +9,9 @@
 #include "Ao3IndexActivity.h"
 #include "../../Ao3Librarian.h"
 
+#include "Ao3NewChaptersStore.h"
+#include "Ao3WipsStore.h"
+
 BookActionActivity::BookActionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string filePath,
                                        std::string fileName)
     : Activity("BookAction", renderer, mappedInput), filePath(std::move(filePath)), fileName(std::move(fileName)) {}
@@ -153,6 +156,26 @@ void BookActionActivity::saveStatus() {
     bool wasFinished    = (initialStatus  == BookStatus::FINISHED);
     if (isNowFinished != wasFinished) {
       Ao3Librarian::setRecordFinished(filePath, isNowFinished);
+    }
+  }
+
+  // Tab 1 hooks: update Ao3NewChaptersStore based on the new status.
+  if (currentStatus == BookStatus::NEW_CHAPTER_AVAILABLE) {
+    // Insert (or move to top) in the New Chapters list.
+    Epub epub(filePath, "/.crosspoint");
+    epub.load(false, true);
+    NEW_CHAPTERS_STORE.addBook(filePath, epub.getTitle(), epub.getAuthor());
+    AO3_WIPS_STORE.removeBook(filePath);
+  } else if (currentStatus == BookStatus::WAITING_FOR_CHAPTER ||
+           currentStatus == BookStatus::FINISHED) {
+    NEW_CHAPTERS_STORE.removeByPath(filePath);
+    if (currentStatus == BookStatus::WAITING_FOR_CHAPTER) {
+        Epub epub(filePath, "/.crosspoint");
+        epub.load(false, true);
+        AO3_WIPS_STORE.addBook(filePath, epub.getTitle(), epub.getAuthor());
+    } else {
+        // Completed fic: evict from WIPs if present.
+        AO3_WIPS_STORE.removeBook(filePath);
     }
   }
 }

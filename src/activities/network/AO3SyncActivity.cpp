@@ -6,6 +6,11 @@
 #include <Logging.h>
 #include <I18n.h>
 #include <ZipFile.h>
+#include <Epub.h>
+
+#include "Ao3NewChaptersStore.h"
+#include "Ao3WipsStore.h"
+
 #include "activities/network/WifiSelectionActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -322,6 +327,18 @@ void AO3SyncActivity::performDownload() {
 
         if (Storage.rename(tempPath.c_str(), bookPath.c_str())) {
             LOG_INF("AO3", "Atomic swap complete");
+
+            // Tab 1 hook: insert into New Chapters store.
+            // Load title/author from the freshly-written epub (same pattern as
+            // RecentBooksStore::getDataFromBook).
+            {
+                Epub freshEpub(bookPath, "/.crosspoint");
+                freshEpub.load(false, true);
+                const std::string title  = freshEpub.getTitle();
+                const std::string author = freshEpub.getAuthor();
+                NEW_CHAPTERS_STORE.addBook(bookPath, title, author);
+                AO3_WIPS_STORE.removeBook(bookPath);
+            }
 
             // Success result
             AO3Result res;

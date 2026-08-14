@@ -21,6 +21,9 @@
 #include "CrossPointSettings.h"
 #include "Ao3Librarian.h"
 
+#include "Ao3NewChaptersStore.h"
+#include "Ao3WipsStore.h"
+
 #include "Ao3ViewEntry.h"  // for fnv1a
 #include "Ao3EndOfBookSeriesActivity.h"  // adjust path if needed
 
@@ -359,6 +362,21 @@ if (showBookmarkMessage && (millis() - bookmarkMessageTime) >= ReaderUtils::BOOK
                                  }
                                  currentStatus = menu.status;
                                  statusManuallySet = true;
+
+                                 // Tab 1 hooks for manual status changes via reader menu.
+                                 if (menu.status == BookStatus::NEW_CHAPTER_AVAILABLE) {
+                                   NEW_CHAPTERS_STORE.addBook(
+                                       epub->getPath(), epub->getTitle(), epub->getAuthor());
+                                   AO3_WIPS_STORE.removeBook(epub->getPath());
+                                 } else if (menu.status == BookStatus::WAITING_FOR_CHAPTER ||
+                                            menu.status == BookStatus::FINISHED) {
+                                   NEW_CHAPTERS_STORE.removeByPath(epub->getPath());
+                                   if (menu.status == BookStatus::WAITING_FOR_CHAPTER) {
+                                       AO3_WIPS_STORE.addBook(epub->getPath(), epub->getTitle(), epub->getAuthor());
+                                    } else {
+                                    AO3_WIPS_STORE.removeBook(epub->getPath());
+                                   }
+                                 }
                                }                               if (!result.isCancelled) {
                                  onReaderMenuConfirm(static_cast<EpubReaderMenuActivity::MenuAction>(menu.action));
                                }
@@ -1182,8 +1200,15 @@ bool EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageC
       } else if (spineIndex >= epub->getSpineItemsCount()) {
         if (epub->hasAo3Info() && !epub->isAo3Completed()) {
           currentStatus = BookStatus::WAITING_FOR_CHAPTER;
+          // Tab 1 exit condition: remove from New Chapters (book is WIP, not done).
+          NEW_CHAPTERS_STORE.removeByPath(epub->getPath());
+          AO3_WIPS_STORE.addBook(epub->getPath(), epub->getTitle(), epub->getAuthor());
         } else {
           currentStatus = BookStatus::FINISHED;
+          // Tab 1 exit condition: remove from New Chapters (completed fic).
+          NEW_CHAPTERS_STORE.removeByPath(epub->getPath());
+          // Tab 2 exit condition: completed fics leave the WIPs list.
+          AO3_WIPS_STORE.removeBook(epub->getPath());
           // Sync to AO3 index on exit (completed fics only)
           if (epub->hasAo3Info() && !ao3FinishedRecordWritten) {
             ao3FinishedRecordWritten = true;
