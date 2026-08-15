@@ -9,6 +9,7 @@
 
 #include "Ao3NewChaptersStore.h"
 #include "Ao3WipsStore.h"
+#include "Ao3MarkedForLaterStore.h"
 
 #include "MappedInputManager.h"
 #include "RecentBooksStore.h"
@@ -46,10 +47,11 @@ constexpr const char* EMPTY_MESSAGES[4] = {
 
 int RecentBooksActivity::getCurrentListSize() const {
   switch (selectedTabIndex) {
+    case TAB_MARKED_FOR_LATER: return static_cast<int>(markedForLater.size());
     case TAB_NEW_CHAPTERS: return static_cast<int>(newChapters.size());
     case TAB_WIPS:         return static_cast<int>(wipsEntries.size());
     case TAB_RECENT_BOOKS: return static_cast<int>(recentBooks.size());
-    default:               return 0;  // Tabs 0 and 2 empty until Steps 2 and 4
+    default:                   return 0;
   }
 }
 
@@ -60,6 +62,13 @@ int RecentBooksActivity::getCurrentListSize() const {
 void RecentBooksActivity::onEnter() {
   Activity::onEnter();
 
+  // Load Marked for Later; prune stale entries first.
+  if (MARKED_FOR_LATER_STORE.pruneMissing()) {
+    MARKED_FOR_LATER_STORE.saveToFile();
+  }
+  MARKED_FOR_LATER_STORE.loadFromFile();
+  markedForLater = MARKED_FOR_LATER_STORE.getEntries();
+  
   // Load New Chapters; prune stale entries first.
   if (NEW_CHAPTERS_STORE.pruneMissing()) {
     NEW_CHAPTERS_STORE.saveToFile();
@@ -81,7 +90,9 @@ void RecentBooksActivity::onEnter() {
   recentBooks = RECENT_BOOKS.getBooks();
 
   // Smart default tab selection logic
-  if (!newChapters.empty()) {
+  if (!markedForLater.empty()) {
+    selectedTabIndex = TAB_MARKED_FOR_LATER;
+  } else if (!newChapters.empty()) {
     selectedTabIndex = TAB_NEW_CHAPTERS;
   } else if (!wipsEntries.empty()) {
     selectedTabIndex = TAB_WIPS;
@@ -96,6 +107,7 @@ void RecentBooksActivity::onEnter() {
 
 void RecentBooksActivity::onExit() {
   Activity::onExit();
+  markedForLater.clear();
   newChapters.clear();
   wipsEntries.clear();
   recentBooks.clear();
@@ -113,6 +125,18 @@ void RecentBooksActivity::loop() {
     if (!mappedInput.isPressed(MappedInputManager::Button::Confirm)) {
       longPressFired = false;
     }
+    return;
+  }
+
+  // Long-press Confirm (Tab 0, list focused): prompt to remove from Marked for Later.
+  if (selectedTabIndex == TAB_MARKED_FOR_LATER && selectedItemIndex > 0 &&
+      !markedForLater.empty() &&
+      (selectedItemIndex - 1) < static_cast<int>(markedForLater.size()) &&
+      mappedInput.isPressed(MappedInputManager::Button::Confirm) &&
+      mappedInput.getHeldTime() >= LONG_PRESS_MS) {
+    longPressFired = true;
+    const int idx = selectedItemIndex - 1;
+    promptRemoveMarkedEntry(markedForLater[idx].path, markedForLater[idx].title);
     return;
   }
 
@@ -171,7 +195,14 @@ void RecentBooksActivity::loop() {
   // Uses wasReleased to avoid triggering after a long-press.
   if (selectedItemIndex > 0 &&
       mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    if (selectedTabIndex == TAB_NEW_CHAPTERS) {
+    
+    if (selectedTabIndex == TAB_MARKED_FOR_LATER) {
+      const int idx = selectedItemIndex - 1;
+      if (idx >= 0 && idx < static_cast<int>(markedForLater.size())) {
+        onSelectBook(markedForLater[idx].path);
+        return;
+     }
+    } else if (selectedTabIndex == TAB_NEW_CHAPTERS) {
       const int idx = selectedItemIndex - 1;
       if (idx >= 0 && idx < static_cast<int>(newChapters.size())) {
         onSelectBook(newChapters[idx].path);
@@ -254,6 +285,27 @@ void RecentBooksActivity::loop() {
 // ---------------------------------------------------------------------------
 //  Helpers
 // ---------------------------------------------------------------------------
+
+void RecentBooksActivity::promptRemoveMarkedEntry(const std::string& path,
+                                                   const std::string& title) {
+  auto handler = [this, path](const ActivityResult& res) {
+    if (res.isCancelled) return;
+    if (MARKED_FOR_LATER_STORE.removeByPath(path)) {
+      markedForLater = MARKED_FOR_LATER_STORE.getEntries();
+      const int listSize = static_cast<int>(markedForLater.size());
+      if (listSize == 0) {
+        selectedItemIndex = 0;
+      } else if (selectedItemIndex > listSize) {
+        selectedItemIndex = listSize;
+      }
+      requestUpdate(true);
+    }
+  };
+  startActivityForResult(
+      std::make_unique<ConfirmationActivity>(renderer, mappedInput,
+                                            "Remove from Marked for Later", title),
+      std::move(handler));
+}
 
 void RecentBooksActivity::promptRemoveBook(const std::string& path,
                                            const std::string& title) {
@@ -359,6 +411,14 @@ void RecentBooksActivity::render(RenderLock&&) {
                           ? tr(STR_NO_RECENT_BOOKS)
                           : EMPTY_MESSAGES[selectedTabIndex];
     renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, contentTop + 20, msg);
+  
+  } else if (selectedTabIndex == TAB_MARKED_FOR_LATER) {
+    GUI.drawList(
+        renderer, Rect{0, contentTop, pageWidth, contentHeight},
+        markedForLater.size(), selectedItemIndex - 1,
+        [this](int index) { return markedForLater[index].title; },
+        [this](int index) { return markedForLater[index].author; },
+        [](int) { return UIIcon::Book; });
   } else if (selectedTabIndex == TAB_NEW_CHAPTERS) {
     // Same list style as Tab 3 (title line 1, author line 2, file icon on left).
     GUI.drawList(

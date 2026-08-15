@@ -6,6 +6,7 @@
  
 #include "Ao3NewChaptersStore.h"
 #include "Ao3WipsStore.h"
+#include "Ao3MarkedForLaterStore.h"
 
 #include "RecentBooksStore.h"
 #include "activities/Activity.h"
@@ -31,6 +32,9 @@ class RecentBooksActivity final : public Activity {
   // Set when a long-press has fired; swallows input until Confirm is released.
   bool longPressFired = false;
  
+  // Tab 0 data
+  std::vector<Ao3MarkedForLaterEntry> markedForLater;
+  
   // Tab 1 data
   std::vector<Ao3NewChaptersEntry> newChapters;
 
@@ -44,6 +48,7 @@ class RecentBooksActivity final : public Activity {
   void promptRemoveBook(const std::string& path, const std::string& title);
   void promptRemoveNewChaptersEntry(const std::string& path, const std::string& title);
   void promptRemoveWipsEntry(const std::string& path, const std::string& title);
+  void promptRemoveMarkedEntry(const std::string& path, const std::string& title);
  
  public:
   explicit RecentBooksActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
