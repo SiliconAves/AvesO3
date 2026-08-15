@@ -3,6 +3,7 @@
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
+#include <Epub.h>
 
 #include <algorithm>
 #include <memory>
@@ -68,6 +69,18 @@ void RecentBooksActivity::onEnter() {
   }
   MARKED_FOR_LATER_STORE.loadFromFile();
   markedForLater = MARKED_FOR_LATER_STORE.getEntries();
+
+  // Patch missing title/author for books not yet opened
+  for (auto& entry : markedForLater) {
+  if (!entry.title.empty()) continue;
+  Epub epub(entry.path, "/.crosspoint");
+  epub.load(false, true);
+  const std::string t = epub.getTitle();
+  if (!t.empty()) {
+    entry.title  = t;
+    entry.author = epub.getAuthor();
+    }
+  }
   
   // Load New Chapters; prune stale entries first.
   if (NEW_CHAPTERS_STORE.pruneMissing()) {
@@ -291,6 +304,25 @@ void RecentBooksActivity::promptRemoveMarkedEntry(const std::string& path,
   auto handler = [this, path](const ActivityResult& res) {
     if (res.isCancelled) return;
     if (MARKED_FOR_LATER_STORE.removeByPath(path)) {
+      // Reset book status back to Unread (START = 0), preserving the
+      // position bytes (0–5) in progress.bin exactly as BookActionActivity does.
+      {
+        const std::string cachePath =
+            "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(path));
+        const std::string progressPath = cachePath + "/progress.bin";
+        uint8_t data[7] = {0, 0, 0, 0, 0, 0, 0};  // byte 6 = BookStatus::START
+        HalFile f;
+        if (Storage.openFileForRead("RBA", progressPath, f)) {
+          f.read(data, 6);  // preserve position bytes
+          f.close();
+        }
+        // data[6] stays 0 (BookStatus::START / Unread)
+        if (Storage.openFileForWrite("RBA", progressPath, f)) {
+          f.write(data, 7);
+          f.close();
+        }
+      }
+
       markedForLater = MARKED_FOR_LATER_STORE.getEntries();
       const int listSize = static_cast<int>(markedForLater.size());
       if (listSize == 0) {
