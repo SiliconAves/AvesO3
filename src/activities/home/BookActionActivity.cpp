@@ -93,6 +93,10 @@ void BookActionActivity::onEnter() {
   const int maxIdx = visibleRowCount() - 1;
   if (selectorIndex > maxIdx) selectorIndex = maxIdx;
 
+  // If the cursor is sitting on the disabled Status row, skip it
+  if (selectorIndex == 0 && logicalRow(0) == 0 && currentStatus == BookStatus::MARKED_FOR_LATER)
+    selectorIndex = 1;
+
   requestUpdate(true);
 }
 
