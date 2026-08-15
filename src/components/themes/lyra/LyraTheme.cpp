@@ -317,6 +317,9 @@ void LyraTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount, 
             renderer.fillPolygon(tx, ty, 3, true);
             // Notification dot on top-right corner of the book icon
             renderer.fillRoundedRect(iconX_pos + iconSize - 8, iconY_pos - 3, 8, 7, 4, Color::Black);
+          } else if (status == BookStatus::MARKED_FOR_LATER) {
+            // White circle with black border on the cover
+            renderer.drawRoundedRect(iconX_pos + 6, iconY_pos + 1, 12, 11, 1, 5, Color::Black);
           }
         }
       }
