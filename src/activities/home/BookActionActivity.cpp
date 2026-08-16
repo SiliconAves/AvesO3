@@ -321,6 +321,17 @@ void BookActionActivity::saveStatus() {
   }
 
   // Tab store hooks — mirror status transitions into the Dashboard stores.
+  if (currentStatus == BookStatus::MARKED_FOR_LATER) {
+    return;
+  }
+
+  // Evict from Marked for Later for any status except READING.
+  // MARKED_FOR_LATER returned early above, so this is safe.
+  if (currentStatus != BookStatus::READING) {
+    MARKED_FOR_LATER_STORE.removeByPath(filePath);
+  }
+
+  // Tab store hooks
   if (currentStatus == BookStatus::NEW_CHAPTER_AVAILABLE) {
     Epub epub(filePath, "/.crosspoint");
     epub.load(false, true);
@@ -334,9 +345,7 @@ void BookActionActivity::saveStatus() {
       epub.load(false, true);
       AO3_WIPS_STORE.addBook(filePath, epub.getTitle(), epub.getAuthor());
     } else {
-      // FINISHED: evict from WIPs and Marked for Later
       AO3_WIPS_STORE.removeBook(filePath);
-      MARKED_FOR_LATER_STORE.removeByPath(filePath);
     }
   }
 }
