@@ -1193,7 +1193,7 @@ void Ao3LibraryActivity::renderStatusSymbol(int x, int y, int s, BookStatus stat
       snprintf(buf, sizeof(buf), "%d", markedPosition);
       const int tw = renderer.getTextWidth(UI_10_FONT_ID, buf);
       const int th = renderer.getTextHeight(UI_10_FONT_ID);
-      renderer.drawText(UI_10_FONT_ID, x + (s - tw) / 2 - 1, y + (s - th) / 2 + yOffset, buf, true);
+      renderer.drawText(UI_10_FONT_ID, x + (s - tw) / 2 , y + (s - th) / 2 + yOffset, buf, true);
     }
     return;
   }
