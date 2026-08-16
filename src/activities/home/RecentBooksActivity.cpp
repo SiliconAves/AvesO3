@@ -11,6 +11,7 @@
 #include "Ao3NewChaptersStore.h"
 #include "Ao3WipsStore.h"
 #include "Ao3MarkedForLaterStore.h"
+#include "../../Ao3LibraryMetadata.h"
 
 #include "MappedInputManager.h"
 #include "RecentBooksStore.h"
@@ -72,13 +73,17 @@ void RecentBooksActivity::onEnter() {
 
   // Patch missing title/author for books not yet opened
   for (auto& entry : markedForLater) {
-  if (!entry.title.empty()) continue;
-  Epub epub(entry.path, "/.crosspoint");
-  epub.load(false, true);
-  const std::string t = epub.getTitle();
-  if (!t.empty()) {
-    entry.title  = t;
-    entry.author = epub.getAuthor();
+    if (!entry.title.empty()) continue;
+    std::string infoPath = "/.crosspoint/epub_" +
+        std::to_string(std::hash<std::string>{}(entry.path)) + "/ao3_library_info";
+    HalFile f;
+    if (Storage.openFileForRead("MFL", infoPath, f)) {
+      Ao3LibraryMetadata meta;
+      if (f.read((uint8_t*)&meta, sizeof(meta)) == sizeof(meta) && meta.isValid()) {
+        entry.title  = meta.title;
+        entry.author = meta.author;
+      }
+      f.close();
     }
   }
   
