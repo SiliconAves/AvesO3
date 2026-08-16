@@ -20,6 +20,7 @@
 #include "../../components/UITheme.h"
 #include "../../RecentBooksStore.h"
 #include "../../CrossPointState.h"
+#include "Ao3MarkedForLaterStore.h"
 
 // ---------------------------------------------------------------------------
 //  onEnter
@@ -41,6 +42,7 @@ void Ao3LibraryActivity::onEnter() {
   loadFilterMode();
   Ao3TagMergeStore::load();
   loadSortFilterState();
+  MARKED_FOR_LATER_STORE.loadFromFile();
   requestUpdate();
 }
 
@@ -153,6 +155,7 @@ void Ao3LibraryActivity::loadPageCache(int page) {
   for (int i = 0; i < 3; i++) {
     new (&pageCache[i]) Ao3LibraryMetadata();
     pageCacheStatus[i] = BookStatus::START;
+    pageCacheMarkedPosition[i] = -1;
   }
 
   for (int i = startIdx; i < endIdx; i++) {
@@ -165,6 +168,7 @@ void Ao3LibraryActivity::loadPageCache(int page) {
       f.close();
     }
     pageCacheStatus[slot] = getBookStatus(viewEntries[i].cacheHash);
+    pageCacheMarkedPosition[slot] = MARKED_FOR_LATER_STORE.getQueuePosition(pageCache[slot].filepath);
   }
 
   cachedPage = page;
@@ -379,10 +383,8 @@ void Ao3LibraryActivity::loop() {
                 } else if (actionRes->indexingCompleted) {
                   rebuildViewEntries();
                 } else {
-                  // Status change only — update in-place without a full reload
-                  if (static_cast<int>(selectorIndex) / 3 == cachedPage) {
-                    pageCacheStatus[selectorIndex % 3] = actionRes->newStatus;
-                  }
+                  // Reload the page cache to refresh marked positions and statuses for all slots
+                  loadPageCache(cachedPage);
                 }
               requestUpdate(true);
             }
@@ -1072,7 +1074,7 @@ void Ao3LibraryActivity::renderEntry(RenderLock& lock, int y, const ViewEntry& v
   const char warning   = metaLoaded ? meta.warning   : 0;
   const bool completed = metaLoaded ? (bool)meta.isCompleted : false;
 
-  drawAo3Square(lock, margin, y, squareSize, rating, warning, completed, pageCacheStatus[cacheSlot]);
+  drawAo3Square(lock, margin, y, squareSize, rating, warning, completed, pageCacheStatus[cacheSlot], pageCacheMarkedPosition[cacheSlot]);
 
   std::string title = metaLoaded && meta.title[0] ? std::string(meta.title) : std::string(ve.title);
   std::string authorText = metaLoaded && meta.author[0]
@@ -1153,11 +1155,11 @@ void Ao3LibraryActivity::renderEntry(RenderLock& lock, int y, const ViewEntry& v
 
 void Ao3LibraryActivity::drawAo3Square(RenderLock& lock, int x, int y, int s,
                                        char rating, char warning, bool completed,
-                                       BookStatus status) {
+                                       BookStatus status, int markedPosition) {
   const int h = s / 2;
 
   renderSymbol(x + 1, y + 1, h - 1, rating, true, false, false, false, -1);
-  renderStatusSymbol(x + h + 1, y + 1, h - 1, status, false, true, false, false, -1);
+  renderStatusSymbol(x + h + 1, y + 1, h - 1, status, false, true, false, false, -1, markedPosition);
   renderWarningSymbol(x + 1, y + h + 1, h - 1, warning, false, false, true, false, -2);
   renderCompletionSymbol(x + h + 1, y + h + 1, h - 1, completed, false, false, false, true, -2);
 
@@ -1184,7 +1186,18 @@ void Ao3LibraryActivity::renderSymbol(int x, int y, int s, char c, bool tl, bool
                     buf, (bg == DarkGray || bg == Black) ? false : true);
 }
 
-void Ao3LibraryActivity::renderStatusSymbol(int x, int y, int s, BookStatus status, bool tl, bool tr, bool bl, bool br, int yOffset) {
+void Ao3LibraryActivity::renderStatusSymbol(int x, int y, int s, BookStatus status, bool tl, bool tr, bool bl, bool br, int yOffset, int markedPosition) {
+  if (status == BookStatus::MARKED_FOR_LATER) {
+    if (markedPosition > 0) {
+      char buf[3];
+      snprintf(buf, sizeof(buf), "%d", markedPosition);
+      const int tw = renderer.getTextWidth(UI_10_FONT_ID, buf);
+      const int th = renderer.getTextHeight(UI_10_FONT_ID);
+      renderer.drawText(UI_10_FONT_ID, x + (s - tw) / 2 - 1, y + (s - th) / 2 + yOffset, buf, true);
+    }
+    return;
+  }
+
   // Handle geometric custom renders for chapter status updates
   if (status == BookStatus::WAITING_FOR_CHAPTER || status == BookStatus::NEW_CHAPTER_AVAILABLE) {
     // 1. Calculate an upward-pointing triangle centered inside the quadrant
