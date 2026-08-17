@@ -57,6 +57,24 @@ int RecentBooksActivity::getCurrentListSize() const {
   }
 }
 
+// Patch missing title/author for books not yet opened
+void RecentBooksActivity::patchMissingTitles(std::vector<Ao3MarkedForLaterEntry>& entries) {
+  for (auto& entry : entries) {
+    if (!entry.title.empty()) continue;
+    std::string infoPath = "/.crosspoint/epub_" +
+        std::to_string(std::hash<std::string>{}(entry.path)) + "/ao3_library_info";
+    HalFile f;
+    if (Storage.openFileForRead("MFL", infoPath, f)) {
+      Ao3LibraryMetadata meta;
+      if (f.read((uint8_t*)&meta, sizeof(meta)) == sizeof(meta) && meta.isValid()) {
+        entry.title  = meta.title;
+        entry.author = meta.author;
+      }
+      f.close();
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 //  Lifecycle
 // ---------------------------------------------------------------------------
@@ -72,20 +90,8 @@ void RecentBooksActivity::onEnter() {
   markedForLater = MARKED_FOR_LATER_STORE.getEntries();
 
   // Patch missing title/author for books not yet opened
-  for (auto& entry : markedForLater) {
-    if (!entry.title.empty()) continue;
-    std::string infoPath = "/.crosspoint/epub_" +
-        std::to_string(std::hash<std::string>{}(entry.path)) + "/ao3_library_info";
-    HalFile f;
-    if (Storage.openFileForRead("MFL", infoPath, f)) {
-      Ao3LibraryMetadata meta;
-      if (f.read((uint8_t*)&meta, sizeof(meta)) == sizeof(meta) && meta.isValid()) {
-        entry.title  = meta.title;
-        entry.author = meta.author;
-      }
-      f.close();
-    }
-  }
+  markedForLater = MARKED_FOR_LATER_STORE.getEntries();
+  patchMissingTitles(markedForLater);
   
   // Load New Chapters; prune stale entries first.
   if (NEW_CHAPTERS_STORE.pruneMissing()) {
@@ -329,6 +335,7 @@ void RecentBooksActivity::promptRemoveMarkedEntry(const std::string& path,
       }
 
       markedForLater = MARKED_FOR_LATER_STORE.getEntries();
+      patchMissingTitles(markedForLater);
       const int listSize = static_cast<int>(markedForLater.size());
       if (listSize == 0) {
         selectedItemIndex = 0;

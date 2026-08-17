@@ -49,6 +49,8 @@ class RecentBooksActivity final : public Activity {
   void promptRemoveNewChaptersEntry(const std::string& path, const std::string& title);
   void promptRemoveWipsEntry(const std::string& path, const std::string& title);
   void promptRemoveMarkedEntry(const std::string& path, const std::string& title);
+
+  void patchMissingTitles(std::vector<Ao3MarkedForLaterEntry>& entries);
  
  public:
   explicit RecentBooksActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
