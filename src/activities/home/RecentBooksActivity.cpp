@@ -487,11 +487,15 @@ void RecentBooksActivity::render(RenderLock&&) {
   
   } else if (selectedTabIndex == TAB_MARKED_FOR_LATER) {
     // Marked for Later
-    const auto rowStatus = [this](int index) {
+    const auto rowStatus = [this](int index) -> BookStatus {
       if (index < 0 || index >= static_cast<int>(markedForLater.size())) return BookStatus::START;
       if (visibleStatusCache.count(index)) return visibleStatusCache[index];
-      visibleStatusCache[index] = getBookStatus(markedForLater[index].path);
-      return visibleStatusCache[index];
+      BookStatus base = getBookStatus(markedForLater[index].path);
+      if (base == BookStatus::MARKED_FOR_LATER) {
+        base = static_cast<BookStatus>(static_cast<uint8_t>(BookStatus::MARKED_FOR_LATER) + index);
+      }
+    visibleStatusCache[index] = base;
+    return base;
     };
 
     GUI.drawList(
@@ -541,11 +545,21 @@ void RecentBooksActivity::render(RenderLock&&) {
         
   } else if (selectedTabIndex == TAB_RECENT_BOOKS) {
     // Recent Books
-    const auto rowStatus = [this](int index) {
-      if (index < 0 || index >= static_cast<int>(recentBooks.size())) return BookStatus::START;
-      if (visibleStatusCache.count(index)) return visibleStatusCache[index];
-      visibleStatusCache[index] = getBookStatus(recentBooks[index].path);
-      return visibleStatusCache[index];
+    const auto rowStatus = [this](int index) -> BookStatus {
+     if (index < 0 || index >= static_cast<int>(recentBooks.size())) return BookStatus::START;
+     if (visibleStatusCache.count(index)) return visibleStatusCache[index];
+      BookStatus base = getBookStatus(recentBooks[index].path);
+     if (base == BookStatus::MARKED_FOR_LATER) {
+        const std::string& path = recentBooks[index].path;
+        for (int i = 0; i < static_cast<int>(markedForLater.size()); i++) {
+          if (markedForLater[i].path == path) {
+           base = static_cast<BookStatus>(static_cast<uint8_t>(BookStatus::MARKED_FOR_LATER) + i);
+           break;
+          }
+       }
+      }
+      visibleStatusCache[index] = base;
+      return base;
     };
 
     GUI.drawList(

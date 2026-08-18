@@ -350,8 +350,9 @@ void LyraTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount, 
               if (status == BookStatus::NEW_CHAPTER_AVAILABLE) {
                 renderer.fillRoundedRect(coverX + coverW - 3, coverY - 4, 9, 9, 4, Color::Black);
               }
-            } else if (status == BookStatus::MARKED_FOR_LATER) {
-              std::string queueNum = std::to_string(i + 1);
+            } else if (static_cast<uint8_t>(status) >= static_cast<uint8_t>(BookStatus::MARKED_FOR_LATER)) {
+              int queuePos = static_cast<uint8_t>(status) - static_cast<uint8_t>(BookStatus::MARKED_FOR_LATER);
+              std::string queueNum = std::to_string(queuePos + 1);
               int textWidth = renderer.getTextWidth(SMALL_FONT_ID, queueNum.c_str());
               renderer.drawText(SMALL_FONT_ID, centerX - (textWidth / 2) + 1, centerY - 12, queueNum.c_str());
             }
