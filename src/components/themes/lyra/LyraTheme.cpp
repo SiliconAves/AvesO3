@@ -332,15 +332,15 @@ void LyraTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount, 
              for (int dy = 0; dy < coverH; ++dy) {
                for (int dx = 0; dx < coverW; ++dx) {
                  if (dx == 0 && dy == 0) continue;
-                  if (dx == coverW - 1 && dy >= coverH - 2) continue;
+                  if (dx == coverW - 1 && dy == coverH - 1) continue;
                   if (status == BookStatus::FINISHED || (dx + dy) % 2 == 0) {
                     renderer.drawPixel(coverX + dx, coverY + dy, true);
                   }
                 }
               }
              if (status == BookStatus::FINISHED) {
-               renderer.drawLine(centerX - 4, centerY,     centerX - 1, centerY + 3, 3, false);
-                renderer.drawLine(centerX - 1, centerY + 3, centerX + 5, centerY - 4, 3, false);
+               renderer.drawLine(centerX - 2, centerY,     centerX + 1, centerY + 3, 3, false);
+                renderer.drawLine(centerX + 1, centerY + 3, centerX + 7, centerY - 4, 3, false);
               }
             } else if (status == BookStatus::WAITING_FOR_CHAPTER ||
                       status == BookStatus::NEW_CHAPTER_AVAILABLE) {
