@@ -8,6 +8,9 @@
 #include "Ao3WipsStore.h"
 #include "Ao3MarkedForLaterStore.h"
 
+#include "BookStatus.h"
+#include <map>
+
 #include "RecentBooksStore.h"
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
@@ -51,6 +54,10 @@ class RecentBooksActivity final : public Activity {
   void promptRemoveMarkedEntry(const std::string& path, const std::string& title);
 
   void patchMissingTitles(std::vector<Ao3MarkedForLaterEntry>& entries);
+  
+  BookStatus getBookStatus(const std::string& path);
+  std::map<int, BookStatus> visibleStatusCache;
+  int lastRenderedTab = -1;
  
  public:
   explicit RecentBooksActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)

@@ -23,8 +23,7 @@ namespace {
 // Hold threshold for the long-press "remove from list" action.
 constexpr unsigned long LONG_PRESS_MS = 1000;
 
-// Tab display names. Not routed through I18N for now — AO3-specific and
-// unlikely to need translation in the near term.
+// Tab display names. Not routed through I18N for now
 constexpr const char* TAB_NAMES[4] = {
     "For Later",
     "New Chapters",
@@ -55,6 +54,23 @@ int RecentBooksActivity::getCurrentListSize() const {
     case TAB_RECENT_BOOKS: return static_cast<int>(recentBooks.size());
     default:                   return 0;
   }
+}
+
+BookStatus RecentBooksActivity::getBookStatus(const std::string& path) {
+  if (path.empty()) return BookStatus::START;
+
+  std::string cachePath = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(path));
+  HalFile f;
+  BookStatus status = BookStatus::START;
+  
+  if (Storage.openFileForRead("RBA", cachePath + "/progress.bin", f)) {
+    uint8_t data[7];
+    if (f.read(data, 7) >= 7) {
+      status = static_cast<BookStatus>(data[6]);
+    }
+    f.close();
+  }
+  return status;
 }
 
 // Patch missing title/author for books not yet opened
@@ -125,6 +141,9 @@ void RecentBooksActivity::onEnter() {
   }
   selectedItemIndex = 0;
   longPressFired    = false;
+
+  visibleStatusCache.clear();
+  lastRenderedTab = -1;
 
   requestUpdate();
 }
@@ -342,6 +361,7 @@ void RecentBooksActivity::promptRemoveMarkedEntry(const std::string& path,
       } else if (selectedItemIndex > listSize) {
         selectedItemIndex = listSize;
       }
+      visibleStatusCache.clear();
       requestUpdate(true);
     }
   };
@@ -363,6 +383,7 @@ void RecentBooksActivity::promptRemoveBook(const std::string& path,
       } else if (selectedItemIndex > listSize) {
         selectedItemIndex = listSize;
       }
+      visibleStatusCache.clear();
       requestUpdate(true);
     }
   };
@@ -384,6 +405,7 @@ void RecentBooksActivity::promptRemoveNewChaptersEntry(const std::string& path,
       } else if (selectedItemIndex > listSize) {
         selectedItemIndex = listSize;
       }
+      visibleStatusCache.clear();
       requestUpdate(true);
     }
   };
@@ -405,6 +427,7 @@ void RecentBooksActivity::promptRemoveWipsEntry(const std::string& path,
       } else if (selectedItemIndex > listSize) {
         selectedItemIndex = listSize;
       }
+      visibleStatusCache.clear();
       requestUpdate(true);
     }
   };
@@ -444,6 +467,12 @@ void RecentBooksActivity::render(RenderLock&&) {
                       metrics.tabBarHeight},
                  tabs, selectedItemIndex == 0);
 
+  // Clear cache if the user switched tabs
+  if (lastRenderedTab != selectedTabIndex) {
+    visibleStatusCache.clear();
+    lastRenderedTab = selectedTabIndex;
+  }
+
   const int contentTop =
       topPadding + metrics.headerHeight + metrics.tabBarHeight + 10;
   const int contentHeight =
@@ -457,37 +486,76 @@ void RecentBooksActivity::render(RenderLock&&) {
     renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, contentTop + 20, msg);
   
   } else if (selectedTabIndex == TAB_MARKED_FOR_LATER) {
+    // Marked for Later
+    const auto rowStatus = [this](int index) {
+      if (index < 0 || index >= static_cast<int>(markedForLater.size())) return BookStatus::START;
+      if (visibleStatusCache.count(index)) return visibleStatusCache[index];
+      visibleStatusCache[index] = getBookStatus(markedForLater[index].path);
+      return visibleStatusCache[index];
+    };
+
     GUI.drawList(
         renderer, Rect{0, contentTop, pageWidth, contentHeight},
         markedForLater.size(), selectedItemIndex - 1,
         [this](int index) { return markedForLater[index].title; },
         [this](int index) { return markedForLater[index].author; },
-        [](int) { return UIIcon::Book; });
+        [](int) { return UIIcon::Book; },
+        nullptr, false, nullptr,
+        rowStatus);
+        
   } else if (selectedTabIndex == TAB_NEW_CHAPTERS) {
-    // Same list style as Tab 3 (title line 1, author line 2, file icon on left).
+    // New Chapters
+    const auto rowStatus = [this](int index) {
+      if (index < 0 || index >= static_cast<int>(newChapters.size())) return BookStatus::START;
+      if (visibleStatusCache.count(index)) return visibleStatusCache[index];
+      visibleStatusCache[index] = getBookStatus(newChapters[index].path);
+      return visibleStatusCache[index];
+    };
+
     GUI.drawList(
         renderer, Rect{0, contentTop, pageWidth, contentHeight},
         newChapters.size(), selectedItemIndex - 1,
         [this](int index) { return newChapters[index].title; },
         [this](int index) { return newChapters[index].author; },
-        [this](int index) { return UITheme::getFileIcon(newChapters[index].path); });
+        [this](int index) { return UITheme::getFileIcon(newChapters[index].path); },
+        nullptr, false, nullptr,
+        rowStatus);
+        
   } else if (selectedTabIndex == TAB_WIPS) {
-    // Same list style as Tab 3 (title line 1, author line 2, file icon on left).
+    // WIPs
+    const auto rowStatus = [this](int index) {
+      if (index < 0 || index >= static_cast<int>(wipsEntries.size())) return BookStatus::START;
+      if (visibleStatusCache.count(index)) return visibleStatusCache[index];
+      visibleStatusCache[index] = getBookStatus(wipsEntries[index].path);
+      return visibleStatusCache[index];
+    };
+
     GUI.drawList(
         renderer, Rect{0, contentTop, pageWidth, contentHeight},
         wipsEntries.size(), selectedItemIndex - 1,
         [this](int index) { return wipsEntries[index].title; },
         [this](int index) { return wipsEntries[index].author; },
-        [this](int index) { return UITheme::getFileIcon(wipsEntries[index].path); });
+        [this](int index) { return UITheme::getFileIcon(wipsEntries[index].path); },
+        nullptr, false, nullptr,
+        rowStatus);
+        
   } else if (selectedTabIndex == TAB_RECENT_BOOKS) {
-    // selectedItemIndex - 1 passes -1 to drawList when tab bar is focused,
-    // which drawList treats as "no row selected" — same as SettingsActivity.
+    // Recent Books
+    const auto rowStatus = [this](int index) {
+      if (index < 0 || index >= static_cast<int>(recentBooks.size())) return BookStatus::START;
+      if (visibleStatusCache.count(index)) return visibleStatusCache[index];
+      visibleStatusCache[index] = getBookStatus(recentBooks[index].path);
+      return visibleStatusCache[index];
+    };
+
     GUI.drawList(
         renderer, Rect{0, contentTop, pageWidth, contentHeight},
         recentBooks.size(), selectedItemIndex - 1,
         [this](int index) { return recentBooks[index].title; },
         [this](int index) { return recentBooks[index].author; },
-        [this](int index) { return UITheme::getFileIcon(recentBooks[index].path); });
+        [this](int index) { return UITheme::getFileIcon(recentBooks[index].path); },
+        nullptr, false, nullptr,
+        rowStatus);
   }
 
   // Button hints — Confirm label shows next tab name when at the tab bar.
