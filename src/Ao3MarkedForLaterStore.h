@@ -49,6 +49,9 @@ class Ao3MarkedForLaterStore {
 
   // Returns true if path is already in the list.
   bool contains(const std::string& path) const;
+  // Updates metadata if it is currently empty. Returns true if a change was made.
+  // Does NOT persist automatically; caller must call saveToFile().
+  bool updateEntryMetadata(const std::string& path, const std::string& title, const std::string& author);
 
   // Returns whether the list has reached capacity.
   bool isFull() const { return static_cast<int>(entries.size()) >= MAX_ENTRIES; }

@@ -122,3 +122,20 @@ bool Ao3MarkedForLaterStore::loadFromFile() {
   LOG_DBG("MFLS", "Marked for Later loaded from file (%d entries)", getCount());
   return true;
 }
+
+bool Ao3MarkedForLaterStore::updateEntryMetadata(const std::string& path,
+                                                 const std::string& title,
+                                                 const std::string& author) {
+  for (auto& e : entries) {
+    if (e.path == path) {
+      // Only update if it doesn't already have a title to prevent conflicts
+      if (e.title.empty()) {
+        e.title = title;
+        e.author = author;
+        return true;
+      }
+      return false;
+    }
+  }
+  return false;
+}

@@ -75,6 +75,8 @@ BookStatus RecentBooksActivity::getBookStatus(const std::string& path) {
 
 // Patch missing title/author for books not yet opened
 void RecentBooksActivity::patchMissingTitles(std::vector<Ao3MarkedForLaterEntry>& entries) {
+  bool storeNeedsSave = false;
+
   for (auto& entry : entries) {
     if (!entry.title.empty()) continue;
     std::string infoPath = "/.crosspoint/epub_" +
@@ -83,11 +85,21 @@ void RecentBooksActivity::patchMissingTitles(std::vector<Ao3MarkedForLaterEntry>
     if (Storage.openFileForRead("MFL", infoPath, f)) {
       Ao3LibraryMetadata meta;
       if (f.read((uint8_t*)&meta, sizeof(meta)) == sizeof(meta) && meta.isValid()) {
+        // Update local UI copy
         entry.title  = meta.title;
         entry.author = meta.author;
+        
+        // Update the Singleton Store
+        if (MARKED_FOR_LATER_STORE.updateEntryMetadata(entry.path, meta.title, meta.author)) {
+          storeNeedsSave = true;
+        }
       }
       f.close();
     }
+  }
+  // Batch the SD card write to happen only once
+  if (storeNeedsSave) {
+    MARKED_FOR_LATER_STORE.saveToFile();
   }
 }
 
