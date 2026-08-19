@@ -34,6 +34,8 @@ class RecentBooksActivity final : public Activity {
  
   // Set when a long-press has fired; swallows input until Confirm is released.
   bool longPressFired = false;
+  // Universal loading state for instant UI response on open
+  bool isLoading = false;
  
   // Tab 0 data
   std::vector<Ao3MarkedForLaterEntry> markedForLater;

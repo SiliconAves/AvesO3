@@ -73,36 +73,6 @@ BookStatus RecentBooksActivity::getBookStatus(const std::string& path) {
   return status;
 }
 
-// Patch missing title/author for books not yet opened
-void RecentBooksActivity::patchMissingTitles(std::vector<Ao3MarkedForLaterEntry>& entries) {
-  bool storeNeedsSave = false;
-
-  for (auto& entry : entries) {
-    if (!entry.title.empty()) continue;
-    std::string infoPath = "/.crosspoint/epub_" +
-        std::to_string(std::hash<std::string>{}(entry.path)) + "/ao3_library_info";
-    HalFile f;
-    if (Storage.openFileForRead("MFL", infoPath, f)) {
-      Ao3LibraryMetadata meta;
-      if (f.read((uint8_t*)&meta, sizeof(meta)) == sizeof(meta) && meta.isValid()) {
-        // Update local UI copy
-        entry.title  = meta.title;
-        entry.author = meta.author;
-        
-        // Update the Singleton Store
-        if (MARKED_FOR_LATER_STORE.updateEntryMetadata(entry.path, meta.title, meta.author)) {
-          storeNeedsSave = true;
-        }
-      }
-      f.close();
-    }
-  }
-  // Batch the SD card write to happen only once
-  if (storeNeedsSave) {
-    MARKED_FOR_LATER_STORE.saveToFile();
-  }
-}
-
 // ---------------------------------------------------------------------------
 //  Lifecycle
 // ---------------------------------------------------------------------------
@@ -116,10 +86,6 @@ void RecentBooksActivity::onEnter() {
   }
   MARKED_FOR_LATER_STORE.loadFromFile();
   markedForLater = MARKED_FOR_LATER_STORE.getEntries();
-
-  // Patch missing title/author for books not yet opened
-  markedForLater = MARKED_FOR_LATER_STORE.getEntries();
-  patchMissingTitles(markedForLater);
   
   // Load New Chapters; prune stale entries first.
   if (NEW_CHAPTERS_STORE.pruneMissing()) {
@@ -157,6 +123,9 @@ void RecentBooksActivity::onEnter() {
   visibleStatusCache.clear();
   lastRenderedTab = -1;
 
+  // Universally trigger the non-blocking loading state if the active tab has items
+  isLoading = (getCurrentListSize() > 0);
+
   requestUpdate();
 }
 
@@ -173,7 +142,38 @@ void RecentBooksActivity::onExit() {
 // ---------------------------------------------------------------------------
 
 void RecentBooksActivity::loop() {
-  const int listSize = getCurrentListSize();
+
+  if (isLoading) {
+    // If we landed on Marked for Later, patch any missing titles progressively
+    if (selectedTabIndex == TAB_MARKED_FOR_LATER) {
+      bool storeNeedsSave = false;
+
+      for (auto& entry : markedForLater) {
+        if (!entry.title.empty()) continue;
+        std::string infoPath = "/.crosspoint/epub_" +
+            std::to_string(std::hash<std::string>{}(entry.path)) + "/ao3_library_info";
+        HalFile f;
+        if (Storage.openFileForRead("MFL", infoPath, f)) {
+          Ao3LibraryMetadata meta;
+          if (f.read((uint8_t*)&meta, sizeof(meta)) == sizeof(meta) && meta.isValid()) {
+            entry.title  = meta.title;
+            entry.author = meta.author;
+            MARKED_FOR_LATER_STORE.updateEntryMetadata(entry.path, meta.title, meta.author);
+            storeNeedsSave = true;
+          }
+          f.close();
+        }
+      }
+      if (storeNeedsSave) {
+        MARKED_FOR_LATER_STORE.saveToFile();
+      }
+    }
+
+    isLoading = false;
+    requestUpdate();
+    return; // Skip this tick so the UI snaps open instantly
+  }
+  int listSize = getCurrentListSize();
 
   // Swallow all input until Confirm is physically released after a long-press.
   if (longPressFired) {
@@ -366,7 +366,6 @@ void RecentBooksActivity::promptRemoveMarkedEntry(const std::string& path,
       }
 
       markedForLater = MARKED_FOR_LATER_STORE.getEntries();
-      patchMissingTitles(markedForLater);
       const int listSize = static_cast<int>(markedForLater.size());
       if (listSize == 0) {
         selectedItemIndex = 0;
@@ -489,9 +488,13 @@ void RecentBooksActivity::render(RenderLock&&) {
       topPadding + metrics.headerHeight + metrics.tabBarHeight + 10;
   const int contentHeight =
       pageHeight - contentTop - metrics.buttonHintsHeight;
-  const int listSize = getCurrentListSize();
+  int listSize = getCurrentListSize();
 
-  if (listSize == 0) {
+  if (isLoading) {
+    // Universal loading state for any tab on cold-open
+    renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, contentTop + 20, "Loading...");
+
+  } else if (listSize == 0) {
     const char* msg = (selectedTabIndex == TAB_RECENT_BOOKS)
                           ? tr(STR_NO_RECENT_BOOKS)
                           : EMPTY_MESSAGES[selectedTabIndex];
