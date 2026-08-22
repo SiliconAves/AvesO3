@@ -9,7 +9,6 @@
 #include "../util/ConfirmationActivity.h"
 #include "Ao3IndexActivity.h"
 #include "../../Ao3Librarian.h"
-
 #include "Ao3NewChaptersStore.h"
 #include "Ao3WipsStore.h"
 #include "Ao3MarkedForLaterStore.h"
@@ -19,46 +18,44 @@
 // ---------------------------------------------------------------------------
 
 BookActionActivity::BookActionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                                       std::string filePath, std::string fileName)
+                                       std::string filePath, std::string fileName,
+                                       BookActionMode mode)
     : Activity("BookAction", renderer, mappedInput),
       filePath(std::move(filePath)),
-      fileName(std::move(fileName)) {}
+      fileName(std::move(fileName)),
+      mode(mode) {}
 
 // ---------------------------------------------------------------------------
-//  logicalRow / visibleRowCount helpers
+//  Logical row constants
+//   0 = Status cycle
+//   1 = Mark for Later toggle   (FULL, AO3 only)
+//   2 = Index Book              (FULL, epub only)
+//   3 = Delete                  (FULL only)
+//   5 = Remove from List        (DASHBOARD only)
 // ---------------------------------------------------------------------------
 
 int BookActionActivity::logicalRow(int visual) const {
+  if (mode == BookActionMode::DASHBOARD) {
+    if (visual == 0) return 0;  // Status cycle
+    if (visual == 1) return 5;  // Remove from List
+    return -1;
+  }
+
+  // FULL mode
   int idx = 0;
-
-  // Row 0 — Status cycle (epub and xtc only)
-  if (isEpub || isXtc) {
-    if (visual == idx) return 0;
-    idx++;
-  }
-
-  // Row 1 — Mark for Later toggle (AO3 books only)
-  if (hasAo3LibraryInfo) {
-    if (visual == idx) return 1;
-    idx++;
-  }
-
-  // Row 2 — Index Book (epub only)
-  if (isEpub) {
-    if (visual == idx) return 2;
-    idx++;
-  }
-
-  // Row 3 — Delete (always present)
+  if (isEpub || isXtc) { if (visual == idx) return 0; idx++; }
+  if (hasAo3LibraryInfo) { if (visual == idx) return 1; idx++; }
+  if (isEpub) { if (visual == idx) return 2; idx++; }
   if (visual == idx) return 3;
-
   return -1;
 }
 
 int BookActionActivity::visibleRowCount() const {
-  int n = 1;                      // Delete is always present
-  if (isEpub || isXtc) n++;      // Status cycle
-  if (hasAo3LibraryInfo) n++;    // Mark for Later toggle
+  if (mode == BookActionMode::DASHBOARD) return 2;  // Status + Remove from List
+
+  int n = 1;                      // Delete always present
+  if (isEpub || isXtc) n++;      // Status
+  if (hasAo3LibraryInfo) n++;    // Mark for Later
   if (isEpub) n++;               // Index Book
   return n;
 }
@@ -70,7 +67,6 @@ int BookActionActivity::visibleRowCount() const {
 void BookActionActivity::onEnter() {
   Activity::onEnter();
 
-  // Load current status from progress.bin
   std::string cachePath = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(filePath));
   HalFile f;
   if (Storage.openFileForRead("BROWSER", cachePath + "/progress.bin", f)) {
@@ -83,19 +79,19 @@ void BookActionActivity::onEnter() {
   }
 
   hasAo3LibraryInfo = Storage.exists((cachePath + "/ao3_library_info").c_str());
-
-  // Detect file type and current store membership
   isEpub = FsHelpers::hasEpubExtension(filePath);
   isXtc  = FsHelpers::hasXtcExtension(filePath);
   isMarkedForLater = MARKED_FOR_LATER_STORE.contains(filePath);
 
-  // Clamp selectorIndex in case it was left from a different file
   const int maxIdx = visibleRowCount() - 1;
   if (selectorIndex > maxIdx) selectorIndex = maxIdx;
 
-  // If the cursor is sitting on the disabled Status row, skip it
-  if (selectorIndex == 0 && logicalRow(0) == 0 && currentStatus == BookStatus::MARKED_FOR_LATER)
-    selectorIndex = 1;
+  // Skip dimmed Status row if MARKED_FOR_LATER
+  if (logicalRow(selectorIndex) == 0 && currentStatus == BookStatus::MARKED_FOR_LATER)
+    selectorIndex = std::min(selectorIndex + 1, maxIdx);
+
+  // Swallow the Confirm release that fired the long-press in the Dashboard
+  skipFirstConfirmRelease = (mode == BookActionMode::DASHBOARD);
 
   requestUpdate(true);
 }
@@ -118,15 +114,15 @@ void BookActionActivity::render(RenderLock&&) {
       case 1: return isMarkedForLater ? "Remove from Later List" : "Mark for Later";
       case 2: return hasAo3LibraryInfo ? "Reindex Book" : "Index Book";
       case 3: return std::string(tr(STR_DELETE));
+      case 5: return "Remove from List";
       default: return "";
     }
   };
 
   auto rowValue = [this](int index) -> std::string {
-  if (logicalRow(index) == 1) {
-    return std::to_string(MARKED_FOR_LATER_STORE.getCount()) + "/10";
-  }
-  return "";
+    if (logicalRow(index) == 1)
+      return std::to_string(MARKED_FOR_LATER_STORE.getCount()) + "/10";
+    return "";
   };
 
   auto rowDimmed = [this](int index) -> bool {
@@ -145,7 +141,6 @@ void BookActionActivity::render(RenderLock&&) {
   const auto labels =
       mappedInput.mapLabels(tr(STR_BACK), tr(STR_CONFIRM), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-
   renderer.displayBuffer();
 }
 
@@ -154,7 +149,17 @@ void BookActionActivity::render(RenderLock&&) {
 // ---------------------------------------------------------------------------
 
 void BookActionActivity::loop() {
-  // --- Back: commit status change if needed and exit ---
+  // Swallow the Confirm release that opened this menu via long-press
+  if (skipFirstConfirmRelease) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm))
+      skipFirstConfirmRelease = false;
+    // Still allow Back so the user can dismiss immediately
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+      finish();
+    }
+    return;
+  }
+
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     if (currentStatus != initialStatus) {
       saveStatus();
@@ -167,13 +172,10 @@ void BookActionActivity::loop() {
     return;
   }
 
-  // --- Confirm: act on the currently selected logical row ---
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     switch (logicalRow(selectorIndex)) {
 
       case 0: {
-        // Status cycle — locked while MARKED_FOR_LATER; guard keeps it safe
-        // even if the cursor somehow lands here.
         if (currentStatus == BookStatus::MARKED_FOR_LATER) break;
         uint8_t s = (static_cast<uint8_t>(currentStatus) + 1) % 5;
         currentStatus = static_cast<BookStatus>(s);
@@ -182,10 +184,8 @@ void BookActionActivity::loop() {
       }
 
       case 1: {
-        // Mark for Later toggle
+        // Mark for Later toggle (FULL only)
         if (isMarkedForLater) {
-          // Remove from store; if the status is still MARKED_FOR_LATER, revert
-          // it to START so it no longer shows the special icon.
           MARKED_FOR_LATER_STORE.removeByPath(filePath);
           if (currentStatus == BookStatus::MARKED_FOR_LATER) {
             currentStatus = BookStatus::START;
@@ -193,7 +193,7 @@ void BookActionActivity::loop() {
           }
           isMarkedForLater = false;
         } else if (MARKED_FOR_LATER_STORE.isFull()) {
-          // List is at capacity — the "10/10" pill is already visible; no-op.
+          // cap visible in "10/10" pill — no-op
         } else {
           Epub epub(filePath, "/.crosspoint");
           epub.load(false, true);
@@ -207,7 +207,6 @@ void BookActionActivity::loop() {
       }
 
       case 2: {
-        // Index / Reindex Book — launches Ao3IndexActivity in SINGLE mode
         auto handler = [this](const ActivityResult& res) {
           if (const auto* indexRes = std::get_if<Ao3IndexResult>(&res.data)) {
             if (indexRes->successfullyIndexed) {
@@ -228,7 +227,6 @@ void BookActionActivity::loop() {
       }
 
       case 3: {
-        // Delete — confirm before destroying file
         auto handler = [this](const ActivityResult& res) {
           if (!res.isCancelled) {
             BookActionResult result;
@@ -247,15 +245,21 @@ void BookActionActivity::loop() {
         break;
       }
 
+      case 5: {
+        // Remove from List — no confirmation, caller handles store eviction
+        BookActionResult res;
+        res.removedFromList = true;
+        setResult(ActivityResult(std::move(res)));
+        finish();
+        break;
+      }
+
       default:
         break;
     }
     return;
   }
 
-  // --- Navigation: skip the dimmed Status row when MARKED_FOR_LATER ---
-
-  // Returns the next visual index that the cursor should stop on.
   auto nextVisual = [this](int current) -> int {
     const int total = visibleRowCount();
     int next = (current + 1) % total;
@@ -284,7 +288,7 @@ void BookActionActivity::loop() {
 }
 
 // ---------------------------------------------------------------------------
-//  saveStatus
+//  saveStatus — unchanged from starting state
 // ---------------------------------------------------------------------------
 
 void BookActionActivity::saveStatus() {
@@ -292,46 +296,27 @@ void BookActionActivity::saveStatus() {
   HalFile f;
 
   uint8_t data[7] = {0, 0, 0, 0, 0, 0, static_cast<uint8_t>(currentStatus)};
-
-  // Preserve existing position bytes if the file already exists
   if (Storage.openFileForRead("BROWSER", cachePath + "/progress.bin", f)) {
     f.read(data, 6);
     f.close();
   }
-
   if (Storage.openFileForWrite("BROWSER", cachePath + "/progress.bin", f)) {
     f.write(data, 7);
     f.close();
   }
 
-  // Sync the finished flag into the AO3 compact index (boundary crossing only)
   if (hasAo3LibraryInfo) {
     bool isNowFinished = (currentStatus == BookStatus::FINISHED);
     bool wasFinished   = (initialStatus  == BookStatus::FINISHED);
-    if (isNowFinished != wasFinished) {
+    if (isNowFinished != wasFinished)
       Ao3Librarian::setRecordFinished(filePath, isNowFinished);
-    }
   }
 
-  // MARKED_FOR_LATER is managed exclusively by the toggle handler above.
-  // The store insertion/removal already happened there, so we must not fire
-  // the tab-store hooks for this status — return early.
-  if (currentStatus == BookStatus::MARKED_FOR_LATER) {
-    return;
-  }
+  if (currentStatus == BookStatus::MARKED_FOR_LATER) return;
 
-  // Tab store hooks — mirror status transitions into the Dashboard stores.
-  if (currentStatus == BookStatus::MARKED_FOR_LATER) {
-    return;
-  }
-
-  // Evict from Marked for Later for any status except READING.
-  // MARKED_FOR_LATER returned early above, so this is safe.
-  if (currentStatus != BookStatus::READING) {
+  if (currentStatus != BookStatus::READING)
     MARKED_FOR_LATER_STORE.removeByPath(filePath);
-  }
 
-  // Tab store hooks
   if (currentStatus == BookStatus::NEW_CHAPTER_AVAILABLE) {
     Epub epub(filePath, "/.crosspoint");
     epub.load(false, true);

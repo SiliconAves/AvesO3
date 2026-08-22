@@ -1,12 +1,14 @@
 #pragma once
 
 #include <string>
-#include <vector>
-
 #include "BookStatus.h"
 #include "activities/Activity.h"
-
 #include "util/ButtonNavigator.h"
+
+enum class BookActionMode {
+  FULL,      // AO3 Library / file browser long-press
+  DASHBOARD  // Dashboard tabs 0-2 long-press
+};
 
 class BookActionActivity final : public Activity {
   std::string filePath;
@@ -15,16 +17,17 @@ class BookActionActivity final : public Activity {
   BookStatus currentStatus = BookStatus::START;
   BookStatus initialStatus = BookStatus::START;
   ButtonNavigator buttonNavigator;
-  bool hasAo3LibraryInfo = false;
-
-  // Marked for Later / file-type state, populated in onEnter()
-  bool isMarkedForLater = false;
-  bool isEpub = false;
-  bool isXtc  = false;
+  bool hasAo3LibraryInfo       = false;
+  bool isMarkedForLater        = false;
+  bool isEpub                  = false;
+  bool isXtc                   = false;
+  bool skipFirstConfirmRelease = false;
+  BookActionMode mode;
 
  public:
-  BookActionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string filePath,
-                     std::string fileName);
+  BookActionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                     std::string filePath, std::string fileName,
+                     BookActionMode mode = BookActionMode::FULL);
 
   void onEnter() override;
   void render(RenderLock&& lock) override;
@@ -32,16 +35,6 @@ class BookActionActivity final : public Activity {
 
  private:
   void saveStatus();
-
-  // Maps a visual list index to a logical row constant:
-  //   0 = Status cycle
-  //   1 = Mark for Later toggle
-  //   2 = Index Book
-  //   3 = Delete
-  // Returns -1 if the visual index is out of range.
-  int logicalRow(int visualIndex) const;
-
-  // Returns the number of rows that should be visible for the current file
-  // and store state.
-  int visibleRowCount() const;
+  int  logicalRow(int visualIndex) const;
+  int  visibleRowCount() const;
 };

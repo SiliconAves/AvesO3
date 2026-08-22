@@ -51,11 +51,9 @@ class RecentBooksActivity final : public Activity {
  
   int  getCurrentListSize() const;
   void promptRemoveBook(const std::string& path, const std::string& title);
-  void promptRemoveNewChaptersEntry(const std::string& path, const std::string& title);
-  void promptRemoveWipsEntry(const std::string& path, const std::string& title);
-  void promptRemoveMarkedEntry(const std::string& path, const std::string& title);
-
-  void patchMissingTitles(std::vector<Ao3MarkedForLaterEntry>& entries);
+  void launchDashboardMenu(const std::string& path, const std::string& title);
+  void clampSelectorIndex();
+  void revertMarkedForLaterStatus(const std::string& path);
   
   BookStatus getBookStatus(const std::string& path);
   std::map<int, BookStatus> visibleStatusCache;

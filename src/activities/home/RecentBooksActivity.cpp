@@ -12,6 +12,7 @@
 #include "Ao3WipsStore.h"
 #include "Ao3MarkedForLaterStore.h"
 #include "../../Ao3LibraryMetadata.h"
+#include "BookActionActivity.h"
 
 #include "MappedInputManager.h"
 #include "RecentBooksStore.h"
@@ -183,51 +184,40 @@ void RecentBooksActivity::loop() {
     return;
   }
 
-  // Long-press Confirm (Tab 0, list focused): prompt to remove from Marked for Later.
-  if (selectedTabIndex == TAB_MARKED_FOR_LATER && selectedItemIndex > 0 &&
-      !markedForLater.empty() &&
-      (selectedItemIndex - 1) < static_cast<int>(markedForLater.size()) &&
+    // Long-press Confirm (list focused): open context menu
+  if (selectedItemIndex > 0 &&
       mappedInput.isPressed(MappedInputManager::Button::Confirm) &&
       mappedInput.getHeldTime() >= LONG_PRESS_MS) {
-    longPressFired = true;
-    const int idx = selectedItemIndex - 1;
-    promptRemoveMarkedEntry(markedForLater[idx].path, markedForLater[idx].title);
-    return;
-  }
 
-  // Long-press Confirm (Tab 1, list focused): prompt to remove from New Chapters.
-  if (selectedTabIndex == TAB_NEW_CHAPTERS && selectedItemIndex > 0 &&
-      !newChapters.empty() &&
-      (selectedItemIndex - 1) < static_cast<int>(newChapters.size()) &&
-      mappedInput.isPressed(MappedInputManager::Button::Confirm) &&
-      mappedInput.getHeldTime() >= LONG_PRESS_MS) {
-    longPressFired = true;
     const int idx = selectedItemIndex - 1;
-    promptRemoveNewChaptersEntry(newChapters[idx].path, newChapters[idx].title);
-    return;
-  }
+    longPressFired = true;
 
-  // Long-press Confirm (Tab 2, list focused): prompt to remove from WIPs.
-  if (selectedTabIndex == TAB_WIPS && selectedItemIndex > 0 &&
-      !wipsEntries.empty() &&
-      (selectedItemIndex - 1) < static_cast<int>(wipsEntries.size()) &&
-      mappedInput.isPressed(MappedInputManager::Button::Confirm) &&
-      mappedInput.getHeldTime() >= LONG_PRESS_MS) {
-    longPressFired = true;
-    const int idx = selectedItemIndex - 1;
-    promptRemoveWipsEntry(wipsEntries[idx].path, wipsEntries[idx].title);
-    return;
-  }
+    if (selectedTabIndex == TAB_RECENT_BOOKS) {
+      // Tab 3: existing plain confirmation, no BookActionActivity
+      if (idx < static_cast<int>(recentBooks.size()))
+        promptRemoveBook(recentBooks[idx].path, recentBooks[idx].title);
+      return;
+    }
 
-  // Long-press Confirm (Tab 3, list focused): prompt to remove from recents.
-  if (selectedTabIndex == TAB_RECENT_BOOKS && selectedItemIndex > 0 &&
-      !recentBooks.empty() &&
-      (selectedItemIndex - 1) < static_cast<int>(recentBooks.size()) &&
-      mappedInput.isPressed(MappedInputManager::Button::Confirm) &&
-      mappedInput.getHeldTime() >= LONG_PRESS_MS) {
-    longPressFired = true;
-    const int idx = selectedItemIndex - 1;
-    promptRemoveBook(recentBooks[idx].path, recentBooks[idx].title);
+    // Tabs 0–2: Dashboard context menu
+    std::string path, title;
+    if (selectedTabIndex == TAB_MARKED_FOR_LATER &&
+        idx < static_cast<int>(markedForLater.size())) {
+      path  = markedForLater[idx].path;
+      title = markedForLater[idx].title;
+    } else if (selectedTabIndex == TAB_NEW_CHAPTERS &&
+               idx < static_cast<int>(newChapters.size())) {
+      path  = newChapters[idx].path;
+      title = newChapters[idx].title;
+    } else if (selectedTabIndex == TAB_WIPS &&
+               idx < static_cast<int>(wipsEntries.size())) {
+      path  = wipsEntries[idx].path;
+      title = wipsEntries[idx].title;
+    } else {
+      longPressFired = false;
+      return;
+    }
+    launchDashboardMenu(path, title);
     return;
   }
 
@@ -341,47 +331,6 @@ void RecentBooksActivity::loop() {
 //  Helpers
 // ---------------------------------------------------------------------------
 
-void RecentBooksActivity::promptRemoveMarkedEntry(const std::string& path,
-                                                   const std::string& title) {
-  auto handler = [this, path](const ActivityResult& res) {
-    if (res.isCancelled) return;
-    if (MARKED_FOR_LATER_STORE.removeByPath(path)) {
-      // Reset book status back to Unread (START = 0), preserving the
-      // position bytes (0–5) in progress.bin exactly as BookActionActivity does.
-      {
-        const std::string cachePath =
-            "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(path));
-        const std::string progressPath = cachePath + "/progress.bin";
-        uint8_t data[7] = {0, 0, 0, 0, 0, 0, 0};  // byte 6 = BookStatus::START
-        HalFile f;
-        if (Storage.openFileForRead("RBA", progressPath, f)) {
-          f.read(data, 6);  // preserve position bytes
-          f.close();
-        }
-        // data[6] stays 0 (BookStatus::START / Unread)
-        if (Storage.openFileForWrite("RBA", progressPath, f)) {
-          f.write(data, 7);
-          f.close();
-        }
-      }
-
-      markedForLater = MARKED_FOR_LATER_STORE.getEntries();
-      const int listSize = static_cast<int>(markedForLater.size());
-      if (listSize == 0) {
-        selectedItemIndex = 0;
-      } else if (selectedItemIndex > listSize) {
-        selectedItemIndex = listSize;
-      }
-      visibleStatusCache.clear();
-      requestUpdate(true);
-    }
-  };
-  startActivityForResult(
-      std::make_unique<ConfirmationActivity>(renderer, mappedInput,
-                                            "Remove from Marked for Later", title),
-      std::move(handler));
-}
-
 void RecentBooksActivity::promptRemoveBook(const std::string& path,
                                            const std::string& title) {
   auto handler = [this, path](const ActivityResult& res) {
@@ -404,47 +353,72 @@ void RecentBooksActivity::promptRemoveBook(const std::string& path,
       std::move(handler));
 }
 
-void RecentBooksActivity::promptRemoveNewChaptersEntry(const std::string& path,
-                                                       const std::string& title) {
-  auto handler = [this, path](const ActivityResult& res) {
-    if (res.isCancelled) return;
-    if (NEW_CHAPTERS_STORE.removeByPath(path)) {
-      newChapters = NEW_CHAPTERS_STORE.getEntries();
-      const int listSize = static_cast<int>(newChapters.size());
-      if (listSize == 0) {
-        selectedItemIndex = 0;
-      } else if (selectedItemIndex > listSize) {
-        selectedItemIndex = listSize;
-      }
-      visibleStatusCache.clear();
-      requestUpdate(true);
-    }
-  };
-  startActivityForResult(
-      std::make_unique<ConfirmationActivity>(renderer, mappedInput,
-                                            tr(STR_REMOVE_FROM_NEW_CHAPTERS), title),
-      std::move(handler));
+void RecentBooksActivity::clampSelectorIndex() {
+  const int listSize = getCurrentListSize();
+  if (listSize == 0)
+    selectedItemIndex = 0;
+  else if (selectedItemIndex > listSize)
+    selectedItemIndex = listSize;
 }
 
-void RecentBooksActivity::promptRemoveWipsEntry(const std::string& path,
-                                               const std::string& title) {
-  auto handler = [this, path](const ActivityResult& res) {
-    if (res.isCancelled) return;
-    if (AO3_WIPS_STORE.removeBook(path)) {
-      wipsEntries = AO3_WIPS_STORE.getEntries();
-      const int listSize = static_cast<int>(wipsEntries.size());
-      if (listSize == 0) {
-        selectedItemIndex = 0;
-      } else if (selectedItemIndex > listSize) {
-        selectedItemIndex = listSize;
+void RecentBooksActivity::revertMarkedForLaterStatus(const std::string& path) {
+  const std::string cachePath =
+      "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(path));
+  const std::string progressPath = cachePath + "/progress.bin";
+  uint8_t data[7] = {0, 0, 0, 0, 0, 0, 0};  // byte 6 = BookStatus::START
+  HalFile f;
+  if (Storage.openFileForRead("RBA", progressPath, f)) {
+    f.read(data, 6);  // preserve position bytes
+    f.close();
+  }
+  if (Storage.openFileForWrite("RBA", progressPath, f)) {
+    f.write(data, 7);
+    f.close();
+  }
+}
+
+void RecentBooksActivity::launchDashboardMenu(const std::string& path,
+                                              const std::string& title) {
+  const int savedTab  = selectedTabIndex;
+  const int savedItem = selectedItemIndex;
+
+  auto handler = [this, path, savedTab](const ActivityResult& res) {
+    if (const auto* r = std::get_if<BookActionResult>(&res.data)) {
+
+      if (r->removedFromList) {
+        switch (savedTab) {
+          case TAB_MARKED_FOR_LATER:
+            MARKED_FOR_LATER_STORE.removeByPath(path);
+            revertMarkedForLaterStatus(path);
+            markedForLater = MARKED_FOR_LATER_STORE.getEntries();
+            break;
+          case TAB_NEW_CHAPTERS:
+            NEW_CHAPTERS_STORE.removeByPath(path);
+            newChapters = NEW_CHAPTERS_STORE.getEntries();
+            break;
+          case TAB_WIPS:
+            AO3_WIPS_STORE.removeBook(path);
+            wipsEntries = AO3_WIPS_STORE.getEntries();
+            break;
+        }
+        visibleStatusCache.clear();
+        clampSelectorIndex();
+
+      } else if (r->modified) {
+        // Re-sync all local vectors from stores — saveStatus() already wrote to them
+        markedForLater = MARKED_FOR_LATER_STORE.getEntries();
+        newChapters    = NEW_CHAPTERS_STORE.getEntries();
+        wipsEntries    = AO3_WIPS_STORE.getEntries();
+        visibleStatusCache.clear();
+        clampSelectorIndex();
       }
-      visibleStatusCache.clear();
-      requestUpdate(true);
     }
+    requestUpdate(true);
   };
+
   startActivityForResult(
-      std::make_unique<ConfirmationActivity>(renderer, mappedInput,
-                                            tr(STR_REMOVE_FROM_RECENTS), title),
+      std::make_unique<BookActionActivity>(renderer, mappedInput, path, title,
+                                          BookActionMode::DASHBOARD),
       std::move(handler));
 }
 
