@@ -81,6 +81,9 @@ void BookActionActivity::onEnter() {
   hasAo3LibraryInfo = Storage.exists((cachePath + "/ao3_library_info").c_str());
   isEpub = FsHelpers::hasEpubExtension(filePath);
   isXtc  = FsHelpers::hasXtcExtension(filePath);
+  if (MARKED_FOR_LATER_STORE.getCount() == 0) {
+    MARKED_FOR_LATER_STORE.loadFromFile();
+  }
   isMarkedForLater = MARKED_FOR_LATER_STORE.contains(filePath);
 
   const int maxIdx = visibleRowCount() - 1;
@@ -315,22 +318,33 @@ void BookActionActivity::saveStatus() {
   if (currentStatus == BookStatus::MARKED_FOR_LATER) return;
 
   if (currentStatus != BookStatus::READING)
+    MARKED_FOR_LATER_STORE.loadFromFile();
     MARKED_FOR_LATER_STORE.removeByPath(filePath);
+    MARKED_FOR_LATER_STORE.clearEntries();
 
   if (currentStatus == BookStatus::NEW_CHAPTER_AVAILABLE) {
     Epub epub(filePath, "/.crosspoint");
     epub.load(false, true);
+    NEW_CHAPTERS_STORE.loadFromFile();
     NEW_CHAPTERS_STORE.addBook(filePath, epub.getTitle(), epub.getAuthor());
+    NEW_CHAPTERS_STORE.clearEntries();
+    AO3_WIPS_STORE.loadFromFile();
     AO3_WIPS_STORE.removeBook(filePath);
-  } else if (currentStatus == BookStatus::WAITING_FOR_CHAPTER ||
-             currentStatus == BookStatus::FINISHED) {
+    AO3_WIPS_STORE.clearEntries();
+  } else if (currentStatus == BookStatus::WAITING_FOR_CHAPTER || currentStatus == BookStatus::FINISHED) {
+    NEW_CHAPTERS_STORE.loadFromFile();          
     NEW_CHAPTERS_STORE.removeByPath(filePath);
+    NEW_CHAPTERS_STORE.clearEntries();
     if (currentStatus == BookStatus::WAITING_FOR_CHAPTER) {
       Epub epub(filePath, "/.crosspoint");
       epub.load(false, true);
+      AO3_WIPS_STORE.loadFromFile();
       AO3_WIPS_STORE.addBook(filePath, epub.getTitle(), epub.getAuthor());
+      AO3_WIPS_STORE.clearEntries();
     } else {
+      AO3_WIPS_STORE.loadFromFile();
       AO3_WIPS_STORE.removeBook(filePath);
+      AO3_WIPS_STORE.clearEntries();
     }
   }
 }

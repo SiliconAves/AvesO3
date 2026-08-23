@@ -35,9 +35,8 @@ class Ao3NewChaptersStore {
 
   // Insert or move-to-top.  No-op if list is full and path not already present.
   // Persists on success.
-  void addBook(const std::string& path,
-               const std::string& title,
-               const std::string& author);
+  void addBook(const std::string& path, const std::string& title, const std::string& author);
+  void clearEntries() { entries.clear(); entries.shrink_to_fit(); }
 
   // Remove entry whose path matches.  Returns true if an entry was removed.
   // Persists on success (best-effort).

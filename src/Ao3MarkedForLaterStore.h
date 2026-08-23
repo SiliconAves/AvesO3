@@ -46,6 +46,7 @@ class Ao3MarkedForLaterStore {
   bool addBook(const std::string& path,
                const std::string& title,
                const std::string& author);
+  void clearEntries() { entries.clear(); entries.shrink_to_fit(); }
 
   // Returns true if path is already in the list.
   bool contains(const std::string& path) const;

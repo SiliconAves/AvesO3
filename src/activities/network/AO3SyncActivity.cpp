@@ -336,8 +336,12 @@ void AO3SyncActivity::performDownload() {
                 freshEpub.load(false, true);
                 const std::string title  = freshEpub.getTitle();
                 const std::string author = freshEpub.getAuthor();
+                NEW_CHAPTERS_STORE.loadFromFile();
                 NEW_CHAPTERS_STORE.addBook(bookPath, title, author);
+                NEW_CHAPTERS_STORE.clearEntries();
+                AO3_WIPS_STORE.loadFromFile();
                 AO3_WIPS_STORE.removeBook(bookPath);
+                AO3_WIPS_STORE.clearEntries();
             }
 
             // Success result

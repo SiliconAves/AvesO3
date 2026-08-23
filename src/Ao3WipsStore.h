@@ -24,6 +24,7 @@ public:
     static Ao3WipsStore& getInstance() { return instance; }
 
     void addBook(const std::string& path, const std::string& title, const std::string& author);
+    void clearEntries() { entries.clear(); entries.shrink_to_fit(); }
     bool removeBook(const std::string& path);
     bool pruneMissing();
 
