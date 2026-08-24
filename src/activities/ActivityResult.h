@@ -68,6 +68,8 @@ struct BookActionResult {
   bool modified = false;
   bool indexingCompleted = false;
   bool removedFromList   = false;
+  bool archived         = false;
+  std::string newPath;
   BookStatus newStatus = BookStatus::START;
 };
 

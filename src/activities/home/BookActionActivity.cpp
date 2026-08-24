@@ -1,4 +1,5 @@
 #include "BookActionActivity.h"
+#include "../Ao3ArchiveHelper.h"
 
 #include <Epub.h>
 #include <HalStorage.h>
@@ -43,20 +44,22 @@ int BookActionActivity::logicalRow(int visual) const {
 
   // FULL mode
   int idx = 0;
-  if (isEpub || isXtc) { if (visual == idx) return 0; idx++; }
-  if (hasAo3LibraryInfo) { if (visual == idx) return 1; idx++; }
-  if (isEpub) { if (visual == idx) return 2; idx++; }
-  if (visual == idx) return 3;
+  if (isEpub || isXtc)                         { if (visual == idx) return 0; idx++; }
+  if (hasAo3LibraryInfo)                       { if (visual == idx) return 1; idx++; }
+  if (isEpub)                                  { if (visual == idx) return 2; idx++; }
+  if (hasAo3LibraryInfo && !isAlreadyArchived) { if (visual == idx) return 3; idx++; }
+  if (visual == idx)                             return 4;
   return -1;
 }
 
 int BookActionActivity::visibleRowCount() const {
-  if (mode == BookActionMode::DASHBOARD) return 2;  // Status + Remove from List
+  if (mode == BookActionMode::DASHBOARD) return 2;
 
-  int n = 1;                      // Delete always present
-  if (isEpub || isXtc) n++;      // Status
-  if (hasAo3LibraryInfo) n++;    // Mark for Later
-  if (isEpub) n++;               // Index Book
+  int n = 1;                                         // Delete always present
+  if (isEpub || isXtc)                         n++;  // Status
+  if (hasAo3LibraryInfo)                       n++;  // Mark for Later
+  if (isEpub)                                  n++;  // Index Book
+  if (hasAo3LibraryInfo && !isAlreadyArchived) n++;  // Move to Read Folder
   return n;
 }
 
@@ -79,6 +82,7 @@ void BookActionActivity::onEnter() {
   }
 
   hasAo3LibraryInfo = Storage.exists((cachePath + "/ao3_library_info").c_str());
+  isAlreadyArchived = Ao3ArchiveHelper::isInReadFolder(filePath);
   isEpub = FsHelpers::hasEpubExtension(filePath);
   isXtc  = FsHelpers::hasXtcExtension(filePath);
   if (MARKED_FOR_LATER_STORE.getCount() == 0) {
@@ -116,7 +120,8 @@ void BookActionActivity::render(RenderLock&&) {
       case 0: return std::string("Book Status: ") + getStatusLabel(currentStatus);
       case 1: return isMarkedForLater ? "Remove from Later List" : "Mark for Later";
       case 2: return hasAo3LibraryInfo ? "Reindex Book" : "Index Book";
-      case 3: return std::string(tr(STR_DELETE));
+      case 3: return "Move to Read Folder";
+      case 4: return std::string(tr(STR_DELETE));
       case 5: return "Remove from List";
       default: return "";
     }
@@ -231,6 +236,33 @@ void BookActionActivity::loop() {
 
       case 3: {
         auto handler = [this](const ActivityResult& res) {
+            if (!res.isCancelled) {
+               const std::string newPath = Ao3ArchiveHelper::archiveFic(filePath);
+                if (!newPath.empty()) {
+                   BookActionResult result;
+                    result.modified = true;
+                     result.archived = true;
+                    result.newPath  = newPath;
+                    setResult(ActivityResult(std::move(result)));
+                    finish();
+                } else {
+                    requestUpdate(true);
+                }
+           } else {
+               requestUpdate(true);
+           }
+       };
+        startActivityForResult(
+           std::make_unique<ConfirmationActivity>(
+               renderer, mappedInput,
+                "Move to Read Folder?",
+                "The fic will leave the AO3 Library."),
+            handler);
+        break;
+      }
+
+      case 4: {
+        auto handler = [this](const ActivityResult& res) {
           if (!res.isCancelled) {
             BookActionResult result;
             result.deleted  = true;
@@ -317,11 +349,12 @@ void BookActionActivity::saveStatus() {
 
   if (currentStatus == BookStatus::MARKED_FOR_LATER) return;
 
-  if (currentStatus != BookStatus::READING)
+  if (currentStatus != BookStatus::READING) {
     MARKED_FOR_LATER_STORE.loadFromFile();
     MARKED_FOR_LATER_STORE.removeByPath(filePath);
     MARKED_FOR_LATER_STORE.clearEntries();
-
+  }
+    
   if (currentStatus == BookStatus::NEW_CHAPTER_AVAILABLE) {
     Epub epub(filePath, "/.crosspoint");
     epub.load(false, true);

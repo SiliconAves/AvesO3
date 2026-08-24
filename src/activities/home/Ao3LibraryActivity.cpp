@@ -360,32 +360,33 @@ void Ao3LibraryActivity::loop() {
         auto handler = [this, epubPath, hash](const ActivityResult& res) {
           if (const auto* actionRes = std::get_if<BookActionResult>(&res.data)) {
             if (actionRes->modified) {
-              if (actionRes->deleted) {
-                // Tombstone in the index, remove file + cache from disk
-                Ao3Librarian::tombstoneRecord(epubPath);
-                if (Storage.remove(epubPath.c_str())) {
-                  Epub(epubPath, "/.crosspoint").clearCache();
+             if (actionRes->deleted || actionRes->archived) {
+                if (actionRes->deleted) {
+                  Ao3Librarian::tombstoneRecord(epubPath);
+                  if (Storage.remove(epubPath.c_str())) {
+                    Epub(epubPath, "/.crosspoint").clearCache();
+                  }
                 }
-                // Remove from in-RAM viewEntries (no full reload needed)
+                // archived: tombstone + move + cache re-key already done inside archiveFic()
+                // just remove from in-RAM view
+
                 auto it = std::find_if(viewEntries.begin(), viewEntries.end(),
-                    [hash](const ViewEntry& v) { return v.cacheHash == hash; });
+                   [hash](const ViewEntry& v) { return v.cacheHash == hash; });
                 if (it != viewEntries.end()) viewEntries.erase(it);
 
-                // Clamp selectorIndex so we don't go out of bounds on next render
                 if (!viewEntries.empty()) {
-                  if (selectorIndex >= viewEntries.size()) {
+                  if (selectorIndex >= viewEntries.size())
                     selectorIndex = viewEntries.size() - 1;
-                  }
                 } else {
                   selectorIndex = 0;
                 }
-                cachedPage = -1; // invalidate so next render reloads page cache
-                } else if (actionRes->indexingCompleted) {
-                  rebuildViewEntries();
-                } else {
-                  // Reload the page cache to refresh marked positions and statuses for all slots
-                  loadPageCache(cachedPage);
-                }
+               cachedPage = -1;
+              } else if (actionRes->indexingCompleted) {
+                rebuildViewEntries();
+              } else {
+                // status change or mark for later — reload page cache
+               loadPageCache(cachedPage);
+             }
               requestUpdate(true);
             }
           }

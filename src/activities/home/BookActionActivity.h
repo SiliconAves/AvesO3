@@ -4,6 +4,7 @@
 #include "BookStatus.h"
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
+#include "../Ao3ArchiveHelper.h"
 
 enum class BookActionMode {
   FULL,      // AO3 Library / file browser long-press
@@ -22,6 +23,7 @@ class BookActionActivity final : public Activity {
   bool isEpub                  = false;
   bool isXtc                   = false;
   bool skipFirstConfirmRelease = false;
+  bool isAlreadyArchived       = false;
   BookActionMode mode;
 
  public:
