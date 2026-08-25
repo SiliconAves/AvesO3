@@ -27,6 +27,7 @@
 
 #include "Ao3ViewEntry.h"  // for fnv1a
 #include "Ao3EndOfBookSeriesActivity.h"  // adjust path if needed
+#include "../home/Ao3LibraryActivity.h" // global transfer variable
 
 #include "CrossPointState.h"
 #include "EpubReaderBookmarksActivity.h"
@@ -750,24 +751,37 @@ if (currentStatus == BookStatus::START) {
       onGoHome();
       return;
     }
+    
     case EpubReaderMenuActivity::MenuAction::DELETE_CACHE: {
-      {
+    {
         RenderLock lock(*this);
         if (epub && section) {
-          uint16_t backupSpine = currentSpineIndex;
-          uint16_t backupPage = section->currentPage;
-          uint16_t backupPageCount = section->pageCount;
-          section.reset();
-          epub->clearCache();
-          epub->setupCacheDir();
-          if (!saveProgress(backupSpine, backupPage, backupPageCount)) {
-            LOG_ERR("ERS", "Failed to save progress before cache clear");
-          }
+            uint16_t backupSpine = currentSpineIndex;
+            uint16_t backupPage = section->currentPage;
+            uint16_t backupPageCount = section->pageCount;
+            section.reset();
+
+            bool hadAo3Info = Storage.exists(
+                (epub->getCachePath() + "/ao3_library_info").c_str());
+
+            epub->clearCache();
+            epub->setupCacheDir();
+
+            // tombstone + signal reindex 
+            if (hadAo3Info) {
+                Ao3Librarian::tombstoneRecord(epub->getPath());
+                Ao3LibraryActivity::pendingTransferScan = true;
+            }
+
+            if (!saveProgress(backupSpine, backupPage, backupPageCount)) {
+                LOG_ERR("ERS", "Failed to save progress before cache clear");
+            }
         }
-      }
-      onGoHome();
-      return;
     }
+    onGoHome();
+    return;
+  }
+
     case EpubReaderMenuActivity::MenuAction::SCREENSHOT: {
       {
         RenderLock lock(*this);
