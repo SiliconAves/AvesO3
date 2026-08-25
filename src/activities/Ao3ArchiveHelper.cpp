@@ -1,4 +1,5 @@
 #include "Ao3ArchiveHelper.h"
+#include "Ao3LibraryMetadata.h"
 #include "CrossPointState.h"
 
 #include <ArduinoJson.h>
@@ -149,6 +150,73 @@ std::string archiveFic(const std::string& srcPath) {
 
     LOG_INF("AO3ARC", "Archived: %s -> %s", srcPath.c_str(), dstPath.c_str());
     return dstPath;
+}
+
+std::string restoreFic(const std::string& srcPath) {
+    // Read original path from the stale filepath field in ao3_library_info.
+    const std::string currentCachePath = "/.crosspoint/epub_" +
+                                         std::to_string(std::hash<std::string>{}(srcPath));
+    const std::string infoPath = currentCachePath + "/ao3_library_info";
+
+    if (!Storage.exists(infoPath.c_str())) {
+        LOG_ERR("AO3ARC", "ao3_library_info not found for: %s", srcPath.c_str());
+        return "";
+    }
+
+    Ao3LibraryMetadata meta;
+    {
+        HalFile f;
+        if (!Storage.openFileForRead("AO3ARC", infoPath, f)) {
+            LOG_ERR("AO3ARC", "Failed to open ao3_library_info for: %s", srcPath.c_str());
+            return "";
+        }
+        if (f.read((uint8_t*)&meta, sizeof(meta)) != sizeof(meta) || !meta.isValid()) {
+            LOG_ERR("AO3ARC", "Invalid ao3_library_info for: %s", srcPath.c_str());
+            return "";
+        }
+    }
+
+    const std::string originalPath(meta.filepath);
+    if (originalPath.empty()) {
+        LOG_ERR("AO3ARC", "Empty original path in ao3_library_info for: %s", srcPath.c_str());
+        return "";
+    }
+
+    // Recreate the original directory in case it no longer exists.
+    const size_t lastSlash = originalPath.rfind('/');
+    if (lastSlash != std::string::npos) {
+        const std::string originalDir = originalPath.substr(0, lastSlash);
+        Storage.mkdir(originalDir.c_str(), true);
+    }
+
+    // Move the file back.
+    if (!Storage.rename(srcPath.c_str(), originalPath.c_str())) {
+        LOG_ERR("AO3ARC", "Restore rename failed: %s -> %s",
+                srcPath.c_str(), originalPath.c_str());
+        return "";
+    }
+
+    // Re-key cache dir back to the original path hash.
+    const std::string newCachePath = "/.crosspoint/epub_" +
+                                     std::to_string(std::hash<std::string>{}(originalPath));
+    if (Storage.exists(currentCachePath.c_str())) {
+        if (!Storage.rename(currentCachePath.c_str(), newCachePath.c_str())) {
+            LOG_ERR("AO3ARC", "Failed to restore cache dir %s -> %s (non-fatal)",
+                    currentCachePath.c_str(), newCachePath.c_str());
+        }
+    }
+
+    // Repoint recents entry.
+    RECENT_BOOKS.updatePath(srcPath, originalPath, currentCachePath, newCachePath);
+
+    // Repoint resume pointer if needed.
+    if (APP_STATE.openEpubPath == srcPath) {
+        APP_STATE.openEpubPath = originalPath;
+        APP_STATE.saveToFile();
+    }
+
+    LOG_INF("AO3ARC", "Restored: %s -> %s", srcPath.c_str(), originalPath.c_str());
+    return originalPath;
 }
 
 }

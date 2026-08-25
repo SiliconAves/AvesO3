@@ -24,4 +24,9 @@ std::string buildDestinationPath(const std::string& srcPath);
 // Returns the new path on success, empty string on failure.
 std::string archiveFic(const std::string& srcPath);
 
+// Restores an archived fic to its original path (read from the ao3_library_info sidecar).
+// Re-keys the cache dir, updates recents and APP_STATE.
+// Returns the restored path on success, empty string on failure.
+std::string restoreFic(const std::string& srcPath);
+
 }

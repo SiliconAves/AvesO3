@@ -44,22 +44,22 @@ int BookActionActivity::logicalRow(int visual) const {
 
   // FULL mode
   int idx = 0;
-  if (isEpub || isXtc)                         { if (visual == idx) return 0; idx++; }
-  if (hasAo3LibraryInfo)                       { if (visual == idx) return 1; idx++; }
-  if (isEpub)                                  { if (visual == idx) return 2; idx++; }
-  if (hasAo3LibraryInfo && !isAlreadyArchived) { if (visual == idx) return 3; idx++; }
-  if (visual == idx)                             return 4;
+  if (isEpub || isXtc)                      { if (visual == idx) return 0; idx++; }
+  if (hasAo3LibraryInfo)                    { if (visual == idx) return 1; idx++; }
+  if (isEpub)                               { if (visual == idx) return 2; idx++; }
+  if (hasAo3LibraryInfo)                    { if (visual == idx) return 3; idx++; }
+  if (visual == idx)       return 4;
   return -1;
 }
 
 int BookActionActivity::visibleRowCount() const {
   if (mode == BookActionMode::DASHBOARD) return 2;
 
-  int n = 1;                                         // Delete always present
-  if (isEpub || isXtc)                         n++;  // Status
-  if (hasAo3LibraryInfo)                       n++;  // Mark for Later
-  if (isEpub)                                  n++;  // Index Book
-  if (hasAo3LibraryInfo && !isAlreadyArchived) n++;  // Move to Read Folder
+  int n = 1;                      // Delete always present
+  if (isEpub || isXtc)      n++;  // Status
+  if (hasAo3LibraryInfo)    n++;  // Mark for Later
+  if (isEpub)               n++;  // Index Book
+  if (hasAo3LibraryInfo)    n++;  // Move to Read Folder / Restore
   return n;
 }
 
@@ -120,7 +120,7 @@ void BookActionActivity::render(RenderLock&&) {
       case 0: return std::string("Book Status: ") + getStatusLabel(currentStatus);
       case 1: return isMarkedForLater ? "Remove from Later List" : "Mark for Later";
       case 2: return hasAo3LibraryInfo ? "Reindex Book" : "Index Book";
-      case 3: return "Move to Read Folder";
+      case 3: return isAlreadyArchived ? "Restore to AO3 Library" : "Move to Read Folder";
       case 4: return std::string(tr(STR_DELETE));
       case 5: return "Remove from List";
       default: return "";
@@ -235,29 +235,47 @@ void BookActionActivity::loop() {
       }
 
       case 3: {
-        auto handler = [this](const ActivityResult& res) {
-            if (!res.isCancelled) {
-               const std::string newPath = Ao3ArchiveHelper::archiveFic(filePath);
-                if (!newPath.empty()) {
-                   BookActionResult result;
+        if (isAlreadyArchived) {
+            // Restore: move file back then re-index.
+            const std::string restoredPath = Ao3ArchiveHelper::restoreFic(filePath);
+            if (!restoredPath.empty()) {
+                auto handler = [this](const ActivityResult& res) {
+                    BookActionResult result;
                     result.modified = true;
-                     result.archived = true;
+                    result.indexingCompleted = true;
+                    setResult(ActivityResult(std::move(result)));
+                    finish();
+                };
+                    startActivityForResult(
+                    std::make_unique<Ao3IndexActivity>(
+                    renderer, mappedInput, Ao3IndexMode::SINGLE, restoredPath),
+                    handler);
+            } else {
+              requestUpdate(true);  // restore failed, stay open
+            }
+        } else {
+          // Archive: move to read folder.
+          auto handler = [this](const ActivityResult& res) {
+            if (!res.isCancelled) {
+                const std::string newPath = Ao3ArchiveHelper::archiveFic(filePath);
+                if (!newPath.empty()) {
+                    BookActionResult result;
+                    result.modified = true;
+                    result.archived = true;
                     result.newPath  = newPath;
                     setResult(ActivityResult(std::move(result)));
                     finish();
                 } else {
                     requestUpdate(true);
                 }
-           } else {
-               requestUpdate(true);
-           }
-       };
-        startActivityForResult(
-           std::make_unique<ConfirmationActivity>(
-               renderer, mappedInput,
-                "Move to Read Folder?",
-                "The fic will leave the AO3 Library."),
-            handler);
+            } else {
+                requestUpdate(true);
+            }
+          };
+          startActivityForResult(std::make_unique<ConfirmationActivity>(renderer, mappedInput,
+                "Move to Read Folder?", "The fic will leave the AO3 Library."),
+                handler);
+        }
         break;
       }
 

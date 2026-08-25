@@ -279,7 +279,7 @@ if (isDirectory) {
                 } else {
                   LOG_ERR("FileBrowser", "Failed to delete file: %s", fullPath.c_str());
                 }
-              } else if (actionRes->archived) {
+              } else if (actionRes->archived || actionRes->indexingCompleted) {
                 // File moved by archiveFic() — just reload the listing.
                 loadFiles();
                 if (files.empty()) {
