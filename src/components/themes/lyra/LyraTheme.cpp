@@ -309,8 +309,8 @@ void LyraTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount, 
               int ty[] = {iconY_pos + 2,  iconY_pos + 10, iconY_pos + 10};
               renderer.fillPolygon(tx, ty, 3, true);
             } else if (status == BookStatus::NEW_CHAPTER_AVAILABLE) {
-              int tx[] = {iconX_pos + 12, iconX_pos + 7, iconX_pos + 17};
-              int ty[] = {iconY_pos + 2,  iconY_pos + 10, iconY_pos + 10};
+              const int tx[] = {iconX_pos + 12, iconX_pos + 7, iconX_pos + 17};
+              const int ty[] = {iconY_pos + 2,  iconY_pos + 10, iconY_pos + 10};
               renderer.fillPolygon(tx, ty, 3, true);
               renderer.fillRoundedRect(iconX_pos + iconSize - 8, iconY_pos - 3, 8, 7, 4, Color::Black);
             } else if (status == BookStatus::MARKED_FOR_LATER) {
@@ -344,8 +344,8 @@ void LyraTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount, 
               }
             } else if (status == BookStatus::WAITING_FOR_CHAPTER ||
                       status == BookStatus::NEW_CHAPTER_AVAILABLE) {
-             int tx[] = {centerX - 5, centerX + 1, centerX + 7};
-              int ty[] = {centerY + 5, centerY - 6, centerY + 5};
+              const int tx[] = {centerX - 5, centerX + 1, centerX + 7};
+              const int ty[] = {centerY + 5, centerY - 6, centerY + 5};
               renderer.fillPolygon(tx, ty, 3, true);
               if (status == BookStatus::NEW_CHAPTER_AVAILABLE) {
                 renderer.fillRoundedRect(coverX + coverW - 3, coverY - 4, 9, 9, 4, Color::Black);
