@@ -305,8 +305,8 @@ void LyraTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount, 
               renderer.drawLine(iconX_pos + 8, iconY_pos + 6, iconX_pos + 11, iconY_pos + 9, 3, false);
               renderer.drawLine(iconX_pos + 11, iconY_pos + 9, iconX_pos + 16, iconY_pos + 2, 3, false);
             } else if (status == BookStatus::WAITING_FOR_CHAPTER) {
-              int tx[] = {iconX_pos + 12, iconX_pos + 7, iconX_pos + 17};
-              int ty[] = {iconY_pos + 2,  iconY_pos + 10, iconY_pos + 10};
+              const int tx[] = {iconX_pos + 12, iconX_pos + 7, iconX_pos + 17};
+              const int ty[] = {iconY_pos + 2,  iconY_pos + 10, iconY_pos + 10};
               renderer.fillPolygon(tx, ty, 3, true);
             } else if (status == BookStatus::NEW_CHAPTER_AVAILABLE) {
               const int tx[] = {iconX_pos + 12, iconX_pos + 7, iconX_pos + 17};
