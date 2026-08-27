@@ -66,8 +66,11 @@ struct FilePathResult {
 struct BookActionResult {
   bool deleted = false;
   bool modified = false;
-  BookStatus newStatus = BookStatus::START;
   bool indexingCompleted = false;
+  bool removedFromList   = false;
+  bool archived         = false;
+  std::string newPath;
+  BookStatus newStatus = BookStatus::START;
 };
 
 struct AO3Result {

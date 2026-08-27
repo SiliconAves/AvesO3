@@ -6,7 +6,8 @@ enum class BookStatus : uint8_t {
   READING = 1,
   FINISHED = 2,
   WAITING_FOR_CHAPTER = 3,
-  NEW_CHAPTER_AVAILABLE = 4
+  NEW_CHAPTER_AVAILABLE = 4,
+  MARKED_FOR_LATER = 5
 };
 
 inline const char* getStatusLabel(BookStatus status) {
@@ -21,6 +22,8 @@ inline const char* getStatusLabel(BookStatus status) {
       return "Waiting for Chapter";
     case BookStatus::NEW_CHAPTER_AVAILABLE:
       return "New Chapter Available";
+    case BookStatus::MARKED_FOR_LATER:
+      return "Marked for Later";
     default:
       return "Unknown";
   }

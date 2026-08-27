@@ -20,6 +20,7 @@
 #include "../../components/UITheme.h"
 #include "../../RecentBooksStore.h"
 #include "../../CrossPointState.h"
+#include "Ao3MarkedForLaterStore.h"
 
 // ---------------------------------------------------------------------------
 //  onEnter
@@ -41,6 +42,7 @@ void Ao3LibraryActivity::onEnter() {
   loadFilterMode();
   Ao3TagMergeStore::load();
   loadSortFilterState();
+  MARKED_FOR_LATER_STORE.loadFromFile();
   requestUpdate();
 }
 
@@ -65,6 +67,10 @@ void Ao3LibraryActivity::loadFilterMode() {
     filterMode = (fm == 1) ? FilterMode::FOLDER_TREE : FilterMode::AUTOMATIC;
     swapNavButtons = doc["swapNavButtons"] | false;
     autoIndexOnOpen_ = doc["autoIndexOnOpen"] | false;
+    if (filterMode != FilterMode::FOLDER_TREE) {
+        folderTreeFandom.clear();
+        folderTreeRelationship.clear();
+    }
 }
 
 void Ao3LibraryActivity::buildAllowedHashes(const std::string& scanPath, int maxDepth) {
@@ -153,6 +159,7 @@ void Ao3LibraryActivity::loadPageCache(int page) {
   for (int i = 0; i < 3; i++) {
     new (&pageCache[i]) Ao3LibraryMetadata();
     pageCacheStatus[i] = BookStatus::START;
+    pageCacheMarkedPosition[i] = -1;
   }
 
   for (int i = startIdx; i < endIdx; i++) {
@@ -165,6 +172,7 @@ void Ao3LibraryActivity::loadPageCache(int page) {
       f.close();
     }
     pageCacheStatus[slot] = getBookStatus(viewEntries[i].cacheHash);
+    pageCacheMarkedPosition[slot] = MARKED_FOR_LATER_STORE.getQueuePosition(pageCache[slot].filepath);
   }
 
   cachedPage = page;
@@ -356,34 +364,33 @@ void Ao3LibraryActivity::loop() {
         auto handler = [this, epubPath, hash](const ActivityResult& res) {
           if (const auto* actionRes = std::get_if<BookActionResult>(&res.data)) {
             if (actionRes->modified) {
-              if (actionRes->deleted) {
-                // Tombstone in the index, remove file + cache from disk
-                Ao3Librarian::tombstoneRecord(epubPath);
-                if (Storage.remove(epubPath.c_str())) {
-                  Epub(epubPath, "/.crosspoint").clearCache();
+             if (actionRes->deleted || actionRes->archived) {
+                if (actionRes->deleted) {
+                  Ao3Librarian::tombstoneRecord(epubPath);
+                  if (Storage.remove(epubPath.c_str())) {
+                    Epub(epubPath, "/.crosspoint").clearCache();
+                  }
                 }
-                // Remove from in-RAM viewEntries (no full reload needed)
+                // archived: tombstone + move + cache re-key already done inside archiveFic()
+                // just remove from in-RAM view
+
                 auto it = std::find_if(viewEntries.begin(), viewEntries.end(),
-                    [hash](const ViewEntry& v) { return v.cacheHash == hash; });
+                   [hash](const ViewEntry& v) { return v.cacheHash == hash; });
                 if (it != viewEntries.end()) viewEntries.erase(it);
 
-                // Clamp selectorIndex so we don't go out of bounds on next render
                 if (!viewEntries.empty()) {
-                  if (selectorIndex >= viewEntries.size()) {
+                  if (selectorIndex >= viewEntries.size())
                     selectorIndex = viewEntries.size() - 1;
-                  }
                 } else {
                   selectorIndex = 0;
                 }
-                cachedPage = -1; // invalidate so next render reloads page cache
-                } else if (actionRes->indexingCompleted) {
-                  rebuildViewEntries();
-                } else {
-                  // Status change only — update in-place without a full reload
-                  if (static_cast<int>(selectorIndex) / 3 == cachedPage) {
-                    pageCacheStatus[selectorIndex % 3] = actionRes->newStatus;
-                  }
-                }
+               cachedPage = -1;
+              } else if (actionRes->indexingCompleted) {
+                rebuildViewEntries();
+              } else {
+                // status change or mark for later — reload page cache
+               loadPageCache(cachedPage);
+             }
               requestUpdate(true);
             }
           }
@@ -456,7 +463,9 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
         if (pickerItems.size() <= 5) {
           size_t currentIdx = 0;
           for (size_t i = 0; i < pickerItems.size(); i++) {
-            if (strcmp(pendingState.fandom, pickerItems[i].c_str()) == 0) {
+            if (filterMode == FilterMode::FOLDER_TREE
+                    ? folderTreeFandom == pickerItems[i]
+                    : strcmp(pendingState.fandom, pickerItems[i].c_str()) == 0) {
               currentIdx = i;
               break;
             }
@@ -466,17 +475,27 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
             pendingState.fandom[0] = '\0';
             pendingState.relationship[0] = '\0';
             pendingState.relationshipNoneOnly = false;
+            if (filterMode == FilterMode::FOLDER_TREE) {
+                folderTreeFandom.clear();
+                folderTreeRelationship.clear();
+            }
           } else {
             strncpy(pendingState.fandom, pickerItems[currentIdx].c_str(), 31);
             pendingState.fandom[31] = '\0';
             pendingState.relationship[0] = '\0';
             pendingState.relationshipNoneOnly = false;
+            if (filterMode == FilterMode::FOLDER_TREE) {
+                folderTreeFandom = pickerItems[currentIdx];
+                folderTreeRelationship.clear();
+            }
           }
         } else {
           screenState = ScreenState::FANDOM_PICKER;
           pickerSelectedIndex = 0;
           for (size_t i = 0; i < pickerItems.size(); i++) {
-            if (strcmp(pendingState.fandom, pickerItems[i].c_str()) == 0) {
+            if (filterMode == FilterMode::FOLDER_TREE
+                    ? folderTreeFandom == pickerItems[i]
+                    : strcmp(pendingState.fandom, pickerItems[i].c_str()) == 0) {
               pickerSelectedIndex = i;
               break;
             }
@@ -490,7 +509,9 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
           pickerItems.push_back("Any");
           {
             std::vector<std::string> rels;
-            buildRelationshipList(pendingState.fandom, rels, pickerHasNone);
+            buildRelationshipList(
+            (filterMode == FilterMode::FOLDER_TREE ? folderTreeFandom.c_str() : pendingState.fandom),
+              rels, pickerHasNone);
             if (pickerHasNone) pickerItems.push_back("None");
             pickerItems.reserve(pickerItems.size() + rels.size());
             for (auto& r : rels) pickerItems.push_back(std::move(r));
@@ -500,7 +521,9 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
             if (pickerHasNone) pickerSelectedIndex = 1;
           } else if (pendingState.relationship[0] != '\0') {
             for (size_t i = 0; i < pickerItems.size(); i++) {
-              if (strcmp(pendingState.relationship, pickerItems[i].c_str()) == 0) {
+              if (filterMode == FilterMode::FOLDER_TREE
+                      ? folderTreeRelationship == pickerItems[i]
+                      : strcmp(pendingState.relationship, pickerItems[i].c_str()) == 0) {
                 pickerSelectedIndex = i;
                 break;
               }
@@ -582,28 +605,37 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
           pendingState.fandom[0] = '\0';
           pendingState.relationship[0] = '\0';
           pendingState.relationshipNoneOnly = false;
+          if (filterMode == FilterMode::FOLDER_TREE) {
+              folderTreeFandom.clear();
+              folderTreeRelationship.clear();
+          }
         } else {
           strncpy(pendingState.fandom, pickerItems[pickerSelectedIndex].c_str(), 31);
           pendingState.fandom[31] = '\0';
           pendingState.relationship[0] = '\0';
           pendingState.relationshipNoneOnly = false;
+          if (filterMode == FilterMode::FOLDER_TREE) {
+              folderTreeFandom = pickerItems[pickerSelectedIndex];
+              folderTreeRelationship.clear();
+          }
         }
-        // Advance to relationship row when returning to the filter panel
-        // (skip it if no fandom is selected, since it would be disabled)
         overlayRowIndex = (pendingState.fandom[0] != '\0') ? 1 : 2;
       } else {
         if (pickerSelectedIndex == 0) {
           pendingState.relationship[0] = '\0';
           pendingState.relationshipNoneOnly = false;
+          if (filterMode == FilterMode::FOLDER_TREE) folderTreeRelationship.clear();
         } else if (pickerSelectedIndex == 1 && pickerHasNone) {
           pendingState.relationship[0] = '\0';
           pendingState.relationshipNoneOnly = true;
+          if (filterMode == FilterMode::FOLDER_TREE) folderTreeRelationship.clear();
         } else {
           strncpy(pendingState.relationship, pickerItems[pickerSelectedIndex].c_str(), 31);
           pendingState.relationship[31] = '\0';
           pendingState.relationshipNoneOnly = false;
+          if (filterMode == FilterMode::FOLDER_TREE)
+              folderTreeRelationship = pickerItems[pickerSelectedIndex];
         }
-        // Advance to sort-by row when returning to the filter panel
         overlayRowIndex = 2;
       }
       screenState = ScreenState::FILTER_PANEL;
@@ -1072,7 +1104,7 @@ void Ao3LibraryActivity::renderEntry(RenderLock& lock, int y, const ViewEntry& v
   const char warning   = metaLoaded ? meta.warning   : 0;
   const bool completed = metaLoaded ? (bool)meta.isCompleted : false;
 
-  drawAo3Square(lock, margin, y, squareSize, rating, warning, completed, pageCacheStatus[cacheSlot]);
+  drawAo3Square(lock, margin, y, squareSize, rating, warning, completed, pageCacheStatus[cacheSlot], pageCacheMarkedPosition[cacheSlot]);
 
   std::string title = metaLoaded && meta.title[0] ? std::string(meta.title) : std::string(ve.title);
   std::string authorText = metaLoaded && meta.author[0]
@@ -1153,11 +1185,11 @@ void Ao3LibraryActivity::renderEntry(RenderLock& lock, int y, const ViewEntry& v
 
 void Ao3LibraryActivity::drawAo3Square(RenderLock& lock, int x, int y, int s,
                                        char rating, char warning, bool completed,
-                                       BookStatus status) {
+                                       BookStatus status, int markedPosition) {
   const int h = s / 2;
 
   renderSymbol(x + 1, y + 1, h - 1, rating, true, false, false, false, -1);
-  renderStatusSymbol(x + h + 1, y + 1, h - 1, status, false, true, false, false, -1);
+  renderStatusSymbol(x + h + 1, y + 1, h - 1, status, false, true, false, false, -1, markedPosition);
   renderWarningSymbol(x + 1, y + h + 1, h - 1, warning, false, false, true, false, -2);
   renderCompletionSymbol(x + h + 1, y + h + 1, h - 1, completed, false, false, false, true, -2);
 
@@ -1184,7 +1216,18 @@ void Ao3LibraryActivity::renderSymbol(int x, int y, int s, char c, bool tl, bool
                     buf, (bg == DarkGray || bg == Black) ? false : true);
 }
 
-void Ao3LibraryActivity::renderStatusSymbol(int x, int y, int s, BookStatus status, bool tl, bool tr, bool bl, bool br, int yOffset) {
+void Ao3LibraryActivity::renderStatusSymbol(int x, int y, int s, BookStatus status, bool tl, bool tr, bool bl, bool br, int yOffset, int markedPosition) {
+  if (status == BookStatus::MARKED_FOR_LATER) {
+    if (markedPosition > 0) {
+      char buf[3];
+      snprintf(buf, sizeof(buf), "%d", markedPosition);
+      const int tw = renderer.getTextWidth(UI_10_FONT_ID, buf);
+      const int th = renderer.getTextHeight(UI_10_FONT_ID);
+      renderer.drawText(UI_10_FONT_ID, x + (s - tw) / 2 , y + (s - th) / 2 + yOffset, buf, true);
+    }
+    return;
+  }
+
   // Handle geometric custom renders for chapter status updates
   if (status == BookStatus::WAITING_FOR_CHAPTER || status == BookStatus::NEW_CHAPTER_AVAILABLE) {
     // 1. Calculate an upward-pointing triangle centered inside the quadrant
@@ -1304,9 +1347,13 @@ void Ao3LibraryActivity::loadSortFilterState() {
   }
 
   if (filterMode == FilterMode::FOLDER_TREE && ao3Folder.empty()) {
-      memset(activeState.fandom,       0, 32);
-      memset(activeState.relationship, 0, 32);
-      activeState.relationshipNoneOnly = false;
+    memset(activeState.fandom,       0, 32);
+    memset(activeState.relationship, 0, 32);
+    activeState.relationshipNoneOnly = false;
+  }
+  if (filterMode == FilterMode::FOLDER_TREE) {
+    folderTreeFandom       = doc["folderTreeFandom"]       | std::string(activeState.fandom);
+    folderTreeRelationship = doc["folderTreeRelationship"] | std::string(activeState.relationship);
   }
 }
 
@@ -1318,6 +1365,10 @@ void Ao3LibraryActivity::saveSortFilterState() const {
   doc["sortMode"]             = static_cast<uint8_t>(activeState.sortMode);
   doc["ascending"]            = activeState.ascending;
   doc["filterMode"]           = static_cast<uint8_t>(filterMode);
+  if (filterMode == FilterMode::FOLDER_TREE) {
+    doc["folderTreeFandom"]       = folderTreeFandom;
+    doc["folderTreeRelationship"] = folderTreeRelationship;
+  }
 
   String json;
   serializeJson(doc, json);
@@ -1446,10 +1497,10 @@ void Ao3LibraryActivity::rebuildViewEntries() {
       if (activeState.fandom[0] != '\0') {
           std::string scanPath = ao3Folder;
           if (scanPath.back() != '/') scanPath += "/";
-          scanPath += activeState.fandom;
+          scanPath += folderTreeFandom;
           if (activeState.relationship[0] != '\0') {
               scanPath += "/";
-              scanPath += activeState.relationship;
+              scanPath += folderTreeRelationship;
               buildAllowedHashes(scanPath, 0);
           } else {
               buildAllowedHashes(scanPath, 1);
@@ -1510,10 +1561,10 @@ void Ao3LibraryActivity::applyStateChange(const SortFilterState& prev, const Sor
       if (next.fandom[0] != '\0') {
           std::string scanPath = ao3Folder;
           if (scanPath.back() != '/') scanPath += "/";
-          scanPath += next.fandom;
+          scanPath += folderTreeFandom;
           if (next.relationship[0] != '\0') {
               scanPath += "/";
-              scanPath += next.relationship;
+              scanPath += folderTreeRelationship;
               buildAllowedHashes(scanPath, 0);
           } else {
               buildAllowedHashes(scanPath, 1);

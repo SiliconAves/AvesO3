@@ -293,30 +293,69 @@ void LyraTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount, 
         renderer.drawIcon(iconBitmap, iconX_pos, iconY_pos, iconSize, iconSize);
 
         // Status Overlay (Second Pass)
-        if (rowStatus != nullptr && icon == UIIcon::Book && iconSize == listIconSize) {
+        if (rowStatus != nullptr && icon == UIIcon::Book) {
           BookStatus status = rowStatus(i);
-          if (status == BookStatus::READING) {
-            // Fill cover area with grayscale (top 17 pixels)
-            // Moved +2y up, changed to DarkGray
-            renderer.fillRectDither(iconX_pos + 5, iconY_pos, 14, 13, Color::DarkGray);
-          } else if (status == BookStatus::FINISHED) {
-            // Draw black badge with white tick on the cover
-            renderer.fillRect(iconX_pos + 5, iconY_pos, 14, 13, true);
-            renderer.drawLine(iconX_pos + 8, iconY_pos + 6, iconX_pos + 11, iconY_pos + 9, 3, false);
-            renderer.drawLine(iconX_pos + 11, iconY_pos + 9, iconX_pos + 16, iconY_pos + 2, 3, false);
-          } else if (status == BookStatus::WAITING_FOR_CHAPTER) {
-            // Draw upward triangle on the cover
-            // Moved +1x, -3y
-            int tx[] = {iconX_pos + 12, iconX_pos + 7, iconX_pos + 17};
-            int ty[] = {iconY_pos + 2, iconY_pos + 10, iconY_pos + 10};
-            renderer.fillPolygon(tx, ty, 3, true);
-          } else if (status == BookStatus::NEW_CHAPTER_AVAILABLE) {
-            // Draw upward triangle on the cover (same as WAITING_FOR_CHAPTER)
-            int tx[] = {iconX_pos + 12, iconX_pos + 7, iconX_pos + 17};
-            int ty[] = {iconY_pos + 2, iconY_pos + 10, iconY_pos + 10};
-            renderer.fillPolygon(tx, ty, 3, true);
-            // Notification dot on top-right corner of the book icon
-            renderer.fillRoundedRect(iconX_pos + iconSize - 8, iconY_pos - 3, 8, 7, 4, Color::Black);
+
+          if (iconSize == listIconSize) {
+            // 24x24 STATUS OVERLAY
+            if (status == BookStatus::READING) {
+              renderer.fillRectDither(iconX_pos + 5, iconY_pos, 14, 13, Color::DarkGray);
+            } else if (status == BookStatus::FINISHED) {
+              renderer.fillRect(iconX_pos + 5, iconY_pos, 14, 13, true);
+              renderer.drawLine(iconX_pos + 8, iconY_pos + 6, iconX_pos + 11, iconY_pos + 9, 3, false);
+              renderer.drawLine(iconX_pos + 11, iconY_pos + 9, iconX_pos + 16, iconY_pos + 2, 3, false);
+            } else if (status == BookStatus::WAITING_FOR_CHAPTER) {
+              const int tx[] = {iconX_pos + 12, iconX_pos + 7, iconX_pos + 17};
+              const int ty[] = {iconY_pos + 2,  iconY_pos + 10, iconY_pos + 10};
+              renderer.fillPolygon(tx, ty, 3, true);
+            } else if (status == BookStatus::NEW_CHAPTER_AVAILABLE) {
+              const int tx[] = {iconX_pos + 12, iconX_pos + 7, iconX_pos + 17};
+              const int ty[] = {iconY_pos + 2,  iconY_pos + 10, iconY_pos + 10};
+              renderer.fillPolygon(tx, ty, 3, true);
+              renderer.fillRoundedRect(iconX_pos + iconSize - 8, iconY_pos - 3, 8, 7, 4, Color::Black);
+            } else if (status == BookStatus::MARKED_FOR_LATER) {
+              renderer.drawRoundedRect(iconX_pos + 6, iconY_pos + 1, 12, 11, 1, 5, Color::Black);
+            }
+
+          } else if (iconSize == mainMenuIconSize) {
+            // 32x32 STATUS OVERLAY
+            const int rowYOffset = (i == 10 || i % 2 != 0) ? -4 : 0;
+            const int coverX = iconX_pos + 6;
+            const int coverY = iconY_pos + 4 + rowYOffset;;  
+            const int coverW = 20;             
+            const int coverH = 18;
+            const int centerX = iconX_pos + 14;
+            const int centerY = iconY_pos + 13 + rowYOffset; 
+
+           if (status == BookStatus::READING || status == BookStatus::FINISHED) {
+              // Dither rect with spared pixels
+             for (int dy = 0; dy < coverH; ++dy) {
+               for (int dx = 0; dx < coverW; ++dx) {
+                 if (dx == 0 && dy == 0) continue;
+                  if (dx == coverW - 1 && dy == coverH - 1) continue;
+                  if (status == BookStatus::FINISHED || (dx + dy) % 2 == 0) {
+                    renderer.drawPixel(coverX + dx, coverY + dy, true);
+                  }
+                }
+              }
+             if (status == BookStatus::FINISHED) {
+               renderer.drawLine(centerX - 2, centerY,     centerX + 1, centerY + 3, 3, false);
+                renderer.drawLine(centerX + 1, centerY + 3, centerX + 7, centerY - 4, 3, false);
+              }
+            } else if (status == BookStatus::WAITING_FOR_CHAPTER ||
+                      status == BookStatus::NEW_CHAPTER_AVAILABLE) {
+              const int tx[] = {centerX - 5, centerX + 1, centerX + 7};
+              const int ty[] = {centerY + 5, centerY - 6, centerY + 5};
+              renderer.fillPolygon(tx, ty, 3, true);
+              if (status == BookStatus::NEW_CHAPTER_AVAILABLE) {
+                renderer.fillRoundedRect(coverX + coverW - 3, coverY - 4, 9, 9, 4, Color::Black);
+              }
+            } else if (static_cast<uint8_t>(status) >= static_cast<uint8_t>(BookStatus::MARKED_FOR_LATER)) {
+              int queuePos = static_cast<uint8_t>(status) - static_cast<uint8_t>(BookStatus::MARKED_FOR_LATER);
+              std::string queueNum = std::to_string(queuePos + 1);
+              int textWidth = renderer.getTextWidth(SMALL_FONT_ID, queueNum.c_str());
+              renderer.drawText(SMALL_FONT_ID, centerX - (textWidth / 2) + 1, centerY - 12, queueNum.c_str());
+            }
           }
         }
       }

@@ -21,8 +21,13 @@
 #include "CrossPointSettings.h"
 #include "Ao3Librarian.h"
 
+#include "Ao3NewChaptersStore.h"
+#include "Ao3WipsStore.h"
+#include "Ao3MarkedForLaterStore.h"
+
 #include "Ao3ViewEntry.h"  // for fnv1a
 #include "Ao3EndOfBookSeriesActivity.h"  // adjust path if needed
+#include "../home/Ao3LibraryActivity.h" // global transfer variable
 
 #include "CrossPointState.h"
 #include "EpubReaderBookmarksActivity.h"
@@ -359,11 +364,40 @@ if (showBookmarkMessage && (millis() - bookmarkMessageTime) >= ReaderUtils::BOOK
                                  }
                                  currentStatus = menu.status;
                                  statusManuallySet = true;
-                               }                               if (!result.isCancelled) {
-                                 onReaderMenuConfirm(static_cast<EpubReaderMenuActivity::MenuAction>(menu.action));
-                               }
+
+                                 // Tab 1 hooks for manual status changes via reader menu.
+                                 if (menu.status == BookStatus::NEW_CHAPTER_AVAILABLE) {
+                                  NEW_CHAPTERS_STORE.loadFromFile(); 
+                                  NEW_CHAPTERS_STORE.addBook(epub->getPath(), epub->getTitle(), epub->getAuthor());
+                                  NEW_CHAPTERS_STORE.clearEntries();
+                                  AO3_WIPS_STORE.loadFromFile();
+                                  AO3_WIPS_STORE.removeBook(epub->getPath()); 
+                                  AO3_WIPS_STORE.clearEntries();
+                                 } else if (menu.status == BookStatus::WAITING_FOR_CHAPTER || menu.status == BookStatus::FINISHED) {
+                                  NEW_CHAPTERS_STORE.loadFromFile(); 
+                                  NEW_CHAPTERS_STORE.removeByPath(epub->getPath());
+                                  NEW_CHAPTERS_STORE.clearEntries();
+                                   if (menu.status == BookStatus::WAITING_FOR_CHAPTER) {
+                                      AO3_WIPS_STORE.loadFromFile(); 
+                                      AO3_WIPS_STORE.addBook(epub->getPath(), epub->getTitle(), epub->getAuthor());
+                                      AO3_WIPS_STORE.clearEntries();
+                                    } else {
+                                      AO3_WIPS_STORE.loadFromFile();
+                                      AO3_WIPS_STORE.removeBook(epub->getPath());
+                                      AO3_WIPS_STORE.clearEntries();
+                                   }
+                                   if (menu.status != BookStatus::READING && menu.status != BookStatus::MARKED_FOR_LATER) {
+                                    MARKED_FOR_LATER_STORE.loadFromFile();
+                                    MARKED_FOR_LATER_STORE.removeByPath(epub->getPath());
+                                    MARKED_FOR_LATER_STORE.clearEntries();
+                                  }
+                                }
+                              }                               
+                              if (!result.isCancelled) {
+                                onReaderMenuConfirm(static_cast<EpubReaderMenuActivity::MenuAction>(menu.action));
+                              }
                                skipNextButtonCheck = true;
-                             });
+                            });
     }
   }
 
@@ -442,6 +476,7 @@ if (showBookmarkMessage && (millis() - bookmarkMessageTime) >= ReaderUtils::BOOK
                 Storage.removeDir((cachePath + "/sections").c_str());
 
                 currentStatus = BookStatus::NEW_CHAPTER_AVAILABLE;
+                MARKED_FOR_LATER_STORE.removeByPath(bookPath);
 
                 int firstNewChapter = currentSpineIndex;
                 if (hadAfterword && currentSpineIndex > 0) {
@@ -716,24 +751,37 @@ if (currentStatus == BookStatus::START) {
       onGoHome();
       return;
     }
+    
     case EpubReaderMenuActivity::MenuAction::DELETE_CACHE: {
-      {
+    {
         RenderLock lock(*this);
         if (epub && section) {
-          uint16_t backupSpine = currentSpineIndex;
-          uint16_t backupPage = section->currentPage;
-          uint16_t backupPageCount = section->pageCount;
-          section.reset();
-          epub->clearCache();
-          epub->setupCacheDir();
-          if (!saveProgress(backupSpine, backupPage, backupPageCount)) {
-            LOG_ERR("ERS", "Failed to save progress before cache clear");
-          }
+            uint16_t backupSpine = currentSpineIndex;
+            uint16_t backupPage = section->currentPage;
+            uint16_t backupPageCount = section->pageCount;
+            section.reset();
+
+            bool hadAo3Info = Storage.exists(
+                (epub->getCachePath() + "/ao3_library_info").c_str());
+
+            epub->clearCache();
+            epub->setupCacheDir();
+
+            // tombstone + signal reindex 
+            if (hadAo3Info) {
+                Ao3Librarian::tombstoneRecord(epub->getPath());
+                Ao3LibraryActivity::pendingTransferScan = true;
+            }
+
+            if (!saveProgress(backupSpine, backupPage, backupPageCount)) {
+                LOG_ERR("ERS", "Failed to save progress before cache clear");
+            }
         }
-      }
-      onGoHome();
-      return;
     }
+    onGoHome();
+    return;
+  }
+
     case EpubReaderMenuActivity::MenuAction::SCREENSHOT: {
       {
         RenderLock lock(*this);
@@ -1178,12 +1226,35 @@ bool EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageC
   if (!statusManuallySet) {
     if (currentStatus != BookStatus::WAITING_FOR_CHAPTER && currentStatus != BookStatus::NEW_CHAPTER_AVAILABLE) {
       if (spineIndex == 0 && currentPage == 0) {
-        currentStatus = BookStatus::START;
+        if (currentStatus != BookStatus::MARKED_FOR_LATER) {
+          currentStatus = BookStatus::START;
+        }
       } else if (spineIndex >= epub->getSpineItemsCount()) {
         if (epub->hasAo3Info() && !epub->isAo3Completed()) {
           currentStatus = BookStatus::WAITING_FOR_CHAPTER;
+          // Tab 1 exit condition: remove from New Chapters (book is WIP, not done).
+          NEW_CHAPTERS_STORE.loadFromFile();
+          NEW_CHAPTERS_STORE.removeByPath(epub->getPath());
+          NEW_CHAPTERS_STORE.clearEntries();
+          AO3_WIPS_STORE.loadFromFile();
+          AO3_WIPS_STORE.addBook(epub->getPath(), epub->getTitle(), epub->getAuthor());
+          AO3_WIPS_STORE.clearEntries();
+          MARKED_FOR_LATER_STORE.loadFromFile();
+          MARKED_FOR_LATER_STORE.removeByPath(epub->getPath());
+          MARKED_FOR_LATER_STORE.clearEntries();
         } else {
           currentStatus = BookStatus::FINISHED;
+          // Tab 1 exit condition: remove from New Chapters (completed fic).
+          NEW_CHAPTERS_STORE.loadFromFile();
+          NEW_CHAPTERS_STORE.removeByPath(epub->getPath());
+          NEW_CHAPTERS_STORE.clearEntries();
+          // Tab 2 exit condition: completed fics leave the WIPs list.
+          AO3_WIPS_STORE.loadFromFile();
+          AO3_WIPS_STORE.removeBook(epub->getPath());
+          AO3_WIPS_STORE.clearEntries();
+          MARKED_FOR_LATER_STORE.loadFromFile();
+          MARKED_FOR_LATER_STORE.removeByPath(epub->getPath());
+          MARKED_FOR_LATER_STORE.clearEntries();
           // Sync to AO3 index on exit (completed fics only)
           if (epub->hasAo3Info() && !ao3FinishedRecordWritten) {
             ao3FinishedRecordWritten = true;

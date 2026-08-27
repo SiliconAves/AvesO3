@@ -69,6 +69,7 @@ class Ao3LibraryActivity final : public Activity {
   // Page cache
   Ao3LibraryMetadata      pageCache[3];
   BookStatus              pageCacheStatus[3] = {BookStatus::START, BookStatus::START, BookStatus::START};
+  int                     pageCacheMarkedPosition[3] = {-1, -1, -1};
   std::vector<std::string> wrappedSummary[3];
   int  cachedPage  = -1;
   bool buttonsSetup = false;
@@ -78,6 +79,11 @@ class Ao3LibraryActivity final : public Activity {
   SortFilterState pendingState;
   FilterMode filterMode = FilterMode::AUTOMATIC;
   std::string ao3Folder;
+  // Full folder names for path construction in FOLDER_TREE mode only.
+  // SortFilterState fields are capped at 31 chars; these hold the real names.
+  std::string folderTreeFandom;
+  std::string folderTreeRelationship;
+  
   std::vector<uint32_t> allowedHashes;
   int overlayRowIndex = 0; // 0=Fandom, 1=Relationship, 2=Sort By, 3=Order, 4=Confirm
   int managePanelRowIndex = 0; // 0=Index New Books, 1=AO3 Library Settings
@@ -100,10 +106,10 @@ class Ao3LibraryActivity final : public Activity {
 
   void renderEntry(RenderLock& lock, int y, const ViewEntry& ve, int cacheSlot, bool selected);
   void drawAo3Square(RenderLock& lock, int x, int y, int s,
-                     char rating, char warning, bool completed, BookStatus status);
+                     char rating, char warning, bool completed, BookStatus status, int markedPosition = -1);
 
   void renderSymbol(int x, int y, int s, char c, bool tl, bool tr, bool bl, bool br, int yOffset = 0);
-  void renderStatusSymbol(int x, int y, int s, BookStatus status, bool tl, bool tr, bool bl, bool br, int yOffset = 0);
+  void renderStatusSymbol(int x, int y, int s, BookStatus status, bool tl, bool tr, bool bl, bool br, int yOffset = 0, int markedPosition = -1);
   void renderWarningSymbol(int x, int y, int s, char warning, bool tl, bool tr, bool bl, bool br, int yOffset = 0);
   void renderCompletionSymbol(int x, int y, int s, bool completed, bool tl, bool tr, bool bl, bool br, int yOffset = 0);
 

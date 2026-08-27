@@ -249,10 +249,16 @@ void Ao3LibrarySettingsActivity::render(RenderLock&&) {
     const auto pageHeight = renderer.getScreenHeight();
     const auto& metrics = UITheme::getInstance().getMetrics();
     GUI.drawHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.headerHeight}, "Library Cleanup");
-    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 10,
+    const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
+    const int blockTop = pageHeight / 2 - lineHeight * 2;
+    renderer.drawCenteredText(UI_10_FONT_ID, blockTop,
       "The cleanup process will remove");
-    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 14,
+    renderer.drawCenteredText(UI_10_FONT_ID, blockTop + lineHeight,
       "ghost books from your AO3 Library.");
+    renderer.drawCenteredText(UI_10_FONT_ID, blockTop + lineHeight * 3,
+      "This process can take up to a few minutes ");
+    renderer.drawCenteredText(UI_10_FONT_ID, blockTop + lineHeight * 4,
+      "to complete.");
     const auto labels = mappedInput.mapLabels("Cancel", "Start", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
     renderer.displayBuffer();
