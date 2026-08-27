@@ -67,6 +67,10 @@ void Ao3LibraryActivity::loadFilterMode() {
     filterMode = (fm == 1) ? FilterMode::FOLDER_TREE : FilterMode::AUTOMATIC;
     swapNavButtons = doc["swapNavButtons"] | false;
     autoIndexOnOpen_ = doc["autoIndexOnOpen"] | false;
+    if (filterMode != FilterMode::FOLDER_TREE) {
+        folderTreeFandom.clear();
+        folderTreeRelationship.clear();
+    }
 }
 
 void Ao3LibraryActivity::buildAllowedHashes(const std::string& scanPath, int maxDepth) {
@@ -459,7 +463,9 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
         if (pickerItems.size() <= 5) {
           size_t currentIdx = 0;
           for (size_t i = 0; i < pickerItems.size(); i++) {
-            if (strcmp(pendingState.fandom, pickerItems[i].c_str()) == 0) {
+            if (filterMode == FilterMode::FOLDER_TREE
+                    ? folderTreeFandom == pickerItems[i]
+                    : strcmp(pendingState.fandom, pickerItems[i].c_str()) == 0) {
               currentIdx = i;
               break;
             }
@@ -469,17 +475,27 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
             pendingState.fandom[0] = '\0';
             pendingState.relationship[0] = '\0';
             pendingState.relationshipNoneOnly = false;
+            if (filterMode == FilterMode::FOLDER_TREE) {
+                folderTreeFandom.clear();
+                folderTreeRelationship.clear();
+            }
           } else {
             strncpy(pendingState.fandom, pickerItems[currentIdx].c_str(), 31);
             pendingState.fandom[31] = '\0';
             pendingState.relationship[0] = '\0';
             pendingState.relationshipNoneOnly = false;
+            if (filterMode == FilterMode::FOLDER_TREE) {
+                folderTreeFandom = pickerItems[currentIdx];
+                folderTreeRelationship.clear();
+            }
           }
         } else {
           screenState = ScreenState::FANDOM_PICKER;
           pickerSelectedIndex = 0;
           for (size_t i = 0; i < pickerItems.size(); i++) {
-            if (strcmp(pendingState.fandom, pickerItems[i].c_str()) == 0) {
+            if (filterMode == FilterMode::FOLDER_TREE
+                    ? folderTreeFandom == pickerItems[i]
+                    : strcmp(pendingState.fandom, pickerItems[i].c_str()) == 0) {
               pickerSelectedIndex = i;
               break;
             }
@@ -493,7 +509,9 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
           pickerItems.push_back("Any");
           {
             std::vector<std::string> rels;
-            buildRelationshipList(pendingState.fandom, rels, pickerHasNone);
+            buildRelationshipList(
+            (filterMode == FilterMode::FOLDER_TREE ? folderTreeFandom.c_str() : pendingState.fandom),
+              rels, pickerHasNone);
             if (pickerHasNone) pickerItems.push_back("None");
             pickerItems.reserve(pickerItems.size() + rels.size());
             for (auto& r : rels) pickerItems.push_back(std::move(r));
@@ -503,7 +521,9 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
             if (pickerHasNone) pickerSelectedIndex = 1;
           } else if (pendingState.relationship[0] != '\0') {
             for (size_t i = 0; i < pickerItems.size(); i++) {
-              if (strcmp(pendingState.relationship, pickerItems[i].c_str()) == 0) {
+              if (filterMode == FilterMode::FOLDER_TREE
+                      ? folderTreeRelationship == pickerItems[i]
+                      : strcmp(pendingState.relationship, pickerItems[i].c_str()) == 0) {
                 pickerSelectedIndex = i;
                 break;
               }
@@ -585,28 +605,37 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
           pendingState.fandom[0] = '\0';
           pendingState.relationship[0] = '\0';
           pendingState.relationshipNoneOnly = false;
+          if (filterMode == FilterMode::FOLDER_TREE) {
+              folderTreeFandom.clear();
+              folderTreeRelationship.clear();
+          }
         } else {
           strncpy(pendingState.fandom, pickerItems[pickerSelectedIndex].c_str(), 31);
           pendingState.fandom[31] = '\0';
           pendingState.relationship[0] = '\0';
           pendingState.relationshipNoneOnly = false;
+          if (filterMode == FilterMode::FOLDER_TREE) {
+              folderTreeFandom = pickerItems[pickerSelectedIndex];
+              folderTreeRelationship.clear();
+          }
         }
-        // Advance to relationship row when returning to the filter panel
-        // (skip it if no fandom is selected, since it would be disabled)
         overlayRowIndex = (pendingState.fandom[0] != '\0') ? 1 : 2;
       } else {
         if (pickerSelectedIndex == 0) {
           pendingState.relationship[0] = '\0';
           pendingState.relationshipNoneOnly = false;
+          if (filterMode == FilterMode::FOLDER_TREE) folderTreeRelationship.clear();
         } else if (pickerSelectedIndex == 1 && pickerHasNone) {
           pendingState.relationship[0] = '\0';
           pendingState.relationshipNoneOnly = true;
+          if (filterMode == FilterMode::FOLDER_TREE) folderTreeRelationship.clear();
         } else {
           strncpy(pendingState.relationship, pickerItems[pickerSelectedIndex].c_str(), 31);
           pendingState.relationship[31] = '\0';
           pendingState.relationshipNoneOnly = false;
+          if (filterMode == FilterMode::FOLDER_TREE)
+              folderTreeRelationship = pickerItems[pickerSelectedIndex];
         }
-        // Advance to sort-by row when returning to the filter panel
         overlayRowIndex = 2;
       }
       screenState = ScreenState::FILTER_PANEL;
@@ -1318,9 +1347,13 @@ void Ao3LibraryActivity::loadSortFilterState() {
   }
 
   if (filterMode == FilterMode::FOLDER_TREE && ao3Folder.empty()) {
-      memset(activeState.fandom,       0, 32);
-      memset(activeState.relationship, 0, 32);
-      activeState.relationshipNoneOnly = false;
+    memset(activeState.fandom,       0, 32);
+    memset(activeState.relationship, 0, 32);
+    activeState.relationshipNoneOnly = false;
+  }
+  if (filterMode == FilterMode::FOLDER_TREE) {
+    folderTreeFandom       = doc["folderTreeFandom"]       | std::string(activeState.fandom);
+    folderTreeRelationship = doc["folderTreeRelationship"] | std::string(activeState.relationship);
   }
 }
 
@@ -1332,6 +1365,10 @@ void Ao3LibraryActivity::saveSortFilterState() const {
   doc["sortMode"]             = static_cast<uint8_t>(activeState.sortMode);
   doc["ascending"]            = activeState.ascending;
   doc["filterMode"]           = static_cast<uint8_t>(filterMode);
+  if (filterMode == FilterMode::FOLDER_TREE) {
+    doc["folderTreeFandom"]       = folderTreeFandom;
+    doc["folderTreeRelationship"] = folderTreeRelationship;
+  }
 
   String json;
   serializeJson(doc, json);
@@ -1460,10 +1497,10 @@ void Ao3LibraryActivity::rebuildViewEntries() {
       if (activeState.fandom[0] != '\0') {
           std::string scanPath = ao3Folder;
           if (scanPath.back() != '/') scanPath += "/";
-          scanPath += activeState.fandom;
+          scanPath += folderTreeFandom;
           if (activeState.relationship[0] != '\0') {
               scanPath += "/";
-              scanPath += activeState.relationship;
+              scanPath += folderTreeRelationship;
               buildAllowedHashes(scanPath, 0);
           } else {
               buildAllowedHashes(scanPath, 1);
@@ -1524,10 +1561,10 @@ void Ao3LibraryActivity::applyStateChange(const SortFilterState& prev, const Sor
       if (next.fandom[0] != '\0') {
           std::string scanPath = ao3Folder;
           if (scanPath.back() != '/') scanPath += "/";
-          scanPath += next.fandom;
+          scanPath += folderTreeFandom;
           if (next.relationship[0] != '\0') {
               scanPath += "/";
-              scanPath += next.relationship;
+              scanPath += folderTreeRelationship;
               buildAllowedHashes(scanPath, 0);
           } else {
               buildAllowedHashes(scanPath, 1);

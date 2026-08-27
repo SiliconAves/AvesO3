@@ -79,6 +79,11 @@ class Ao3LibraryActivity final : public Activity {
   SortFilterState pendingState;
   FilterMode filterMode = FilterMode::AUTOMATIC;
   std::string ao3Folder;
+  // Full folder names for path construction in FOLDER_TREE mode only.
+  // SortFilterState fields are capped at 31 chars; these hold the real names.
+  std::string folderTreeFandom;
+  std::string folderTreeRelationship;
+  
   std::vector<uint32_t> allowedHashes;
   int overlayRowIndex = 0; // 0=Fandom, 1=Relationship, 2=Sort By, 3=Order, 4=Confirm
   int managePanelRowIndex = 0; // 0=Index New Books, 1=AO3 Library Settings
