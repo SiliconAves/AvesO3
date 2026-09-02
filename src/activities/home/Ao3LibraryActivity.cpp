@@ -130,19 +130,18 @@ void Ao3LibraryActivity::loadViewEntries() {
 }
 
 // ---------------------------------------------------------------------------
-//  getBookStatus — reads the 7-byte progress.bin for the given cache hash
+//  getBookStatus — reads the 7 or 10 byte progress.bin for the given cache hash
 // ---------------------------------------------------------------------------
 
 BookStatus Ao3LibraryActivity::getBookStatus(uint32_t cacheHash) {
   std::string cachePath = "/.crosspoint/epub_" + std::to_string(cacheHash) + "/progress.bin";
   HalFile f;
   if (Storage.openFileForRead("AO3L", cachePath, f)) {
-    uint8_t data[7];
-    if (f.read(data, 7) >= 7) {
-      f.close();
-      return static_cast<BookStatus>(data[6]);
-    }
+    uint8_t data[11];
+    int dataSize = f.read(data, sizeof(data));
     f.close();
+    if (dataSize == 7)  return static_cast<BookStatus>(data[6]);
+    if (dataSize == 11) return static_cast<BookStatus>(data[10]);
   }
   return BookStatus::START;
 }

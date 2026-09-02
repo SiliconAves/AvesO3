@@ -72,13 +72,12 @@ void BookActionActivity::onEnter() {
 
   std::string cachePath = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(filePath));
   HalFile f;
-  if (Storage.openFileForRead("BROWSER", cachePath + "/progress.bin", f)) {
-    uint8_t data[7];
-    if (f.read(data, 7) >= 7) {
-      currentStatus = static_cast<BookStatus>(data[6]);
-      initialStatus = currentStatus;
-    }
+   if (Storage.openFileForRead("BROWSER", cachePath + "/progress.bin", f)) {
+    uint8_t data[11];
+    int dataSize = f.read(data, sizeof(data));
     f.close();
+    if (dataSize == 7)  { currentStatus = static_cast<BookStatus>(data[6]);  initialStatus = currentStatus; }
+    if (dataSize == 11) { currentStatus = static_cast<BookStatus>(data[10]); initialStatus = currentStatus; }
   }
 
   hasAo3LibraryInfo = Storage.exists((cachePath + "/ao3_library_info").c_str());
@@ -348,13 +347,16 @@ void BookActionActivity::saveStatus() {
   std::string cachePath = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(filePath));
   HalFile f;
 
-  uint8_t data[7] = {0, 0, 0, 0, 0, 0, static_cast<uint8_t>(currentStatus)};
+  // Read 10 bytes to preserve position + visibleTextOffset
+  uint8_t data[11] = {0};
+  data[10] = static_cast<uint8_t>(currentStatus);  // byte 10 = status
   if (Storage.openFileForRead("BROWSER", cachePath + "/progress.bin", f)) {
-    f.read(data, 6);
+    f.read(data, 10);  // preserve bytes 0-9 (position + visibleTextOffset)
     f.close();
   }
+  data[10] = static_cast<uint8_t>(currentStatus);  // re-apply after read
   if (Storage.openFileForWrite("BROWSER", cachePath + "/progress.bin", f)) {
-    f.write(data, 7);
+    f.write(data, 11);
     f.close();
   }
 
@@ -370,7 +372,7 @@ void BookActionActivity::saveStatus() {
   if (currentStatus != BookStatus::READING) {
     MARKED_FOR_LATER_STORE.loadFromFile();
     MARKED_FOR_LATER_STORE.removeByPath(filePath);
-    MARKED_FOR_LATER_STORE.clearEntries();
+    MARKED_FOR_LATER_STORE.saveToFile();
   }
     
   if (currentStatus == BookStatus::NEW_CHAPTER_AVAILABLE) {
@@ -378,24 +380,24 @@ void BookActionActivity::saveStatus() {
     epub.load(false, true);
     NEW_CHAPTERS_STORE.loadFromFile();
     NEW_CHAPTERS_STORE.addBook(filePath, epub.getTitle(), epub.getAuthor());
-    NEW_CHAPTERS_STORE.clearEntries();
+    NEW_CHAPTERS_STORE.saveToFile();
     AO3_WIPS_STORE.loadFromFile();
     AO3_WIPS_STORE.removeBook(filePath);
-    AO3_WIPS_STORE.clearEntries();
+    AO3_WIPS_STORE.saveToFile();
   } else if (currentStatus == BookStatus::WAITING_FOR_CHAPTER || currentStatus == BookStatus::FINISHED) {
     NEW_CHAPTERS_STORE.loadFromFile();          
     NEW_CHAPTERS_STORE.removeByPath(filePath);
-    NEW_CHAPTERS_STORE.clearEntries();
+    NEW_CHAPTERS_STORE.saveToFile();
     if (currentStatus == BookStatus::WAITING_FOR_CHAPTER) {
       Epub epub(filePath, "/.crosspoint");
       epub.load(false, true);
       AO3_WIPS_STORE.loadFromFile();
       AO3_WIPS_STORE.addBook(filePath, epub.getTitle(), epub.getAuthor());
-      AO3_WIPS_STORE.clearEntries();
+      AO3_WIPS_STORE.saveToFile();
     } else {
       AO3_WIPS_STORE.loadFromFile();
       AO3_WIPS_STORE.removeBook(filePath);
-      AO3_WIPS_STORE.clearEntries();
+      AO3_WIPS_STORE.saveToFile();
     }
   }
 }

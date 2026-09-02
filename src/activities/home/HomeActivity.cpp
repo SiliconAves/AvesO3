@@ -22,12 +22,9 @@
 #include "../../Ao3Librarian.h"
 
 int HomeActivity::getMenuItemCount() const {
-  int count = 4;  // File Browser, Recents, File transfer, Settings
+  int count = 5;  // AO3 Library, Dashboard, File Browser, File Transfer, Settings
   if (!recentBooks.empty()) {
     count += recentBooks.size();
-  }
-if (hasOpdsServers || hasAo3Library) {
-    count++;
   }
   return count;
 }
@@ -198,6 +195,32 @@ void HomeActivity::freeCoverBuffer() {
 
 void HomeActivity::loop() {
   const int menuCount = getMenuItemCount();
+  const auto& metrics = UITheme::getInstance().getMetrics();
+
+auto activateSelection = [this] {
+    if (selectorIndex < recentBooks.size()) {
+      onSelectBook(recentBooks[selectorIndex].path);
+      return;
+    }
+
+    std::vector<std::function<void()>> actions = {
+      [this] { onAo3LibraryOpen(); },   // 1. AO3 Library
+      [this] { onRecentsOpen(); },      // 2. Dashboard
+      [this] { onFileBrowserOpen(); },  // 3. Browse Files
+      [this] { onFileTransferOpen(); }, // 4. File Transfer
+      [this] { onSettingsOpen(); }      // 5. Settings
+    };
+
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
+      actions.insert(actions.begin(), [this] { onSelectBook(recentBooks[0].path); });
+    }
+
+    const int menuIndex = selectorIndex - static_cast<int>(recentBooks.size());
+    if (menuIndex >= 0 && menuIndex < static_cast<int>(actions.size())) {
+      actions[menuIndex]();
+    }
+  };
 
   if (SETTINGS.uiTheme == CrossPointSettings::LYRA_3_COVERS) {
     const int booksCount = static_cast<int>(recentBooks.size());
@@ -300,31 +323,20 @@ void HomeActivity::loop() {
     });
   }
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-// Calculate dynamic indices based on which options are available
-    int idx = 0;
-    int menuSelectedIndex = selectorIndex - static_cast<int>(recentBooks.size());
-    const int libraryHubIdx = (hasOpdsServers || hasAo3Library) ? idx++ : -1;
-    const int recentsIdx = idx++;
-    const int fileBrowserIdx = idx++;
-    const int fileTransferIdx = idx++;
-    const int settingsIdx = idx;
-
-    if (selectorIndex < recentBooks.size()) {
-      onSelectBook(recentBooks[selectorIndex].path);
-    } else if (menuSelectedIndex == fileBrowserIdx) {
-      onFileBrowserOpen();
-    } else if (menuSelectedIndex == recentsIdx) {
-      onRecentsOpen();
-    } else if (menuSelectedIndex == libraryHubIdx) {
-      onAo3LibraryOpen();
-    } else if (menuSelectedIndex == fileTransferIdx) {
-      onFileTransferOpen();
-    } else if (menuSelectedIndex == settingsIdx) {
-      onSettingsOpen();
-    }
+  // v1.5 swipe support
+  const auto swipe = mappedInput.wasSwipe();
+  if (swipe == MappedInputManager::SwipeDir::Up) {
+    selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);
+    requestUpdate();
+    return;
+  }
+  if (swipe == MappedInputManager::SwipeDir::Down) {
+    selectorIndex = ButtonNavigator::previousIndex(selectorIndex, menuCount);
+    requestUpdate();
+    return;
   }
 
+  // pin/unpin Back button behaviour
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     if (selectorIndex < static_cast<int>(recentBooks.size())) {
       const RecentBook& selectedBook = recentBooks[selectorIndex];
@@ -334,7 +346,6 @@ void HomeActivity::loop() {
         RECENT_BOOKS.togglePinned(toggledPath);
         loadRecentBooks(maxPinned);
 
-        // Track the book's new position so the selection cursor follows it
         for (int i = 0; i < static_cast<int>(recentBooks.size()); ++i) {
           if (recentBooks[i].path == toggledPath) {
             selectorIndex = i;
@@ -342,13 +353,46 @@ void HomeActivity::loop() {
           }
         }
 
-        // Invalidate the cover buffer so it re-renders in the correct order
         freeCoverBuffer();
         coverRendered = false;
-
         requestUpdate();
       }
     }
+    return;
+  }
+
+  if (!recentBooks.empty() &&
+      mappedInput.wasTapInRect(0, metrics.homeTopPadding, renderer.getScreenWidth(), metrics.homeCoverTileHeight)) {
+    selectorIndex = 0;
+    activateSelection();
+    return;
+  }
+
+  const int menuTop = metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset;
+  const int renderedMenuSelection =
+      metrics.homeContinueReadingInMenu ? selectorIndex : selectorIndex - recentBooks.size();
+  const int renderedMenuCount =
+      menuCount - (metrics.homeContinueReadingInMenu ? 0 : static_cast<int>(recentBooks.size()));
+  int menuRow = -1;
+  const auto menuTouch = mappedInput.rowTouch(menuRow, menuTop, metrics.menuRowHeight + metrics.menuSpacing,
+                                              renderedMenuCount, 0, INT32_MAX, metrics.menuRowHeight);
+  if (menuTouch != MappedInputManager::RowTouch::None) {
+    const int touchedIndex =
+        metrics.homeContinueReadingInMenu ? menuRow : menuRow + static_cast<int>(recentBooks.size());
+    if (menuTouch == MappedInputManager::RowTouch::Down) {
+      if (selectorIndex != touchedIndex) {
+        selectorIndex = touchedIndex;
+        requestUpdate();
+      }
+    } else {
+      selectorIndex = touchedIndex;
+      activateSelection();
+    }
+    return;
+  }
+
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    activateSelection();
   }
 }
 
@@ -375,21 +419,21 @@ void HomeActivity::render(RenderLock&&) {
                           recentBooks, selectorIndex, coverRendered, coverBufferStored, bufferRestored,
                           std::bind(&HomeActivity::storeCoverBuffer, this));
 
-  // Build menu items dynamically
-  std::vector<const char*> menuItems = {tr(STR_MENU_RECENT_BOOKS), tr(STR_BROWSE_FILES), tr(STR_FILE_TRANSFER),
-                                        tr(STR_SETTINGS_TITLE)};
-  std::vector<UIIcon> menuIcons = {Recent, Folder, Transfer, Settings};
-
-  if (hasOpdsServers && hasAo3Library) {
-    menuItems.insert(menuItems.begin(), "Libraries");
-    menuIcons.insert(menuIcons.begin(), Library);
-  } else if (hasOpdsServers) {
-    menuItems.insert(menuItems.begin(), tr(STR_OPDS_BROWSER));
-    menuIcons.insert(menuIcons.begin(), Library);
-  } else if (hasAo3Library) {
-    menuItems.insert(menuItems.begin(), "AO3 Library");
-    menuIcons.insert(menuIcons.begin(), Library);
-  }
+// Build menu items dynamically (custom order)
+  std::vector<const char*> menuItems = {
+    "AO3 Library",
+    "Dashboard",
+    tr(STR_BROWSE_FILES),
+    tr(STR_FILE_TRANSFER),
+    tr(STR_SETTINGS_TITLE)
+  };
+  std::vector<UIIcon> menuIcons = {
+    Library,
+    Recent,
+    Folder,
+    Transfer,
+    Settings
+  };
 
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
     // Insert Continue Reading at the top if enabled in theme

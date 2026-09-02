@@ -65,11 +65,11 @@ BookStatus RecentBooksActivity::getBookStatus(const std::string& path) {
   BookStatus status = BookStatus::START;
   
   if (Storage.openFileForRead("RBA", cachePath + "/progress.bin", f)) {
-    uint8_t data[7];
-    if (f.read(data, 7) >= 7) {
-      status = static_cast<BookStatus>(data[6]);
-    }
+    uint8_t data[11];
+    int dataSize = f.read(data, sizeof(data));
     f.close();
+    if (dataSize == 7)  status = static_cast<BookStatus>(data[6]);   // legacy
+    if (dataSize == 11) status = static_cast<BookStatus>(data[10]);  // new
   }
   return status;
 }
@@ -236,17 +236,77 @@ void RecentBooksActivity::loop() {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  //  Touch input (X4 Pro only — gracefully ignored on hardware without touch)
+  // ---------------------------------------------------------------------------
+  if (mappedInput.hasTouch()) {
+    const auto& metrics     = UITheme::getInstance().getMetrics();
+    const int topPadding    = metrics.topPadding / 2;
+    const int tabBarTop     = topPadding + metrics.headerHeight;
+    const int contentTop    = tabBarTop + metrics.tabBarHeight + 10;
+    const int contentHeight = renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight;
+
+    // Tab bar: tap any tab to switch to it directly
+    int tappedTab = 0;
+    const int tabStep = renderer.getScreenWidth() / TAB_COUNT;
+    const auto tabTouch = mappedInput.colTouch(
+        tappedTab, 0, tabStep, TAB_COUNT,
+        tabBarTop, tabBarTop + metrics.tabBarHeight, tabStep);
+    if (tabTouch == MappedInputManager::RowTouch::Tap) {
+      selectedTabIndex  = tappedTab;
+      selectedItemIndex = 0;
+      visibleStatusCache.clear();
+      requestUpdate();
+      return;
+    }
+
+    // List: tap an item to open it (all tabs)
+    if (listSize > 0) {
+      int tappedItem = 0;
+      if (mappedInput.wasListItemTapped(tappedItem, listSize,
+                                        std::max(0, selectedItemIndex - 1),
+                                        contentTop, contentHeight, true)) {
+        selectedItemIndex = tappedItem + 1;
+        std::string path;
+        if      (selectedTabIndex == TAB_MARKED_FOR_LATER && tappedItem < (int)markedForLater.size())
+          path = markedForLater[tappedItem].path;
+        else if (selectedTabIndex == TAB_NEW_CHAPTERS     && tappedItem < (int)newChapters.size())
+          path = newChapters[tappedItem].path;
+        else if (selectedTabIndex == TAB_WIPS             && tappedItem < (int)wipsEntries.size())
+          path = wipsEntries[tappedItem].path;
+        else if (selectedTabIndex == TAB_RECENT_BOOKS     && tappedItem < (int)recentBooks.size())
+          path = recentBooks[tappedItem].path;
+        if (!path.empty()) {
+          onSelectBook(path);
+          return;
+        }
+      }
+
+      // Swipe up/down to scroll the list
+      const auto swipe = mappedInput.wasSwipe();
+      if (swipe == MappedInputManager::SwipeDir::Up) {
+        selectedItemIndex = std::min(listSize, selectedItemIndex + 1);
+        requestUpdate();
+        return;
+      }
+      if (swipe == MappedInputManager::SwipeDir::Down) {
+        selectedItemIndex = std::max(1, selectedItemIndex - 1);
+        requestUpdate();
+        return;
+      }
+    }
+  }
+
   // Confirm in list (index > 0): open selected book.
   // Uses wasReleased to avoid triggering after a long-press.
   if (selectedItemIndex > 0 &&
       mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    
     if (selectedTabIndex == TAB_MARKED_FOR_LATER) {
       const int idx = selectedItemIndex - 1;
       if (idx >= 0 && idx < static_cast<int>(markedForLater.size())) {
         onSelectBook(markedForLater[idx].path);
         return;
-     }
+      }
     } else if (selectedTabIndex == TAB_NEW_CHAPTERS) {
       const int idx = selectedItemIndex - 1;
       if (idx >= 0 && idx < static_cast<int>(newChapters.size())) {
@@ -276,7 +336,6 @@ void RecentBooksActivity::loop() {
     } else {
       onGoHome();
     }
-    return;
   }
 
   // Side short press: navigate one row up/down in the current list.
@@ -365,14 +424,17 @@ void RecentBooksActivity::revertMarkedForLaterStatus(const std::string& path) {
   const std::string cachePath =
       "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(path));
   const std::string progressPath = cachePath + "/progress.bin";
-  uint8_t data[7] = {0, 0, 0, 0, 0, 0, 0};  // byte 6 = BookStatus::START
+
+  // Read up to 10 bytes to preserve position + visibleTextOffset
+  uint8_t data[11] = {0};  // byte 10 = BookStatus::START
   HalFile f;
   if (Storage.openFileForRead("RBA", progressPath, f)) {
-    f.read(data, 6);  // preserve position bytes
+    f.read(data, 10);  // preserve bytes 0-9 (position + visibleTextOffset)
     f.close();
   }
+  // data[10] stays 0 = BookStatus::START
   if (Storage.openFileForWrite("RBA", progressPath, f)) {
-    f.write(data, 7);
+    f.write(data, 11);
     f.close();
   }
 }
@@ -385,19 +447,22 @@ void RecentBooksActivity::launchDashboardMenu(const std::string& path,
   auto handler = [this, path, savedTab](const ActivityResult& res) {
     if (const auto* r = std::get_if<BookActionResult>(&res.data)) {
 
-      if (r->removedFromList) {
+if (r->removedFromList) {
         switch (savedTab) {
           case TAB_MARKED_FOR_LATER:
             MARKED_FOR_LATER_STORE.removeByPath(path);
+            MARKED_FOR_LATER_STORE.saveToFile(); // Persist removal to disk
             revertMarkedForLaterStatus(path);
             markedForLater = MARKED_FOR_LATER_STORE.getEntries();
             break;
           case TAB_NEW_CHAPTERS:
             NEW_CHAPTERS_STORE.removeByPath(path);
+            NEW_CHAPTERS_STORE.saveToFile(); // Persist removal to disk[cite: 4]
             newChapters = NEW_CHAPTERS_STORE.getEntries();
             break;
           case TAB_WIPS:
             AO3_WIPS_STORE.removeBook(path);
+            AO3_WIPS_STORE.saveToFile(); // Persist removal to disk[cite: 4]
             wipsEntries = AO3_WIPS_STORE.getEntries();
             break;
         }

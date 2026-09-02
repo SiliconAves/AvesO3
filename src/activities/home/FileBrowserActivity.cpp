@@ -208,8 +208,12 @@ void FileBrowserActivity::loop() {
 
   const int pathReserved = renderer.getLineHeight(SMALL_FONT_ID) + UITheme::getInstance().getMetrics().verticalSpacing;
   const int pageItems = UITheme::getNumberOfItemsPerPage(renderer, true, false, true, false, pathReserved);
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
+  const int contentHeight =
+      renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing - pathReserved;
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+  auto activateSelected = [this] {
     if (lockNextConfirmRelease) {
       lockNextConfirmRelease = false;
       return;
@@ -238,6 +242,11 @@ if (mode == Mode::Books && mappedInput.getHeldTime() >= GO_HOME_MS) {
 if (isDirectory) {
         // === DELETE DIRECTORY ===
         auto handler = [this, fullPath](const ActivityResult& res) {
+          // Adopted from v1.5.0: The confirmation popup acts on button press; if that button is still
+          // held when we resume, swallow its release so it doesn't also act here.
+          lockLongPressBack = mappedInput.isPressed(MappedInputManager::Button::Back);
+          lockNextConfirmRelease = mappedInput.isPressed(MappedInputManager::Button::Confirm);
+          
           if (!res.isCancelled) {
             LOG_DBG("FileBrowser", "Attempting to delete directory: %s", fullPath.c_str());
             if (removeDirFile(fullPath)) {
@@ -261,6 +270,10 @@ if (isDirectory) {
       } else {
         // === OPEN BOOK ACTION MENU ===
         auto handler = [this, fullPath, entry](const ActivityResult& res) {
+          // Adopted from v1.5.0: Apply the input lock fix when returning from custom BookActionActivity
+          lockLongPressBack = mappedInput.isPressed(MappedInputManager::Button::Back);
+          lockNextConfirmRelease = mappedInput.isPressed(MappedInputManager::Button::Confirm);
+
           if (const auto* actionRes = std::get_if<BookActionResult>(&res.data)) {
             if (actionRes->modified) {
               if (actionRes->deleted) {
@@ -312,6 +325,19 @@ if (isDirectory) {
       }
     }
     return;
+  };
+
+  int touchSel = static_cast<int>(selectorIndex);
+  const auto listTouch = handleListTouch(touchSel, static_cast<int>(files.size()), contentTop, contentHeight, false);
+  if (listTouch != ListTouchResult::None) {
+    selectorIndex = static_cast<size_t>(touchSel);
+    if (listTouch == ListTouchResult::Activated) activateSelected();
+    return;
+  }
+
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    activateSelected();
+    return;
   }
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
@@ -342,6 +368,18 @@ if (isDirectory) {
   }
 
   int listSize = static_cast<int>(files.size());
+  const auto swipe = mappedInput.wasSwipe();
+  if (swipe == MappedInputManager::SwipeDir::Up) {
+    selectorIndex = ButtonNavigator::nextPageIndex(static_cast<int>(selectorIndex), listSize, pageItems);
+    requestUpdate();
+    return;
+  }
+  if (swipe == MappedInputManager::SwipeDir::Down) {
+    selectorIndex = ButtonNavigator::previousPageIndex(static_cast<int>(selectorIndex), listSize, pageItems);
+    requestUpdate();
+    return;
+  }
+
   buttonNavigator.onNextRelease([this, listSize] {
     selectorIndex = ButtonNavigator::nextIndex(static_cast<int>(selectorIndex), listSize);
     requestUpdate();
@@ -385,7 +423,7 @@ std::string getFileName(std::string filename) {
   return filename.substr(0, pos);
 }
 
-std::string getFileExtension(std::string filename) {
+std::string getFileExtension(const std::string& filename) {
   if (filename.back() == '/') {
     return "";
   }
@@ -403,11 +441,15 @@ BookStatus FileBrowserActivity::getBookStatus(const std::string& path) {
   HalFile f;
   BookStatus status = BookStatus::START;
   if (Storage.openFileForRead("BROWSER", cachePath + "/progress.bin", f)) {
-    uint8_t data[7];
-    if (f.read(data, 7) >= 7) {
+    uint8_t data[11];
+    int dataSize = f.read(data, sizeof(data));
+    f.close();
+
+    if (dataSize == 11) {
+      status = static_cast<BookStatus>(data[10]);
+    } else if (dataSize == 7) {
       status = static_cast<BookStatus>(data[6]);
     }
-    f.close();
   }
   return status;
 }
