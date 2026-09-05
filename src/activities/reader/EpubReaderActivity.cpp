@@ -757,6 +757,22 @@ if (showBookmarkMessage && (millis() - bookmarkMessageTime) >= ReaderUtils::BOOK
         return;
       }
     }
+    const bool tiltNext = SETTINGS.tiltPageTurn && halTiltSensor.wasTiltedForward();
+    const bool tiltPrev = SETTINGS.tiltPageTurn && halTiltSensor.wasTiltedBack();
+    auto [prevTrig, nextTrig, fromTilt] = ReaderUtils::detectPageTurn(mappedInput);
+    const bool nextTriggered = nextTrig || touch.next || tiltNext || mappedInput.wasReleased(MappedInputManager::Button::PageForward) ||
+                               mappedInput.wasReleased(MappedInputManager::Button::Right);
+    const bool prevTriggered = prevTrig || touch.prev || tiltPrev || mappedInput.wasReleased(MappedInputManager::Button::PageBack) ||
+                               mappedInput.wasReleased(MappedInputManager::Button::Left);
+    if (nextTriggered) {
+      onGoHome();
+    } else if (prevTriggered) {
+      currentSpineIndex = epub->getSpineItemsCount() - 1;
+      nextPageNumber = 0;
+      pendingPageJump = std::numeric_limits<uint16_t>::max();
+      requestUpdate();
+    }
+    return;
   }
 
   // Handle short power button press for footnotes
@@ -796,23 +812,6 @@ if (showBookmarkMessage && (millis() - bookmarkMessageTime) >= ReaderUtils::BOOK
     return;
   }
 
-  // At end of book: handle page-turn navigation.
-  // AO3 books have their own EOB screen; non-AO3 books use endOfBookOptions.
-  if (currentSpineIndex > 0 && currentSpineIndex >= epub->getSpineItemsCount()) {
-    if (!epub->hasAo3Info() && endOfBookOptions.menuActive()) {
-      // Absorb page-turn triggers while the suggestion menu is active
-      return;
-    }
-    if (nextTriggered) {
-      onGoHome();
-    } else {
-      currentSpineIndex = epub->getSpineItemsCount() - 1;
-      nextPageNumber = 0;
-      pendingPageJump = std::numeric_limits<uint16_t>::max();
-      requestUpdate();
-    }
-    return;
-  }
 
   const unsigned long heldMs = (touch.prev || touch.next) ? touch.heldMs : mappedInput.getHeldTime();
   const bool longPress = !fromTilt && heldMs > ReaderUtils::SKIP_HOLD_MS;
@@ -1368,10 +1367,12 @@ void EpubReaderActivity::render(RenderLock&& lock) {
       endOfBookOptions.render(renderer, mappedInput);
     }
 
-    renderer.displayBuffer();
+    ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh, false);
     automaticPageTurnActive = false;
     showPendingSyncSaveError();
-    saveProgress(currentSpineIndex, 0, 0);
+    if (lastSavedSpineIndex != currentSpineIndex) {
+      saveProgress(currentSpineIndex, 0, 0);
+    }
     return;
   }
 
