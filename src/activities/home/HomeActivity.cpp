@@ -132,8 +132,9 @@ void HomeActivity::onEnter() {
 
   hasOpdsServers = OPDS_STORE.hasServers();
 
-hasAo3Library = true; 
+  hasAo3Library = true; 
 
+  backPressSeen = false;
   selectorIndex = 0;
   recentsLoaded = false;
   recentsLoading = false;
@@ -336,26 +337,33 @@ auto activateSelection = [this] {
     return;
   }
 
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    backPressSeen = true;
+  }
+
   // pin/unpin Back button behaviour
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    if (selectorIndex < static_cast<int>(recentBooks.size())) {
-      const RecentBook& selectedBook = recentBooks[selectorIndex];
-      const int maxPinned = UITheme::getInstance().getMetrics().homeRecentBooksCount;
-      if (selectedBook.pinned || RECENT_BOOKS.getPinnedCount() < maxPinned) {
-        std::string toggledPath = selectedBook.path;
-        RECENT_BOOKS.togglePinned(toggledPath);
-        loadRecentBooks(maxPinned);
+    if (backPressSeen) {
+      backPressSeen = false;
+      if (selectorIndex < static_cast<int>(recentBooks.size())) {
+        const RecentBook& selectedBook = recentBooks[selectorIndex];
+        const int maxPinned = UITheme::getInstance().getMetrics().homeRecentBooksCount;
+        if (selectedBook.pinned || RECENT_BOOKS.getPinnedCount() < maxPinned) {
+          std::string toggledPath = selectedBook.path;
+          RECENT_BOOKS.togglePinned(toggledPath);
+          loadRecentBooks(maxPinned);
 
-        for (int i = 0; i < static_cast<int>(recentBooks.size()); ++i) {
-          if (recentBooks[i].path == toggledPath) {
-            selectorIndex = i;
-            break;
+          for (int i = 0; i < static_cast<int>(recentBooks.size()); ++i) {
+            if (recentBooks[i].path == toggledPath) {
+              selectorIndex = i;
+              break;
+            }
           }
-        }
 
-        freeCoverBuffer();
-        coverRendered = false;
-        requestUpdate();
+          freeCoverBuffer();
+          coverRendered = false;
+          requestUpdate();
+        }
       }
     }
     return;

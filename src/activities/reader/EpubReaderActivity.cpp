@@ -674,41 +674,42 @@ if (showBookmarkMessage && (millis() - bookmarkMessageTime) >= ReaderUtils::BOOK
   //  Back button
   // ---------------------------------------------------------------------------
 
-  // Long-press BACK (1s+): conditional return — AO3 library if opened from there,
-  // otherwise file browser at the epub's folder.
-  if (mappedInput.isPressed(MappedInputManager::Button::Back) &&
-      mappedInput.getHeldTime() >= ReaderUtils::GO_HOME_MS) {
-    if (ao3LibraryReturnIndex_ >= 0) {
-      activityManager.goToAo3Library(static_cast<size_t>(ao3LibraryReturnIndex_));
-    } else {
-      activityManager.goToFileBrowser(epub ? epub->getPath() : "");
-    }
-    return;
-  }
+  const bool backPressed = mappedInput.isPressed(MappedInputManager::Button::Back);
+  const bool backReleased = mappedInput.wasReleased(MappedInputManager::Button::Back);
+  const unsigned long backHeldTime = mappedInput.getHeldTime();
 
   // Short-press BACK: footnote restore takes priority over everything else
-  if (footnoteDepth > 0 &&
-      mappedInput.wasReleased(MappedInputManager::Button::Back) &&
-      mappedInput.getHeldTime() < ReaderUtils::GO_BACK_OR_HOME_MS) {
+  if (footnoteDepth > 0 && backReleased && backHeldTime < ReaderUtils::GO_BACK_OR_HOME_MS) {
     restoreSavedPosition();
     return;
   }
 
   // Short-press BACK at EOB with AO3 series: open series view instead of navigating away
-  if (currentSpineIndex >= epub->getSpineItemsCount() && ao3HasSeries &&
-      mappedInput.wasReleased(MappedInputManager::Button::Back) &&
-      mappedInput.getHeldTime() < ReaderUtils::GO_BACK_OR_HOME_MS) {
+  if (currentSpineIndex >= epub->getSpineItemsCount() && ao3HasSeries && backReleased &&
+      backHeldTime < ReaderUtils::GO_BACK_OR_HOME_MS) {
     launchAo3SeriesActivity();
     return;
   }
 
-  // Short-press BACK (normal): delegate to handleBackNavigation which respects
-  // the backShortToFileBrowser setting (go home vs go to file browser).
-  if (ReaderUtils::handleBackNavigation(mappedInput, activityManager,
-                                         epub ? epub->getPath().c_str() : "",
-                                         {this, [](void* ctx) {
-                                           static_cast<EpubReaderActivity*>(ctx)->onGoHome();
-                                         }})) {
+  const bool eobSeriesActive = (currentSpineIndex >= epub->getSpineItemsCount()) && ao3HasSeries;
+
+  // Long-press BACK (1s+):
+  if (backPressed && backHeldTime >= ReaderUtils::GO_HOME_MS) {
+    if (SETTINGS.backShortToFileBrowser && !eobSeriesActive) {
+      onGoHome();
+    } else {
+      returnToLibraryOrBrowser();
+    }
+    return;
+  }
+
+  // Short-press BACK (< 1s):
+  if (backReleased && backHeldTime < ReaderUtils::GO_BACK_OR_HOME_MS) {
+    if (SETTINGS.backShortToFileBrowser) {
+      returnToLibraryOrBrowser();
+    } else {
+      onGoHome();
+    }
     return;
   }
 
@@ -2446,4 +2447,12 @@ void EpubReaderActivity::launchAo3SeriesActivity() {
       seriesHash,
       originHash,
       originPath));
+}
+
+void EpubReaderActivity::returnToLibraryOrBrowser() {
+  if (ao3LibraryReturnIndex_ >= 0) {
+    activityManager.goToAo3Library(static_cast<size_t>(ao3LibraryReturnIndex_));
+  } else {
+    activityManager.goToFileBrowser(epub ? epub->getPath() : "");
+  }
 }
