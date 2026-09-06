@@ -118,6 +118,7 @@ void Ao3LibraryActivity::buildAllowedHashes(const std::string& scanPath, int max
 void Ao3LibraryActivity::onExit() {
     Activity::onExit();
     Ao3TagMergeStore::unload();
+    MARKED_FOR_LATER_STORE.clearEntries();
 }
 
 // ---------------------------------------------------------------------------

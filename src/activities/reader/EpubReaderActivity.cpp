@@ -734,7 +734,9 @@ if (showBookmarkMessage && (millis() - bookmarkMessageTime) >= ReaderUtils::BOOK
                 Storage.removeDir((cachePath + "/sections").c_str());
 
                 currentStatus = BookStatus::NEW_CHAPTER_AVAILABLE;
+                MARKED_FOR_LATER_STORE.loadFromFile();
                 MARKED_FOR_LATER_STORE.removeByPath(bookPath);
+                MARKED_FOR_LATER_STORE.clearEntries();
 
                 int firstNewChapter = currentSpineIndex;
                 if (hadAfterword && currentSpineIndex > 0) {

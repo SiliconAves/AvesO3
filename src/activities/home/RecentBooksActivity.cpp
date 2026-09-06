@@ -136,6 +136,9 @@ void RecentBooksActivity::onExit() {
   newChapters.clear();
   wipsEntries.clear();
   recentBooks.clear();
+  MARKED_FOR_LATER_STORE.clearEntries();
+  NEW_CHAPTERS_STORE.clearEntries();     
+  AO3_WIPS_STORE.clearEntries(); 
 }
 
 // ---------------------------------------------------------------------------
