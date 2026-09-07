@@ -10,6 +10,7 @@
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
 #include "components/icons/cover.h"
+#include "components/icons/coverao3.h"
 #include "fontIds.h"
 
 // Internal constants
@@ -65,14 +66,17 @@ void Lyra3CoversTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, con
         // Draw either way
         renderer.drawRect(tileX + hPaddingInSelection, tileY + hPaddingInSelection, tileWidth - 2 * hPaddingInSelection,
                           Lyra3CoversMetrics::values.homeCoverHeight, true);
-
+   
+        // Draw empty cover
         if (!hasCover) {
-          // Render empty cover
           renderer.fillRect(tileX + hPaddingInSelection,
-                            tileY + hPaddingInSelection + (Lyra3CoversMetrics::values.homeCoverHeight / 3),
-                            tileWidth - 2 * hPaddingInSelection, 2 * Lyra3CoversMetrics::values.homeCoverHeight / 3,
-                            true);
-          renderer.drawIcon(CoverIcon, tileX + hPaddingInSelection + 24, tileY + hPaddingInSelection + 24, 32);
+                  tileY + hPaddingInSelection + (Lyra3CoversMetrics::values.homeCoverHeight / 3),
+                  tileWidth - 2 * hPaddingInSelection, 2 * Lyra3CoversMetrics::values.homeCoverHeight / 3,
+                  true);
+          const bool hasAo3Info = Storage.exists(
+          ("/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(recentBooks[i].path)) + "/ao3_library_info").c_str());
+          const uint8_t* icon = hasAo3Info ? Ao3Icon : CoverIcon;
+          renderer.drawIcon(icon, tileX + hPaddingInSelection + 24, tileY + hPaddingInSelection + 24, 32);
         }
       }
 

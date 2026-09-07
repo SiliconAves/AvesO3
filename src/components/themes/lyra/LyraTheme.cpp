@@ -17,6 +17,7 @@
 #include "components/icons/book24.h"
 #include "components/icons/bookmark.h"
 #include "components/icons/cover.h"
+#include "components/icons/coverao3.h"
 #include "components/icons/file24.h"
 #include "components/icons/folder.h"
 #include "components/icons/folder24.h"
@@ -557,11 +558,15 @@ void LyraTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
                         LyraMetrics::values.homeCoverHeight, true);
 
       if (!hasCover) {
-        // Render empty cover
+        // Draw empty cover
         renderer.fillRect(tileX + hPaddingInSelection,
                           tileY + hPaddingInSelection + (LyraMetrics::values.homeCoverHeight / 3), coverWidth,
                           2 * LyraMetrics::values.homeCoverHeight / 3, true);
-        renderer.drawIcon(CoverIcon, tileX + hPaddingInSelection + 24, tileY + hPaddingInSelection + 24, 32);
+        const bool hasAo3Info = Storage.exists(
+            ("/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(book.path)) +
+            "/ao3_library_info").c_str());
+        renderer.drawIcon(hasAo3Info ? Ao3Icon : CoverIcon,
+                    tileX + hPaddingInSelection + 24, tileY + hPaddingInSelection + 24, 32);
       }
 
       coverBufferStored = storeCoverBuffer();

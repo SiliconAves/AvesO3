@@ -12,6 +12,7 @@
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
 #include "components/icons/cover.h"
+#include "components/icons/coverao3.h"
 #include "fontIds.h"
 
 namespace {
@@ -175,10 +176,14 @@ void RoundedRaffTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, con
                                RoundedRaffMetrics::values.homeCoverHeight, 1, kCoverRadius, true);
 
       if (!hasCover) {
-        // Render empty cover
+        // draw empty cover
         renderer.fillRect(tileX + (tileWidth - coverWidth) / 2, imgY + (RoundedRaffMetrics::values.homeCoverHeight / 3),
                           coverWidth, 2 * RoundedRaffMetrics::values.homeCoverHeight / 3, true);
-        renderer.drawIcon(CoverIcon, tileX + (tileWidth - coverWidth) / 2 + 24, imgY + 24, 32);
+        const bool hasAo3Info = Storage.exists(
+            ("/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(book.path)) +
+            "/ao3_library_info").c_str());
+        renderer.drawIcon(hasAo3Info ? Ao3Icon : CoverIcon,
+                          tileX + (tileWidth - coverWidth) / 2 + 24, imgY + 24, 32);
         renderer.maskRoundedRectOutsideCorners(tileX + (tileWidth - coverWidth) / 2, imgY, coverWidth,
                                                RoundedRaffMetrics::values.homeCoverHeight, kCoverRadius,
                                                Color::LightGray);
