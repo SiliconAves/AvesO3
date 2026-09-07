@@ -27,10 +27,18 @@ int HomeActivity::getMenuItemCount() const {
   if (menuPage == 0) {
     menuItems = 5;
     if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
-      menuItems += 1;
+      menuItems += 1;  // Continue Reading occupies slot 0; no separate book section
     }
   } else {
     menuItems = getPage1ItemCount();
+    if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
+      menuItems += 1;  // Continue Reading is also prepended on page 1
+    }
+  }
+  // When Continue Reading is embedded in the menu there is no separate book
+  // section, so do not add recentBooks.size() again.
+  if (metrics.homeContinueReadingInMenu) {
+    return menuItems;
   }
   return menuItems + static_cast<int>(recentBooks.size());
 }
@@ -222,6 +230,10 @@ auto activateSelection = [this] {
   const int menuIndex = selectorIndex - static_cast<int>(recentBooks.size());
 
   if (menuPage == 1) {
+    // NOTE: selectorIndex=0 (Continue Reading) is already caught by the
+    // early-return above (selectorIndex < recentBooks.size()). Do NOT prepend
+    // it here — that would shift OPDS Browser to index 1 while menuIndex for
+    // selectorIndex=1 computes to 0, causing OPDS to open the book instead.
     std::vector<std::function<void()>> page1Actions;
     if (hasOpdsServers) page1Actions.push_back([this] { onOpdsBrowserOpen(); });
     // future page-1 entries go here
@@ -240,10 +252,10 @@ auto activateSelection = [this] {
     [this] { onSettingsOpen(); }
   };
 
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
-    page0Actions.insert(page0Actions.begin(), [this] { onSelectBook(recentBooks[0].path); });
-  }
+  // NOTE: when homeContinueReadingInMenu is true, selectorIndex=0 is already
+  // handled by the early-return above (selectorIndex < recentBooks.size()).
+  // Do NOT prepend a Continue Reading action here – that would shift every
+  // subsequent action one slot forward and break them all.
 
   if (menuIndex >= 0 && menuIndex < static_cast<int>(page0Actions.size())) {
     page0Actions[menuIndex]();
@@ -392,7 +404,12 @@ auto activateSelection = [this] {
         const int targetPage = (menuPage == 0) ? 1 : 0;
         if (targetPage == 0 || getPage1ItemCount() > 0) {
           menuPage = targetPage;
-          selectorIndex = booksCount;
+          const auto& switchMetrics = UITheme::getInstance().getMetrics();
+          // In RoundedRaff (homeContinueReadingInMenu) there is no separate
+          // book section; the first menu slot is always Continue Reading.
+          selectorIndex = (switchMetrics.homeContinueReadingInMenu && !recentBooks.empty())
+                              ? 0
+                              : booksCount;
           requestUpdate();
         }
       }
@@ -469,6 +486,12 @@ void HomeActivity::render(RenderLock&&) {
       menuIcons.insert(menuIcons.begin(), Book);
     }
   } else {
+    // Page 1: prepend Continue Reading first (same as page 0) so the user
+    // always sees it as the first entry regardless of which page they're on.
+    if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
+      menuItems.push_back(tr(STR_CONTINUE_READING));
+      menuIcons.push_back(Book);
+    }
     if (hasOpdsServers) {
       menuItems.push_back("OPDS Browser");
       menuIcons.push_back(Library); // swap for dedicated icon later
