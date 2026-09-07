@@ -22,13 +22,23 @@
 #include "../../Ao3Librarian.h"
 
 int HomeActivity::getMenuItemCount() const {
-  int count = 4;  // File Browser, Recents, File transfer, Settings
-  if (!recentBooks.empty()) {
-    count += recentBooks.size();
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  int menuItems = 0;
+  if (menuPage == 0) {
+    menuItems = 5;
+    if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
+      menuItems += 1;
+    }
+  } else {
+    menuItems = getPage1ItemCount();
   }
-if (hasOpdsServers || hasAo3Library) {
-    count++;
-  }
+  return menuItems + static_cast<int>(recentBooks.size());
+}
+
+int HomeActivity::getPage1ItemCount() const {
+  int count = 0;
+  if (hasOpdsServers) count++;
+  // future page-1 entries go here
   return count;
 }
 
@@ -133,10 +143,13 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
 void HomeActivity::onEnter() {
   Activity::onEnter();
 
-  hasOpdsServers = OPDS_STORE.hasServers();
+  // hasOpdsServers = OPDS_STORE.hasServers();
+  hasOpdsServers = true;
+  menuPage = 0; // Reset to first menu page
 
-hasAo3Library = true; 
+  hasAo3Library = true; 
 
+  backPressSeen = false;
   selectorIndex = 0;
   recentsLoaded = false;
   recentsLoading = false;
@@ -198,6 +211,44 @@ void HomeActivity::freeCoverBuffer() {
 
 void HomeActivity::loop() {
   const int menuCount = getMenuItemCount();
+  const auto& metrics = UITheme::getInstance().getMetrics();
+
+auto activateSelection = [this] {
+  if (selectorIndex < static_cast<int>(recentBooks.size())) {
+    onSelectBook(recentBooks[selectorIndex].path);
+    return;
+  }
+
+  const int menuIndex = selectorIndex - static_cast<int>(recentBooks.size());
+
+  if (menuPage == 1) {
+    std::vector<std::function<void()>> page1Actions;
+    if (hasOpdsServers) page1Actions.push_back([this] { onOpdsBrowserOpen(); });
+    // future page-1 entries go here
+    if (menuIndex >= 0 && menuIndex < static_cast<int>(page1Actions.size())) {
+      page1Actions[menuIndex]();
+    }
+    return;
+  }
+
+  // Page 0
+  std::vector<std::function<void()>> page0Actions = {
+    [this] { onAo3LibraryOpen(); },
+    [this] { onRecentsOpen(); },
+    [this] { onFileBrowserOpen(); },
+    [this] { onFileTransferOpen(); },
+    [this] { onSettingsOpen(); }
+  };
+
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
+    page0Actions.insert(page0Actions.begin(), [this] { onSelectBook(recentBooks[0].path); });
+  }
+
+  if (menuIndex >= 0 && menuIndex < static_cast<int>(page0Actions.size())) {
+    page0Actions[menuIndex]();
+  }
+};
 
   if (SETTINGS.uiTheme == CrossPointSettings::LYRA_3_COVERS) {
     const int booksCount = static_cast<int>(recentBooks.size());
@@ -300,55 +351,87 @@ void HomeActivity::loop() {
     });
   }
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-// Calculate dynamic indices based on which options are available
-    int idx = 0;
-    int menuSelectedIndex = selectorIndex - static_cast<int>(recentBooks.size());
-    const int libraryHubIdx = (hasOpdsServers || hasAo3Library) ? idx++ : -1;
-    const int recentsIdx = idx++;
-    const int fileBrowserIdx = idx++;
-    const int fileTransferIdx = idx++;
-    const int settingsIdx = idx;
+  // v1.5 swipe support
+  const auto swipe = mappedInput.wasSwipe();
+  if (swipe == MappedInputManager::SwipeDir::Up) {
+    selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);
+    requestUpdate();
+    return;
+  }
+  if (swipe == MappedInputManager::SwipeDir::Down) {
+    selectorIndex = ButtonNavigator::previousIndex(selectorIndex, menuCount);
+    requestUpdate();
+    return;
+  }
 
-    if (selectorIndex < recentBooks.size()) {
-      onSelectBook(recentBooks[selectorIndex].path);
-    } else if (menuSelectedIndex == fileBrowserIdx) {
-      onFileBrowserOpen();
-    } else if (menuSelectedIndex == recentsIdx) {
-      onRecentsOpen();
-    } else if (menuSelectedIndex == libraryHubIdx) {
-      onAo3LibraryOpen();
-    } else if (menuSelectedIndex == fileTransferIdx) {
-      onFileTransferOpen();
-    } else if (menuSelectedIndex == settingsIdx) {
-      onSettingsOpen();
-    }
+    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+    backPressSeen = true;
   }
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    if (selectorIndex < static_cast<int>(recentBooks.size())) {
-      const RecentBook& selectedBook = recentBooks[selectorIndex];
-      const int maxPinned = UITheme::getInstance().getMetrics().homeRecentBooksCount;
-      if (selectedBook.pinned || RECENT_BOOKS.getPinnedCount() < maxPinned) {
-        std::string toggledPath = selectedBook.path;
-        RECENT_BOOKS.togglePinned(toggledPath);
-        loadRecentBooks(maxPinned);
-
-        // Track the book's new position so the selection cursor follows it
-        for (int i = 0; i < static_cast<int>(recentBooks.size()); ++i) {
-          if (recentBooks[i].path == toggledPath) {
-            selectorIndex = i;
-            break;
+    if (backPressSeen) {
+      backPressSeen = false;
+      const int booksCount = static_cast<int>(recentBooks.size());
+      if (selectorIndex < booksCount) {
+        // Pin/unpin for recent books
+        const RecentBook& selectedBook = recentBooks[selectorIndex];
+        const int maxPinned = UITheme::getInstance().getMetrics().homeRecentBooksCount;
+        if (selectedBook.pinned || RECENT_BOOKS.getPinnedCount() < maxPinned) {
+          std::string toggledPath = selectedBook.path;
+          RECENT_BOOKS.togglePinned(toggledPath);
+          loadRecentBooks(maxPinned);
+          for (int i = 0; i < static_cast<int>(recentBooks.size()); ++i) {
+            if (recentBooks[i].path == toggledPath) { selectorIndex = i; break; }
           }
+          freeCoverBuffer();
+          coverRendered = false;
+          requestUpdate();
         }
-
-        // Invalidate the cover buffer so it re-renders in the correct order
-        freeCoverBuffer();
-        coverRendered = false;
-
-        requestUpdate();
+      } else {
+        // Switch menu page
+        const int targetPage = (menuPage == 0) ? 1 : 0;
+        if (targetPage == 0 || getPage1ItemCount() > 0) {
+          menuPage = targetPage;
+          selectorIndex = booksCount;
+          requestUpdate();
+        }
       }
     }
+    return;
+  }
+
+  if (!recentBooks.empty() &&
+      mappedInput.wasTapInRect(0, metrics.homeTopPadding, renderer.getScreenWidth(), metrics.homeCoverTileHeight)) {
+    selectorIndex = 0;
+    activateSelection();
+    return;
+  }
+
+  const int menuTop = metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset;
+  const int renderedMenuSelection =
+      metrics.homeContinueReadingInMenu ? selectorIndex : selectorIndex - recentBooks.size();
+  const int renderedMenuCount =
+      menuCount - (metrics.homeContinueReadingInMenu ? 0 : static_cast<int>(recentBooks.size()));
+  int menuRow = -1;
+  const auto menuTouch = mappedInput.rowTouch(menuRow, menuTop, metrics.menuRowHeight + metrics.menuSpacing,
+                                              renderedMenuCount, 0, INT32_MAX, metrics.menuRowHeight);
+  if (menuTouch != MappedInputManager::RowTouch::None) {
+    const int touchedIndex =
+        metrics.homeContinueReadingInMenu ? menuRow : menuRow + static_cast<int>(recentBooks.size());
+    if (menuTouch == MappedInputManager::RowTouch::Down) {
+      if (selectorIndex != touchedIndex) {
+        selectorIndex = touchedIndex;
+        requestUpdate();
+      }
+    } else {
+      selectorIndex = touchedIndex;
+      activateSelection();
+    }
+    return;
+  }
+
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    activateSelection();
   }
 }
 
@@ -375,26 +458,22 @@ void HomeActivity::render(RenderLock&&) {
                           recentBooks, selectorIndex, coverRendered, coverBufferStored, bufferRestored,
                           std::bind(&HomeActivity::storeCoverBuffer, this));
 
-  // Build menu items dynamically
-  std::vector<const char*> menuItems = {tr(STR_MENU_RECENT_BOOKS), tr(STR_BROWSE_FILES), tr(STR_FILE_TRANSFER),
-                                        tr(STR_SETTINGS_TITLE)};
-  std::vector<UIIcon> menuIcons = {Recent, Folder, Transfer, Settings};
+  std::vector<const char*> menuItems;
+  std::vector<UIIcon> menuIcons;
 
-  if (hasOpdsServers && hasAo3Library) {
-    menuItems.insert(menuItems.begin(), "Libraries");
-    menuIcons.insert(menuIcons.begin(), Library);
-  } else if (hasOpdsServers) {
-    menuItems.insert(menuItems.begin(), tr(STR_OPDS_BROWSER));
-    menuIcons.insert(menuIcons.begin(), Library);
-  } else if (hasAo3Library) {
-    menuItems.insert(menuItems.begin(), "AO3 Library");
-    menuIcons.insert(menuIcons.begin(), Library);
-  }
-
-  if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
-    // Insert Continue Reading at the top if enabled in theme
-    menuItems.insert(menuItems.begin(), tr(STR_CONTINUE_READING));
-    menuIcons.insert(menuIcons.begin(), Book);
+  if (menuPage == 0) {
+    menuItems = { "AO3 Library", "Dashboard", tr(STR_BROWSE_FILES), tr(STR_FILE_TRANSFER), tr(STR_SETTINGS_TITLE) };
+    menuIcons = { Library, Recent, Folder, Transfer, Settings };
+    if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
+      menuItems.insert(menuItems.begin(), tr(STR_CONTINUE_READING));
+      menuIcons.insert(menuIcons.begin(), Book);
+    }
+  } else {
+    if (hasOpdsServers) {
+      menuItems.push_back("OPDS Browser");
+      menuIcons.push_back(Library); // swap for dedicated icon later
+    }
+    // future page-1 entries go here
   }
 
   GUI.drawButtonMenu(
@@ -403,7 +482,7 @@ void HomeActivity::render(RenderLock&&) {
            pageHeight - (metrics.headerHeight + metrics.homeTopPadding + metrics.verticalSpacing +
                          metrics.homeMenuTopOffset + metrics.buttonHintsHeight)},
       static_cast<int>(menuItems.size()),
-      metrics.homeContinueReadingInMenu ? selectorIndex : selectorIndex - recentBooks.size(),
+      metrics.homeContinueReadingInMenu ? selectorIndex : selectorIndex - static_cast<int>(recentBooks.size()),
       [&menuItems](int index) { return std::string(menuItems[index]); },
       [&menuIcons](int index) { return menuIcons[index]; });
 
@@ -414,6 +493,8 @@ void HomeActivity::render(RenderLock&&) {
     } else if (RECENT_BOOKS.getPinnedCount() < metrics.homeRecentBooksCount) {
       backLabel = tr(STR_PIN);
     }
+  } else {
+    if (menuPage == 1 || getPage1ItemCount() > 0) backLabel = "Switch";
   }
 
   const auto labels = mappedInput.mapLabels(backLabel, tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));

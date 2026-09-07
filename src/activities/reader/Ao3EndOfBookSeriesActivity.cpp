@@ -86,12 +86,11 @@ BookStatus Ao3EndOfBookSeriesActivity::getBookStatus(uint32_t cacheHash) {
   std::string cachePath = "/.crosspoint/epub_" + std::to_string(cacheHash) + "/progress.bin";
   HalFile f;
   if (Storage.openFileForRead("AO3S", cachePath, f)) {
-    uint8_t data[7];
-    if (f.read(data, 7) >= 7) {
-      f.close();
-      return static_cast<BookStatus>(data[6]);
-    }
+    uint8_t data[11];
+    int dataSize = f.read(data, sizeof(data));
     f.close();
+    if (dataSize == 7)  return static_cast<BookStatus>(data[6]);   // legacy 7-byte format
+    if (dataSize == 11) return static_cast<BookStatus>(data[10]);  // new 11-byte format
   }
   return BookStatus::START;
 }
