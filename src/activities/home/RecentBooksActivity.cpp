@@ -82,6 +82,7 @@ void RecentBooksActivity::onEnter() {
   Activity::onEnter();
 
   // Load Marked for Later; prune stale entries first.
+  MARKED_FOR_LATER_STORE.loadFromFile();
   if (MARKED_FOR_LATER_STORE.pruneMissing()) {
     MARKED_FOR_LATER_STORE.saveToFile();
   }
@@ -89,6 +90,7 @@ void RecentBooksActivity::onEnter() {
   markedForLater = MARKED_FOR_LATER_STORE.getEntries();
   
   // Load New Chapters; prune stale entries first.
+  NEW_CHAPTERS_STORE.loadFromFile();
   if (NEW_CHAPTERS_STORE.pruneMissing()) {
     NEW_CHAPTERS_STORE.saveToFile();
   }
@@ -96,6 +98,7 @@ void RecentBooksActivity::onEnter() {
   newChapters = NEW_CHAPTERS_STORE.getEntries();
 
   // Load WIPs; prune stale entries first. (Matches New Chapters pattern)
+  AO3_WIPS_STORE.loadFromFile();
   if (AO3_WIPS_STORE.pruneMissing()) {
     AO3_WIPS_STORE.saveToFile();
   }
