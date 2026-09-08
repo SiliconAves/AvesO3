@@ -155,7 +155,7 @@ void EpubReaderMenuActivity::loop() {
   }
 
   // Handle navigation with continuous line-skipping support
-  buttonNavigator.onNext([this] {
+  buttonNavigator.onNextRelease([this] {
     selectedIndex = ButtonNavigator::nextIndex(selectedIndex, static_cast<int>(menuItems.size()));
     requestUpdate();
   });
