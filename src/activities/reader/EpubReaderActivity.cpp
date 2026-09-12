@@ -732,6 +732,7 @@ if (showBookmarkMessage && (millis() - bookmarkMessageTime) >= ReaderUtils::BOOK
                 std::string cachePath = epub->getCachePath();
                 Storage.remove((cachePath + "/book.bin").c_str());
                 Storage.removeDir((cachePath + "/sections").c_str());
+                Storage.removeDir((cachePath + "/html").c_str());
 
                 currentStatus = BookStatus::NEW_CHAPTER_AVAILABLE;
                 MARKED_FOR_LATER_STORE.loadFromFile();
