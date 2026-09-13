@@ -94,36 +94,18 @@ void CrossPointWebServerActivity::onExit() {
   LOG_DBG("WEBACT", "Free heap at onExit start: %d bytes", ESP.getFreeHeap());
 
   state = WebServerActivityState::SHUTTING_DOWN;
-
-  // Flag pending scan so browser/hotspot uploads are indexed
-  Ao3LibraryActivity::pendingTransferScan = true;
-  
-  // Stop the web server first (before disconnecting WiFi)
-  stopWebServer();
-
-  // Stop DNS server (AP mode captive portal)
   stopDnsServer();
-
-  // Stop mDNS
   MDNS.end();
 
-  // Brief wait for LWIP stack to flush pending packets
-  delay(50);
-
-  // Skip WiFi teardown if it was never activated (e.g. user backed out of mode selection).
   if (WiFi.getMode() != WIFI_MODE_NULL) {
     if (isApMode) {
-      LOG_DBG("WEBACT", "Stopping WiFi AP...");
       WiFi.softAPdisconnect(true);
     } else {
-      LOG_DBG("WEBACT", "Disconnecting WiFi (graceful)...");
-      WiFi.disconnect(true); // Gracefully disconnects and clears credentials from RAM
+      WiFi.disconnect(false);
     }
-    delay(30); // Allow disconnect frame to be sent
-
-    LOG_DBG("WEBACT", "Setting WiFi mode OFF...");
-    WiFi.mode(WIFI_OFF);
-    delay(30); // Allow WiFi hardware to power down
+    delay(30);
+    Storage.writeFile("/.crosspoint/pending_ao3_scan", "");
+    silentRestart();
   }
 
   LOG_DBG("WEBACT", "Free heap at onExit end: %d bytes", ESP.getFreeHeap());

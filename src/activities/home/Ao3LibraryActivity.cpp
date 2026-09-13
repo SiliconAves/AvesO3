@@ -39,6 +39,12 @@ void Ao3LibraryActivity::onEnter() {
   // the button is still physically pressed. We must ignore the subsequent release.
   skipNextBackRelease = mappedInput.isPressed(MappedInputManager::Button::Back);
   autoIndexLaunched_ = false;
+
+  if (Storage.exists("/.crosspoint/pending_ao3_scan")) {
+    Storage.remove("/.crosspoint/pending_ao3_scan");
+    pendingTransferScan = true;
+  }
+
   loadFilterMode();
   Ao3TagMergeStore::load();
   loadSortFilterState();
