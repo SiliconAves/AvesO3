@@ -45,7 +45,7 @@ void Ao3IndexActivity::onEnter() {
 void Ao3IndexActivity::runHeapCheck() {
   if (ESP.getMaxAllocHeap() < 48 * 1024) {
     state = State::ERROR;
-    errorMessage = "Insufficient memory to run indexing.";
+    errorMessage = "Not enough memory. Please restart the device.";
     return;
   }
 
