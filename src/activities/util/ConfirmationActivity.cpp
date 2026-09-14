@@ -28,6 +28,10 @@ void ConfirmationActivity::onEnter() {
 
   const char* options[] = {I18N.get(StrId::STR_CANCEL), I18N.get(StrId::STR_CONFIRM)};
   confirmPopup.show(safeHeading.c_str(), options, 2, 0, [this](int idx) {
+    while (mappedInput.isPressed(MappedInputManager::Button::Confirm) ||
+           mappedInput.isPressed(MappedInputManager::Button::Back)) {
+      mappedInput.update();
+    }
     ActivityResult res;
     res.isCancelled = (idx != 1);
     setResult(std::move(res));
@@ -60,6 +64,10 @@ void ConfirmationActivity::render(RenderLock&& lock) {
 
 void ConfirmationActivity::loop() {
   if (confirmPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
+
+  while (mappedInput.isPressed(MappedInputManager::Button::Back)) {
+    mappedInput.update();
+  }
 
   // Popup dismissed without a selection (Back button or tap outside): cancel.
   ActivityResult res;
