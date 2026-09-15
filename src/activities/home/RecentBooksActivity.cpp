@@ -198,14 +198,7 @@ void RecentBooksActivity::loop() {
     const int idx = selectedItemIndex - 1;
     longPressFired = true;
 
-    if (selectedTabIndex == TAB_RECENT_BOOKS) {
-      // Tab 3: existing plain confirmation, no BookActionActivity
-      if (idx < static_cast<int>(recentBooks.size()))
-        promptRemoveBook(recentBooks[idx].path, recentBooks[idx].title);
-      return;
-    }
-
-    // Tabs 0–2: Dashboard context menu
+    // Tabs 0–3: Dashboard context menu
     std::string path, title;
     if (selectedTabIndex == TAB_MARKED_FOR_LATER &&
         idx < static_cast<int>(markedForLater.size())) {
@@ -219,6 +212,10 @@ void RecentBooksActivity::loop() {
                idx < static_cast<int>(wipsEntries.size())) {
       path  = wipsEntries[idx].path;
       title = wipsEntries[idx].title;
+    } else if (selectedTabIndex == TAB_RECENT_BOOKS &&
+               idx < static_cast<int>(recentBooks.size())) {
+      path  = recentBooks[idx].path;
+      title = recentBooks[idx].title;
     } else {
       longPressFired = false;
       return;
@@ -396,28 +393,6 @@ void RecentBooksActivity::loop() {
 //  Helpers
 // ---------------------------------------------------------------------------
 
-void RecentBooksActivity::promptRemoveBook(const std::string& path,
-                                           const std::string& title) {
-  auto handler = [this, path](const ActivityResult& res) {
-    if (res.isCancelled) return;
-    if (RECENT_BOOKS.removeByPath(path)) {
-      recentBooks = RECENT_BOOKS.getBooks();
-      const int listSize = static_cast<int>(recentBooks.size());
-      if (listSize == 0) {
-        selectedItemIndex = 0;
-      } else if (selectedItemIndex > listSize) {
-        selectedItemIndex = listSize;
-      }
-      visibleStatusCache.clear();
-      requestUpdate(true);
-    }
-  };
-  startActivityForResult(
-      std::make_unique<ConfirmationActivity>(renderer, mappedInput,
-                                            tr(STR_REMOVE_FROM_RECENTS), title),
-      std::move(handler));
-}
-
 void RecentBooksActivity::clampSelectorIndex() {
   const int listSize = getCurrentListSize();
   if (listSize == 0)
@@ -471,6 +446,10 @@ if (r->removedFromList) {
             AO3_WIPS_STORE.saveToFile(); // Persist removal to disk[cite: 4]
             wipsEntries = AO3_WIPS_STORE.getEntries();
             break;
+          case TAB_RECENT_BOOKS:
+            RECENT_BOOKS.removeByPath(path);
+            recentBooks = RECENT_BOOKS.getBooks();
+            break;
         }
         visibleStatusCache.clear();
         clampSelectorIndex();
@@ -480,6 +459,7 @@ if (r->removedFromList) {
         markedForLater = MARKED_FOR_LATER_STORE.getEntries();
         newChapters    = NEW_CHAPTERS_STORE.getEntries();
         wipsEntries    = AO3_WIPS_STORE.getEntries();
+        recentBooks    = RECENT_BOOKS.getBooks();
         visibleStatusCache.clear();
         clampSelectorIndex();
       }
