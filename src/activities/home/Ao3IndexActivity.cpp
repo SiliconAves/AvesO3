@@ -1,4 +1,5 @@
 #include "Ao3IndexActivity.h"
+#include "SilentRestart.h"
 #include <HalStorage.h>
 #include <ArduinoJson.h>
 #include <Epub.h>
@@ -132,8 +133,13 @@ void Ao3IndexActivity::loop() {
       finish(); // Exit silently on background discovery error
       return;
     }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
-        mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+      if (errorMessage == "Not enough memory. Please restart the device.") {
+        silentRestart(); 
+        return;
+      }
+      finish();
+    } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
       finish();
     }
     return;
@@ -503,8 +509,14 @@ void Ao3IndexActivity::render(RenderLock&& lock) {
   else if (state == State::ERROR) {
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, "Error");
     renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 10, errorMessage.c_str());
-    const auto labels = mappedInput.mapLabels("Back", "", "", "");
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    
+    if (errorMessage == "Not enough memory. Please restart the device.") {
+      const auto labels = mappedInput.mapLabels("Back", "Reboot", "", "");
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    } else {
+      const auto labels = mappedInput.mapLabels("Back", "", "", "");
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    }
   }
   else if (state == State::SINGLE_SNIFFING) {
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "Checking publisher...");
