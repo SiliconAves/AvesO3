@@ -10,6 +10,7 @@
 #include "../util/ConfirmationActivity.h"
 #include "Ao3IndexActivity.h"
 #include "../../Ao3Librarian.h"
+#include "../Ao3PageQrActivity.h"
 #include "Ao3NewChaptersStore.h"
 #include "Ao3WipsStore.h"
 #include "Ao3MarkedForLaterStore.h"
@@ -37,27 +38,39 @@ BookActionActivity::BookActionActivity(GfxRenderer& renderer, MappedInputManager
 
 int BookActionActivity::logicalRow(int visual) const {
   if (mode == BookActionMode::DASHBOARD) {
-    if (visual == 0) return 0;  // Status cycle
-    if (visual == 1) return 5;  // Remove from List
+    int idx = 0;
+    if (visual == idx) return 0;  // Status cycle
+    idx++;
+    if (hasAo3LibraryInfo) {
+      if (visual == idx) return 6;  // Show AO3 Page QR (below Status cycle)
+      idx++;
+    }
+    if (visual == idx) return 5;  // Remove from List
     return -1;
   }
 
   // FULL mode
   int idx = 0;
-  if (isEpub || isXtc)                      { if (visual == idx) return 0; idx++; }
-  if (hasAo3LibraryInfo)                    { if (visual == idx) return 1; idx++; }
-  if (isEpub)                               { if (visual == idx) return 2; idx++; }
-  if (hasAo3LibraryInfo)                    { if (visual == idx) return 3; idx++; }
-  if (visual == idx)       return 4;
+  if (isEpub || isXtc)   { if (visual == idx) return 0; idx++; } // Status cycle
+  if (hasAo3LibraryInfo) { if (visual == idx) return 1; idx++; } // Mark for Later
+  if (hasAo3LibraryInfo) { if (visual == idx) return 6; idx++; } // Show AO3 Page QR
+  if (isEpub)            { if (visual == idx) return 2; idx++; } // Index Book
+  if (hasAo3LibraryInfo) { if (visual == idx) return 3; idx++; } // Move to Read Folder / Restore
+  if (visual == idx)     return 4;                               // Delete
   return -1;
 }
 
 int BookActionActivity::visibleRowCount() const {
-  if (mode == BookActionMode::DASHBOARD) return 2;
+  if (mode == BookActionMode::DASHBOARD) {
+    int n = 2; // Status cycle + Remove from List
+    if (hasAo3LibraryInfo) n++; // Show AO3 Page QR
+    return n;
+  }
 
   int n = 1;                      // Delete always present
   if (isEpub || isXtc)      n++;  // Status
   if (hasAo3LibraryInfo)    n++;  // Mark for Later
+  if (hasAo3LibraryInfo)    n++;  // Show AO3 Page QR
   if (isEpub)               n++;  // Index Book
   if (hasAo3LibraryInfo)    n++;  // Move to Read Folder / Restore
   return n;
@@ -122,6 +135,7 @@ void BookActionActivity::render(RenderLock&&) {
       case 3: return isAlreadyArchived ? "Restore to AO3 Library" : "Move to Read Folder";
       case 4: return std::string(tr(STR_DELETE));
       case 5: return "Remove from List";
+      case 6: return "Show AO3 Page QR";
       default: return "";
     }
   };
@@ -303,6 +317,13 @@ void BookActionActivity::loop() {
         res.removedFromList = true;
         setResult(ActivityResult(std::move(res)));
         finish();
+        break;
+      }
+
+      case 6: {
+        startActivityForResult(
+            std::make_unique<Ao3PageQrActivity>(renderer, mappedInput, filePath),
+            [this](const ActivityResult&) { requestUpdate(true); });
         break;
       }
 
