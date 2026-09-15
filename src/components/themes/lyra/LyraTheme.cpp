@@ -29,6 +29,7 @@
 #include "components/icons/text24.h"
 #include "components/icons/transfer.h"
 #include "components/icons/wifi.h"
+#include "components/icons/ao3library.h"
 #include "fontIds.h"
 
 // Internal constants
@@ -72,6 +73,8 @@ const uint8_t* iconForName(UIIcon icon, int size) {
         return TransferIcon;
       case UIIcon::Library:
         return LibraryIcon;
+      case UIIcon::Ao3Library:
+        return Ao3libraryIcon;
       case UIIcon::Wifi:
         return WifiIcon;
       case UIIcon::Hotspot:
