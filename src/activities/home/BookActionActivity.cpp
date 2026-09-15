@@ -34,6 +34,7 @@ BookActionActivity::BookActionActivity(GfxRenderer& renderer, MappedInputManager
 //   2 = Index Book              (FULL, epub only)
 //   3 = Delete                  (FULL only)
 //   5 = Remove from List        (DASHBOARD only)
+//   6 = Show AO3 Page QR        (AO3 only)
 // ---------------------------------------------------------------------------
 
 int BookActionActivity::logicalRow(int visual) const {
