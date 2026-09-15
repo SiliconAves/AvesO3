@@ -480,7 +480,7 @@ void HomeActivity::render(RenderLock&&) {
 
   if (menuPage == 0) {
     menuItems = { "AO3 Library", "Dashboard", tr(STR_BROWSE_FILES), tr(STR_FILE_TRANSFER), tr(STR_SETTINGS_TITLE) };
-    menuIcons = { Library, Recent, Folder, Transfer, Settings };
+    menuIcons = { Ao3Library, Recent, Folder, Transfer, Settings };
     if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
       menuItems.insert(menuItems.begin(), tr(STR_CONTINUE_READING));
       menuIcons.insert(menuIcons.begin(), Book);
