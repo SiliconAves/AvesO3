@@ -37,6 +37,7 @@ class BookActionActivity final : public Activity {
 
  private:
   void saveStatus();
+  void saveStatusIfModified();
   int  logicalRow(int visualIndex) const;
   int  visibleRowCount() const;
 };

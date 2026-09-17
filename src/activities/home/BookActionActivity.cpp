@@ -229,11 +229,13 @@ void BookActionActivity::loop() {
       }
 
       case 2: {
+        saveStatusIfModified();
         auto handler = [this](const ActivityResult& res) {
           if (const auto* indexRes = std::get_if<Ao3IndexResult>(&res.data)) {
             if (indexRes->successfullyIndexed) {
               BookActionResult result;
               result.modified          = true;
+              result.newStatus         = currentStatus;
               result.indexingCompleted = true;
               setResult(ActivityResult(std::move(result)));
               finish();
@@ -251,11 +253,13 @@ void BookActionActivity::loop() {
       case 3: {
         if (isAlreadyArchived) {
             // Restore: move file back then re-index.
+            saveStatusIfModified();
             const std::string restoredPath = Ao3ArchiveHelper::restoreFic(filePath);
             if (!restoredPath.empty()) {
                 auto handler = [this](const ActivityResult& res) {
                     BookActionResult result;
                     result.modified = true;
+                    result.newStatus = currentStatus;
                     result.indexingCompleted = true;
                     setResult(ActivityResult(std::move(result)));
                     finish();
@@ -271,12 +275,14 @@ void BookActionActivity::loop() {
           // Archive: move to read folder.
           auto handler = [this](const ActivityResult& res) {
             if (!res.isCancelled) {
+                saveStatusIfModified();
                 const std::string newPath = Ao3ArchiveHelper::archiveFic(filePath);
                 if (!newPath.empty()) {
                     BookActionResult result;
                     result.modified = true;
                     result.archived = true;
                     result.newPath  = newPath;
+                    result.newStatus = currentStatus;
                     setResult(ActivityResult(std::move(result)));
                     finish();
                 } else {
@@ -296,9 +302,11 @@ void BookActionActivity::loop() {
       case 4: {
         auto handler = [this](const ActivityResult& res) {
           if (!res.isCancelled) {
+            saveStatusIfModified();
             BookActionResult result;
             result.deleted  = true;
             result.modified = true;
+            result.newStatus = currentStatus;
             setResult(ActivityResult(std::move(result)));
             finish();
           } else {
@@ -314,8 +322,11 @@ void BookActionActivity::loop() {
 
       case 5: {
         // Remove from List — no confirmation, caller handles store eviction
+        saveStatusIfModified();
         BookActionResult res;
         res.removedFromList = true;
+        res.modified        = true;
+        res.newStatus       = currentStatus;
         setResult(ActivityResult(std::move(res)));
         finish();
         break;
@@ -389,7 +400,10 @@ void BookActionActivity::saveStatus() {
       Ao3Librarian::setRecordFinished(filePath, isNowFinished);
   }
 
-  if (currentStatus == BookStatus::MARKED_FOR_LATER) return;
+  if (currentStatus == BookStatus::MARKED_FOR_LATER) {
+    initialStatus = currentStatus;
+    return;
+  }
 
   if (currentStatus != BookStatus::READING) {
     MARKED_FOR_LATER_STORE.loadFromFile();
@@ -421,5 +435,13 @@ void BookActionActivity::saveStatus() {
       AO3_WIPS_STORE.removeBook(filePath);
       AO3_WIPS_STORE.saveToFile();
     }
+  }
+
+  initialStatus = currentStatus;
+}
+
+void BookActionActivity::saveStatusIfModified() {
+  if (currentStatus != initialStatus) {
+    saveStatus();
   }
 }
