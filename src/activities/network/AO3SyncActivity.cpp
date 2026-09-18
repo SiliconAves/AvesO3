@@ -10,6 +10,10 @@
 
 #include "Ao3NewChaptersStore.h"
 #include "Ao3WipsStore.h"
+#include "Ao3LibraryMetadata.h"
+#include "Ao3MarkedForLaterStore.h"
+#include "BookStatus.h"
+#include "SilentRestart.h"
 
 #include "activities/network/WifiSelectionActivity.h"
 #include "components/UITheme.h"
@@ -69,6 +73,13 @@ void AO3SyncActivity::performSearch() {
         return;
     }
 
+    if (ESP.getMaxAllocHeap() < 50 * 1024) {
+        errorMessage = "Not enough memory. Please reboot the device.";
+        state = AO3SyncState::ERROR;
+        requestUpdate();
+        return;
+    }
+
     std::string cleanWorkId = workId;
     cleanWorkId.erase(0, cleanWorkId.find_first_not_of(" \n\r\t"));
     cleanWorkId.erase(cleanWorkId.find_last_not_of(" \n\r\t") + 1);
@@ -80,10 +91,7 @@ void AO3SyncActivity::performSearch() {
     }
 
     usingOrgFallback = false;
-    const std::string searchUrls[] = {
-        "https://archiveofourown.gay/works/" + cleanWorkId + "?view_adult=true",
-        "https://archiveofourown.org/works/" + cleanWorkId + "?view_adult=true"
-    };
+    static const char* const kDomains[] = { "archiveofourown.gay", "archiveofourown.org" };
 
     int status_code = 0;
     for (int urlIdx = 0; urlIdx < 2; urlIdx++) {
@@ -92,25 +100,42 @@ void AO3SyncActivity::performSearch() {
             requestUpdateAndWait();
             delay(1000);
         }
-        std::string currentUrl = searchUrls[urlIdx];
+
+        char currentUrl[128];
+        snprintf(currentUrl, sizeof(currentUrl),
+                 "https://%s/works/%s?view_adult=true",
+                 kDomains[urlIdx], cleanWorkId.c_str());
+
     int max_retries = 3;
     HTTPClient http;
     std::unique_ptr<NetworkClient> netClient;
+    bool firstAttempt = true;
 
     while (max_retries > 0) {
-        auto* secureClient = new NetworkClientSecure();
-        secureClient->setInsecure(); // Skip strict cert validation
-        secureClient->setTimeout(20); // 20s network read timeout
+        // On retries only: free the old TLS context before allocating a new one.
+        // Skipped on first attempt because http.end() before http.begin() is unsafe.
+        if (!firstAttempt) {
+            http.end();
+            netClient.reset();
+        }
+        firstAttempt = false;
 
-        // Set ALPN to http/1.1 to help Cloudflare routing
+        auto* secureClient = new NetworkClientSecure();
+        if (!secureClient) {
+            errorMessage = "Out of Memory";
+            state = AO3SyncState::ERROR;
+            return;
+        }
+        secureClient->setInsecure();
+        secureClient->setTimeout(20);
         const char* alpn_protos[] = {"http/1.1", nullptr};
         secureClient->setAlpnProtocols(alpn_protos);
 
         netClient.reset(secureClient);
 
-        http.begin(*netClient, currentUrl.c_str());
+        http.begin(*netClient, currentUrl);
         http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-        http.setTimeout(20000); // 20 seconds HTTP timeout
+        http.setTimeout(20000);
         http.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
         http.addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
         http.addHeader("Accept-Language", "en-US,en;q=0.5");
@@ -119,23 +144,23 @@ void AO3SyncActivity::performSearch() {
         status_code = http.GET();
 
         if (status_code == HTTP_CODE_OK || status_code == 403 || status_code == 404) {
-            break; // Success or definite non-retryable error
+        break;
         }
 
         LOG_INF("AO3", "HTTP error %d, retries left: %d", status_code, max_retries - 1);
-        http.end();
         max_retries--;
 
         if (max_retries > 0) {
-            // Check if user wants to cancel while retrying
             mappedInput.update();
             if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
                 errorMessage = "Search Aborted";
                 state = AO3SyncState::ERROR;
+                http.end();
+                netClient.reset();
                 requestUpdate();
                 return;
             }
-            delay(1500); // Wait before retry
+            delay(1500);
         }
     }
 
@@ -174,15 +199,19 @@ void AO3SyncActivity::performSearch() {
         return;
     }
 
-    char* buffer = (char*)malloc(1024);
-    if (!buffer) {
+    char* buffer  = (char*)malloc(1024);
+    char* htmlAcc = (char*)malloc(2049);
+    if (!buffer || !htmlAcc) {
+        free(buffer);
+        free(htmlAcc);
         errorMessage = "Out of Memory";
         http.end();
         state = AO3SyncState::ERROR;
         return;
     }
+    htmlAcc[0] = '\0';
+    size_t htmlAccLen = 0;
 
-    std::string htmlAcc;
     bool foundDate = false;
     bool foundChapters = false;
     bytesProcessed = 0;
@@ -203,21 +232,30 @@ void AO3SyncActivity::performSearch() {
             int read = stream->read((uint8_t*)buffer, toRead);
             if (read > 0) {
                 bytesProcessed += read;
-                std::string chunk(buffer, read);
-                htmlAcc += chunk;
 
                 // Maintain small window for markers (Fast Discard)
-                if (htmlAcc.size() > 2048) {
-                    htmlAcc = htmlAcc.substr(htmlAcc.size() - 1024);
+                if (htmlAccLen + (size_t)read > 2048) {
+                    size_t keep = (htmlAccLen >= 1024) ? 1024 : htmlAccLen;
+                    memmove(htmlAcc, htmlAcc + (htmlAccLen - keep), keep);
+                    htmlAccLen = keep;
                 }
+                size_t space  = 2048 - htmlAccLen;
+                size_t toCopy = ((size_t)read < space) ? (size_t)read : space;
+                memcpy(htmlAcc + htmlAccLen, buffer, toCopy);
+                htmlAccLen += toCopy;
+                htmlAcc[htmlAccLen] = '\0';
 
                 // Search for date
                 if (!foundDate) {
-                    size_t pos = htmlAcc.find("<dd class=\"status\">");
-                    if (pos != std::string::npos) {
-                        size_t endPos = htmlAcc.find("</dd>", pos);
-                        if (endPos != std::string::npos) {
-                            scrapedDate = htmlAcc.substr(pos + 19, endPos - (pos + 19));
+                    const char* pos = strstr(htmlAcc, "<dd class=\"status\">");
+                    if (pos) {
+                        const char* end = strstr(pos + 19, "</dd>");
+                        if (end) {
+                            char dateBuf[32] = {};
+                            size_t len = (size_t)(end - (pos + 19));
+                            if (len > 31) len = 31;
+                            strncpy(dateBuf, pos + 19, len);
+                            scrapedDate = dateBuf;
                             foundDate = true;
                         }
                     }
@@ -225,20 +263,20 @@ void AO3SyncActivity::performSearch() {
 
                 // Search for chapters
                 if (!foundChapters) {
-                    size_t pos = htmlAcc.find("<dd class=\"chapters\">");
-                    if (pos != std::string::npos) {
-                        size_t endPos = htmlAcc.find("</dd>", pos);
-                        if (endPos != std::string::npos) {
-                            std::string chapStr = htmlAcc.substr(pos + 21, endPos - (pos + 21));
-                            size_t slashPos = chapStr.find("/");
-                            if (slashPos != std::string::npos) {
-                                std::string current = chapStr.substr(0, slashPos);
-                                std::string total = chapStr.substr(slashPos + 1);
-                                if (total != "?" && current == total) {
-                                    scrapedIsCompleted = true;
-                                } else {
-                                    scrapedIsCompleted = false;
-                                }
+                    const char* pos = strstr(htmlAcc, "<dd class=\"chapters\">");
+                    if (pos) {
+                        const char* end = strstr(pos + 21, "</dd>");
+                        if (end) {
+                            char chapStr[32] = {};
+                            size_t len = (size_t)(end - (pos + 21));
+                            if (len > 31) len = 31;
+                            strncpy(chapStr, pos + 21, len);
+                            const char* slash = strchr(chapStr, '/');
+                            if (slash) {
+                                const char* total = slash + 1;
+                                scrapedIsCompleted = (strcmp(total, "?") != 0 &&
+                                                      atoi(total) > 0 &&
+                                                      atoi(chapStr) == atoi(total));
                                 foundChapters = true;
                             }
                         }
@@ -253,6 +291,7 @@ void AO3SyncActivity::performSearch() {
     }
 
     free(buffer);
+    free(htmlAcc);
     http.end();
 
     if (foundDate && foundChapters) {
@@ -329,13 +368,25 @@ void AO3SyncActivity::performDownload() {
             LOG_INF("AO3", "Atomic swap complete");
 
             // Tab 1 hook: insert into New Chapters store.
-            // Load title/author from the freshly-written epub (same pattern as
-            // RecentBooksStore::getDataFromBook).
+            // Read title/author from existing sidecar metadata file instead of
+            // loading the entire EPUB ZIP to keep peak memory minimal.
             {
-                Epub freshEpub(bookPath, "/.crosspoint");
-                freshEpub.load(false, true);
-                const std::string title  = freshEpub.getTitle();
-                const std::string author = freshEpub.getAuthor();
+                const uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(bookPath));
+                const std::string infoPath = "/.crosspoint/epub_" + std::to_string(hash) + "/ao3_library_info";
+
+                auto meta = std::make_unique<Ao3LibraryMetadata>();
+                bool hasMeta = false;
+                {
+                    HalFile f;
+                    if (Storage.openFileForRead("AO3L", infoPath, f)) {
+                        hasMeta = (f.read((uint8_t*)meta.get(), sizeof(*meta)) == sizeof(*meta))
+                                   && meta->isValid();
+                        f.close();
+                    }
+                }
+                const char* title  = hasMeta ? meta->title  : "";
+                const char* author = hasMeta ? meta->author : "";
+
                 NEW_CHAPTERS_STORE.loadFromFile();
                 NEW_CHAPTERS_STORE.addBook(bookPath, title, author);
                 NEW_CHAPTERS_STORE.clearEntries();
@@ -344,14 +395,42 @@ void AO3SyncActivity::performDownload() {
                 AO3_WIPS_STORE.clearEntries();
             }
 
-            // Success result
-            AO3Result res;
-            res.scrapedDate = scrapedDate;
-            res.isCompleted = scrapedIsCompleted;
-            res.updateFound = true;
-            res.downloaded = true;
-            setResult(ActivityResult(res));
-            finish();
+            // Update AO3 sidecar info and invalidate EPUB section/book cache
+            {
+                Epub epub(bookPath, "/.crosspoint");
+                epub.saveAo3Info(workId, scrapedDate, scrapedIsCompleted);
+                const std::string cachePath = epub.getCachePath();
+                Storage.remove((cachePath + "/book.bin").c_str());
+                Storage.removeDir((cachePath + "/sections").c_str());
+                Storage.removeDir((cachePath + "/html").c_str());
+
+                // Update BookStatus in progress.bin to NEW_CHAPTER_AVAILABLE so UI reads correct status
+                const std::string progressPath = cachePath + "/progress.bin";
+                HalFile f;
+                if (Storage.openFileForRead("AO3", progressPath, f)) {
+                    uint8_t data[11] = {};
+                    int bytesRead = f.read(data, sizeof(data));
+                    f.close();
+                    if (bytesRead >= 7) {
+                        if (bytesRead == 7) {
+                            data[6] = static_cast<uint8_t>(BookStatus::NEW_CHAPTER_AVAILABLE);
+                        } else if (bytesRead >= 11) {
+                            data[10] = static_cast<uint8_t>(BookStatus::NEW_CHAPTER_AVAILABLE);
+                        }
+                        if (Storage.openFileForWrite("AO3", progressPath, f)) {
+                            f.write(data, bytesRead);
+                            f.close();
+                        }
+                    }
+                }
+
+                MARKED_FOR_LATER_STORE.loadFromFile();
+                MARKED_FOR_LATER_STORE.removeByPath(bookPath);
+                MARKED_FOR_LATER_STORE.clearEntries();
+            }
+
+            state = AO3SyncState::UPDATE_SUCCESSFUL;
+            requestUpdate();
         } else {
             errorMessage = "File Swap Failed";
             state = AO3SyncState::ERROR;
@@ -368,17 +447,17 @@ void AO3SyncActivity::performDownload() {
 }
 
 void AO3SyncActivity::loop() {
-    if (state == AO3SyncState::UPDATE_FOUND || state == AO3SyncState::UP_TO_DATE) {
+    if (state == AO3SyncState::UPDATE_SUCCESSFUL) {
+        if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
+            mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+            silentRestart();
+        }
+    } else if (state == AO3SyncState::UPDATE_FOUND || state == AO3SyncState::UP_TO_DATE) {
         if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
             if (state == AO3SyncState::UPDATE_FOUND) {
                 performDownload();
             } else {
-                AO3Result res;
-                res.scrapedDate = scrapedDate;
-                res.isCompleted = scrapedIsCompleted;
-                res.updateFound = false;
-                setResult(ActivityResult(res));
-                finish();
+                silentRestart();
             }
         } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
             if (state == AO3SyncState::UPDATE_FOUND) {
@@ -387,30 +466,12 @@ void AO3SyncActivity::loop() {
                 res.updateFound = true;
                 setResult(ActivityResult(res));
             }
-            finish();
+            silentRestartToReader();
         }
     } else if (state == AO3SyncState::ERROR) {
-        if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-            finish();
-        } else if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-            // Check if WiFi is still connected, if not reconnect, otherwise just retry
-            if (WiFi.status() == WL_CONNECTED) {
-                if (downloadTotal > 0 || !scrapedDate.empty()) {
-                    // We already found the update but failed download
-                    performDownload();
-                } else {
-                    state = AO3SyncState::SEARCHING;
-                    requestUpdateAndWait();
-                    performSearch();
-                }
-            } else {
-                state = AO3SyncState::CONNECTING_WIFI;
-                requestUpdate();
-                startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput),
-                    [this](const ActivityResult& res) {
-                        onWifiSelectionComplete(!res.isCancelled);
-                    });
-            }
+        if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
+            mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+            silentRestartToReader();
         }
     }
 }
@@ -464,7 +525,10 @@ void AO3SyncActivity::renderResult() const {
     const auto height = renderer.getLineHeight(UI_10_FONT_ID);
     const auto top = (pageHeight - height) / 2;
 
-    if (state == AO3SyncState::UP_TO_DATE) {
+    if (state == AO3SyncState::UPDATE_SUCCESSFUL) {
+        renderer.drawCenteredText(UI_10_FONT_ID, top, "Update successful!", true, EpdFontFamily::BOLD);
+        GUI.drawButtonHints(renderer, "", tr(STR_DONE), "", "");
+    } else if (state == AO3SyncState::UP_TO_DATE) {
         renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_AO3_UP_TO_DATE), true, EpdFontFamily::BOLD);
         GUI.drawButtonHints(renderer, tr(STR_BACK), tr(STR_DONE), "", "");
     } else if (state == AO3SyncState::UPDATE_FOUND) {
@@ -481,7 +545,11 @@ void AO3SyncActivity::renderError() const {
     const auto top = (pageHeight - renderer.getLineHeight(UI_10_FONT_ID)) / 2;
 
     renderer.drawCenteredText(UI_10_FONT_ID, top, errorMessage.c_str(), true, EpdFontFamily::BOLD);
-    GUI.drawButtonHints(renderer, tr(STR_BACK), tr(STR_RETRY), "", "");
+    if (errorMessage == "Not enough memory. Please reboot the device.") {
+        GUI.drawButtonHints(renderer, tr(STR_BACK), "Reboot", "", "");
+    } else {
+        GUI.drawButtonHints(renderer, tr(STR_BACK), tr(STR_RETRY), "", "");
+    }
 }
 
 void AO3SyncActivity::render(RenderLock&& lock) {
@@ -505,6 +573,7 @@ void AO3SyncActivity::render(RenderLock&& lock) {
             break;
         case AO3SyncState::UP_TO_DATE:
         case AO3SyncState::UPDATE_FOUND:
+        case AO3SyncState::UPDATE_SUCCESSFUL:
             renderResult();
             break;
         case AO3SyncState::ERROR:
