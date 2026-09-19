@@ -40,6 +40,7 @@ class Ao3ReceiveActivity final : public Activity {
     bool exitRequested = false;
     bool ficReceived   = false;   // true if at least one file landed successfully
 
+    void renderServerRunning() const;
     void onWifiSelectionComplete(bool connected);
     void startWebServer();
     void stopWebServer();

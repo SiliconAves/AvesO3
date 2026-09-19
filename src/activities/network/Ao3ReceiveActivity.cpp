@@ -197,24 +197,27 @@ void Ao3ReceiveActivity::loop() {
 
 void Ao3ReceiveActivity::render(RenderLock&&) {
     const auto& metrics  = UITheme::getInstance().getMetrics();
-    const int pageWidth  = renderer.getScreenWidth();
-    const int pageHeight = renderer.getScreenHeight();
+    const auto pageWidth  = renderer.getScreenWidth();
+    const auto pageHeight = renderer.getScreenHeight();
 
     renderer.clearScreen();
     GUI.drawHeader(renderer,
         Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},
-        "AvesO3 Receive");
+        "Send to AvesO3");
+
+    const auto height = renderer.getLineHeight(UI_10_FONT_ID);
+    const auto top    = (pageHeight - height) / 2;
 
     if (state == Ao3ReceiveState::SERVER_STARTING) {
-        renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "Starting server…");
+        renderer.drawCenteredText(UI_10_FONT_ID, top, "Starting server…");
         renderer.displayBuffer();
         return;
     }
 
     if (state == Ao3ReceiveState::ERROR) {
-        renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 16,
+        renderer.drawCenteredText(UI_12_FONT_ID, top - 16,
             "Server failed to start.", true, EpdFontFamily::BOLD);
-        renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 16,
+        renderer.drawCenteredText(UI_10_FONT_ID, top + 16,
             "Try again or check Wi-Fi.");
         const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
         GUI.drawButtonHints(renderer, labels.btn1, "", "", "");
@@ -223,69 +226,88 @@ void Ao3ReceiveActivity::render(RenderLock&&) {
     }
 
     if (state == Ao3ReceiveState::SERVER_RUNNING) {
-        // ── Sub-header: SSID + IP ──
         GUI.drawSubHeader(renderer,
             Rect{0, metrics.topPadding + metrics.headerHeight,
                  pageWidth, metrics.tabBarHeight},
             connectedSSID.c_str(),
             (std::string("http://") + connectedIP).c_str());
 
-        const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight;
-        const int contentBottom = pageHeight - metrics.buttonHintsHeight;
-        const int contentHeight = contentBottom - contentTop;
-
-        // ── QR code (square, upper half of content area) ──
-        const int qrSize  = std::min(pageWidth, contentHeight / 2) - 16;
-        const int qrLeft  = (pageWidth - qrSize) / 2;
-        const int qrTop   = contentTop + 12;
-
-        QrUtils::drawQrCode(renderer,
-            Rect{qrLeft, qrTop, qrSize, qrSize},
-            std::string("http://") + connectedIP);
-
-        // ── Hostname hint below QR ──
-        const int hintY = qrTop + qrSize + 10;
-        renderer.drawCenteredText(SMALL_FONT_ID, hintY, "or crosspoint.local");
-
-        // ── Status area ──
-        const int statusY = hintY + renderer.getLineHeight(SMALL_FONT_ID) + 16;
-        const int lineH   = renderer.getLineHeight(UI_10_FONT_ID);
-
-        if (lastProgressTotal > 0 && lastProgressReceived <= lastProgressTotal) {
-            // Transfer in progress
-            std::string label = "Receiving";
-            if (!currentUploadName.empty()) {
-                label += ": " + currentUploadName;
-                label = renderer.truncatedText(UI_10_FONT_ID, label.c_str(),
-                    pageWidth - metrics.contentSidePadding * 2);
-            }
-            renderer.drawCenteredText(UI_10_FONT_ID, statusY, label.c_str());
-
-            const int barW = pageWidth - 80;
-            const int barX = (pageWidth - barW) / 2;
-            const int barY = statusY + lineH + 8;
-            GUI.drawProgressBar(renderer,
-                Rect{barX, barY, barW, metrics.progressBarHeight},
-                lastProgressReceived, lastProgressTotal);
-
-        } else if (lastCompleteAt > 0 && (millis() - lastCompleteAt) < 6000) {
-            // Completion flash
-            renderer.drawCenteredText(UI_10_FONT_ID, statusY,
-                "Received:", true, EpdFontFamily::BOLD);
-            std::string name = renderer.truncatedText(UI_10_FONT_ID,
-                lastCompleteName.c_str(),
-                pageWidth - metrics.contentSidePadding * 2);
-            renderer.drawCenteredText(UI_10_FONT_ID, statusY + lineH + 4, name.c_str());
-
-        } else {
-            // Idle
-            renderer.drawCenteredText(UI_10_FONT_ID, statusY,
-                "Waiting for fic…");
-        }
-
-        const auto labels = mappedInput.mapLabels(tr(STR_EXIT), "", "", "");
-        GUI.drawButtonHints(renderer, labels.btn1, "", "", "");
+        renderServerRunning();
     }
 
     renderer.displayBuffer();
+}
+
+void Ao3ReceiveActivity::renderServerRunning() const {
+    const auto& metrics  = UITheme::getInstance().getMetrics();
+    const auto pageWidth  = renderer.getScreenWidth();
+    const auto pageHeight = renderer.getScreenHeight();
+
+    int y = metrics.topPadding
+            + metrics.headerHeight
+            + metrics.tabBarHeight
+            + metrics.verticalSpacing * 4;
+
+    const int heightText12 = renderer.getTextHeight(UI_12_FONT_ID);
+    const int heightText10 = renderer.getLineHeight(UI_10_FONT_ID);
+    const int heightSmall  = renderer.getLineHeight(SMALL_FONT_ID);
+
+    // ── Setup section ──
+    renderer.drawText(UI_12_FONT_ID, metrics.contentSidePadding, y,
+        "Setup", true, EpdFontFamily::BOLD);
+    y += heightText12 + metrics.verticalSpacing * 2;
+
+    renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
+        "1) Install \"Send to AvesO3\" extension for Firefox");
+    y += heightSmall;
+    renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
+        "2) Access AO3 from your pc or phone");
+    y += heightSmall;
+    renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
+        "3) Press the BIRD button to send fics to your ereader");
+    y += heightSmall;
+    renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
+        "\"Keep this screen open while sending\"");
+    y += heightSmall + metrics.verticalSpacing * 4;
+
+    // ── Status section ──
+    renderer.drawText(UI_12_FONT_ID, metrics.contentSidePadding, y,
+        "Status", true, EpdFontFamily::BOLD);
+    y += heightText12 + metrics.verticalSpacing * 2;
+
+    if (lastProgressTotal > 0 && lastProgressReceived <= lastProgressTotal) {
+        // Transfer in progress
+        std::string label = "Receiving";
+        if (!currentUploadName.empty()) {
+            label += ": " + currentUploadName;
+            label = renderer.truncatedText(SMALL_FONT_ID, label.c_str(),
+                pageWidth - metrics.contentSidePadding * 2);
+        }
+        renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y, label.c_str());
+        y += heightSmall + metrics.verticalSpacing;
+
+        GUI.drawProgressBar(renderer,
+            Rect{metrics.contentSidePadding, y,
+                 pageWidth - metrics.contentSidePadding * 2,
+                 metrics.progressBarHeight},
+            lastProgressReceived, lastProgressTotal);
+
+    } else if (lastCompleteAt > 0 && (millis() - lastCompleteAt) < 6000) {
+        // Completion flash
+        renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
+            "Received:", true);
+        y += heightSmall;
+        std::string name = renderer.truncatedText(SMALL_FONT_ID,
+            lastCompleteName.c_str(),
+            pageWidth - metrics.contentSidePadding * 2);
+        renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y, name.c_str());
+
+    } else {
+        // Idle
+        renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
+            "Waiting for fanfiction...");
+    }
+
+    const auto labels = mappedInput.mapLabels(tr(STR_EXIT), "", "", "");
+    GUI.drawButtonHints(renderer, labels.btn1, "", "", "");
 }
