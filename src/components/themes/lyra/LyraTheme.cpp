@@ -30,6 +30,7 @@
 #include "components/icons/transfer.h"
 #include "components/icons/wifi.h"
 #include "components/icons/ao3library.h"
+#include "components/icons/sendtoaveso3.h"
 #include "fontIds.h"
 
 // Internal constants
@@ -81,6 +82,8 @@ const uint8_t* iconForName(UIIcon icon, int size) {
         return HotspotIcon;
       case UIIcon::Bookmark:
         return BookmarkIcon;
+      case UIIcon::SendToAvesO3:
+        return Sendtoaveso3Icon;
       default:
         return nullptr;
     }
