@@ -36,7 +36,6 @@ void Ao3ReceiveActivity::onEnter() {
     lastCompleteAt           = 0;
     lastProcessedCompleteAt  = 0;
     exitRequested            = false;
-    ficReceived              = false;
 
     requestUpdate();
 
@@ -66,11 +65,7 @@ void Ao3ReceiveActivity::onExit() {
     if (WiFi.getMode() != WIFI_MODE_NULL) {
         WiFi.disconnect(false);
         delay(30);
-
-        // Only trigger auto-index if something was actually received
-        if (ficReceived) {
-            Storage.writeFile("/.crosspoint/pending_ao3_scan", "");
-        }
+        Storage.writeFile("/.crosspoint/pending_ao3_scan", "");
 
         // WiFi fragments the heap — silent restart is mandatory
         silentRestart();
@@ -172,7 +167,6 @@ void Ao3ReceiveActivity::loop() {
             lastCompleteAt          = status.lastCompleteAt;
             lastCompleteName        = status.lastCompleteName;
             lastProcessedCompleteAt = status.lastCompleteAt;
-            ficReceived             = true;   // at least one fic landed
             changed = true;
         }
 
@@ -275,37 +269,20 @@ void Ao3ReceiveActivity::renderServerRunning() const {
         "Status", true, EpdFontFamily::BOLD);
     y += heightText12 + metrics.verticalSpacing * 2;
 
-    if (lastProgressTotal > 0 && lastProgressReceived <= lastProgressTotal) {
-        // Transfer in progress
-        std::string label = "Receiving";
-        if (!currentUploadName.empty()) {
-            label += ": " + currentUploadName;
-            label = renderer.truncatedText(SMALL_FONT_ID, label.c_str(),
-                pageWidth - metrics.contentSidePadding * 2);
-        }
-        renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y, label.c_str());
-        y += heightSmall + metrics.verticalSpacing;
+    // Check if an upload is currently active (relies on flag rather than total size)
+    const auto status = webServer->getWsUploadStatus();
 
-        GUI.drawProgressBar(renderer,
-            Rect{metrics.contentSidePadding, y,
-                 pageWidth - metrics.contentSidePadding * 2,
-                 metrics.progressBarHeight},
-            lastProgressReceived, lastProgressTotal);
-
-    } else if (lastCompleteAt > 0 && (millis() - lastCompleteAt) < 6000) {
-        // Completion flash
-        renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
-            "Received:", true);
-        y += heightSmall;
-        std::string name = renderer.truncatedText(SMALL_FONT_ID,
-            lastCompleteName.c_str(),
+    if (lastCompleteAt > 0 && (millis() - lastCompleteAt) < 6000) {
+        // Success flash: "Received: [Title]"
+        std::string name = !lastCompleteName.empty() ? lastCompleteName.c_str() : "Fic";
+        std::string completionText = "Received: " + name;
+        
+        std::string truncatedCompletion = renderer.truncatedText(SMALL_FONT_ID,
+            completionText.c_str(),
             pageWidth - metrics.contentSidePadding * 2);
-        renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y, name.c_str());
-
-    } else {
-        // Idle
+            
         renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
-            "Waiting for fanfiction...");
+            truncatedCompletion.c_str(), true, EpdFontFamily::BOLD);
     }
 
     const auto labels = mappedInput.mapLabels(tr(STR_EXIT), "", "", "");
