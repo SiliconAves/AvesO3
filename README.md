@@ -16,7 +16,7 @@
 - [x] **Improved menu navigation**: hold left/right to skip multiple lines in File Browser, Reader Menu and Homescreen
 - [x] Support for **line breaks**
 
-What's Next in AvesO3.
+What's Next in AvesO3:
 - [ ] Separate AO3 font and book font
 - [ ] Bookmark fics with notes
 - [ ] End of Book rework
