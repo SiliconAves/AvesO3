@@ -1,0 +1,290 @@
+#include "Ao3ReceiveActivity.h"
+
+#include <ESPmDNS.h>
+#include <GfxRenderer.h>
+#include <I18n.h>
+#include <WiFi.h>
+
+#include "CrossPointState.h"
+#include "MappedInputManager.h"
+#include "SilentRestart.h"
+#include "WifiSelectionActivity.h"
+#include "components/UITheme.h"
+#include "fontIds.h"
+#include "util/QrUtils.h"
+#include "util/TaskWatchdog.h"
+
+namespace {
+constexpr const char* HOSTNAME = "crosspoint";
+}
+
+// ─────────────────────────────────────────────
+//  Lifecycle
+// ─────────────────────────────────────────────
+
+void Ao3ReceiveActivity::onEnter() {
+    Activity::onEnter();
+
+    state                    = Ao3ReceiveState::WIFI_SELECTION;
+    connectedIP.clear();
+    connectedSSID.clear();
+    lastHandleClientTime     = 0;
+    lastProgressReceived     = 0;
+    lastProgressTotal        = 0;
+    currentUploadName.clear();
+    lastCompleteName.clear();
+    lastCompleteAt           = 0;
+    lastProcessedCompleteAt  = 0;
+    exitRequested            = false;
+
+    requestUpdate();
+
+    if (WiFi.status() != WL_CONNECTED) {
+        startActivityForResult(
+            std::make_unique<WifiSelectionActivity>(renderer, mappedInput),
+            [this](const ActivityResult& result) {
+                if (!result.isCancelled) {
+                    const auto& wifi = std::get<WifiResult>(result.data);
+                    connectedIP   = wifi.ip;
+                    connectedSSID = wifi.ssid;
+                }
+                onWifiSelectionComplete(!result.isCancelled);
+            });
+    } else {
+        connectedIP   = WiFi.localIP().toString().c_str();
+        connectedSSID = WiFi.SSID().c_str();
+        startWebServer();
+    }
+}
+
+void Ao3ReceiveActivity::onExit() {
+    Activity::onExit();
+
+    MDNS.end();
+
+    if (WiFi.getMode() != WIFI_MODE_NULL) {
+        WiFi.disconnect(false);
+        delay(30);
+        Storage.writeFile("/.crosspoint/pending_ao3_scan", "");
+
+        // WiFi fragments the heap — silent restart is mandatory
+        silentRestart();
+    }
+}
+
+// ─────────────────────────────────────────────
+//  Server management
+// ─────────────────────────────────────────────
+
+void Ao3ReceiveActivity::onWifiSelectionComplete(bool connected) {
+    if (!connected) {
+        finish();
+        return;
+    }
+    startWebServer();
+}
+
+void Ao3ReceiveActivity::startWebServer() {
+    state = Ao3ReceiveState::SERVER_STARTING;
+    requestUpdate();
+
+    MDNS.end();
+    if (MDNS.begin(HOSTNAME)) {
+        LOG_DBG("AO3R", "mDNS started: http://%s.local/", HOSTNAME);
+    }
+
+    webServer.reset(new CrossPointWebServer());
+    webServer->begin();
+
+    if (webServer->isRunning()) {
+        state = Ao3ReceiveState::SERVER_RUNNING;
+        requestUpdate();
+    } else {
+        state = Ao3ReceiveState::ERROR;
+        requestUpdate();
+    }
+}
+
+void Ao3ReceiveActivity::stopWebServer() {
+    if (webServer) {
+        webServer->stop();
+        webServer.reset();
+    }
+}
+
+// ─────────────────────────────────────────────
+//  Loop
+// ─────────────────────────────────────────────
+
+void Ao3ReceiveActivity::loop() {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+        exitRequested = true;
+    }
+
+    if (webServer && webServer->isRunning()) {
+        const unsigned long gap = millis() - lastHandleClientTime;
+        if (lastHandleClientTime > 0 && gap > 100) {
+            LOG_DBG("AO3R", "WARNING: %lu ms gap since last handleClient", gap);
+        }
+
+        resetTaskWatchdogIfSubscribed();
+        constexpr int MAX_ITERATIONS = 80;
+        for (int i = 0; i < MAX_ITERATIONS && webServer->isRunning(); i++) {
+            webServer->handleClient();
+            if ((i & 0x07) == 0x07) resetTaskWatchdogIfSubscribed();
+            if ((i & 0x0F) == 0x0F) {
+                yield();
+                if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+                    exitRequested = true;
+                    break;
+                }
+            }
+        }
+        lastHandleClientTime = millis();
+
+        // Poll upload status for progress and completion
+        const auto status = webServer->getWsUploadStatus();
+        bool changed = false;
+
+        if (status.inProgress) {
+            if (status.received  != lastProgressReceived ||
+                status.total     != lastProgressTotal    ||
+                status.filename  != currentUploadName) {
+                lastProgressReceived = status.received;
+                lastProgressTotal    = status.total;
+                currentUploadName    = status.filename;
+                changed = true;
+            }
+        } else if (lastProgressReceived != 0 || lastProgressTotal != 0) {
+            lastProgressReceived = 0;
+            lastProgressTotal    = 0;
+            currentUploadName.clear();
+            changed = true;
+        }
+
+        if (status.lastCompleteAt != 0 &&
+            status.lastCompleteAt != lastProcessedCompleteAt) {
+            lastCompleteAt          = status.lastCompleteAt;
+            lastCompleteName        = status.lastCompleteName;
+            lastProcessedCompleteAt = status.lastCompleteAt;
+            changed = true;
+        }
+
+        if (lastCompleteAt > 0 && (millis() - lastCompleteAt) >= 6000) {
+            lastCompleteAt = 0;
+            lastCompleteName.clear();
+            changed = true;
+        }
+
+        if (changed) requestUpdate();
+    }
+
+    if (exitRequested) {
+        finish();
+        return;
+    }
+}
+
+// ─────────────────────────────────────────────
+//  Render
+// ─────────────────────────────────────────────
+
+void Ao3ReceiveActivity::render(RenderLock&&) {
+    const auto& metrics  = UITheme::getInstance().getMetrics();
+    const auto pageWidth  = renderer.getScreenWidth();
+    const auto pageHeight = renderer.getScreenHeight();
+
+    renderer.clearScreen();
+    GUI.drawHeader(renderer,
+        Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},
+        "Send to AvesO3");
+
+    const auto height = renderer.getLineHeight(UI_10_FONT_ID);
+    const auto top    = (pageHeight - height) / 2;
+
+    if (state == Ao3ReceiveState::SERVER_STARTING) {
+        renderer.drawCenteredText(UI_10_FONT_ID, top, "Starting server…");
+        renderer.displayBuffer();
+        return;
+    }
+
+    if (state == Ao3ReceiveState::ERROR) {
+        renderer.drawCenteredText(UI_12_FONT_ID, top - 16,
+            "Server failed to start.", true, EpdFontFamily::BOLD);
+        renderer.drawCenteredText(UI_10_FONT_ID, top + 16,
+            "Try again or check Wi-Fi.");
+        const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
+        GUI.drawButtonHints(renderer, labels.btn1, "", "", "");
+        renderer.displayBuffer();
+        return;
+    }
+
+    if (state == Ao3ReceiveState::SERVER_RUNNING) {
+        GUI.drawSubHeader(renderer,
+            Rect{0, metrics.topPadding + metrics.headerHeight,
+                 pageWidth, metrics.tabBarHeight},
+            connectedSSID.c_str(),
+            (std::string("http://") + connectedIP).c_str());
+
+        renderServerRunning();
+    }
+
+    renderer.displayBuffer();
+}
+
+void Ao3ReceiveActivity::renderServerRunning() const {
+    const auto& metrics  = UITheme::getInstance().getMetrics();
+    const auto pageWidth  = renderer.getScreenWidth();
+    const auto pageHeight = renderer.getScreenHeight();
+
+    int y = metrics.topPadding
+            + metrics.headerHeight
+            + metrics.tabBarHeight
+            + metrics.verticalSpacing * 4;
+
+    const int heightText12 = renderer.getTextHeight(UI_12_FONT_ID);
+    const int heightText10 = renderer.getLineHeight(UI_10_FONT_ID);
+    const int heightSmall  = renderer.getLineHeight(SMALL_FONT_ID);
+
+    // ── Setup section ──
+    renderer.drawText(UI_12_FONT_ID, metrics.contentSidePadding, y,
+        "Setup", true, EpdFontFamily::BOLD);
+    y += heightText12 + metrics.verticalSpacing * 2;
+
+    renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
+        "1) Install \"Send to AvesO3\" extension for Firefox");
+    y += heightSmall;
+    renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
+        "2) Access AO3 from your pc or phone");
+    y += heightSmall;
+    renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
+        "3) Press the BIRD button to send fics to your ereader");
+    y += heightSmall;
+    renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
+        "\"Keep this screen open while sending\"");
+    y += heightSmall + metrics.verticalSpacing * 4;
+
+    // ── Status section ──
+    renderer.drawText(UI_12_FONT_ID, metrics.contentSidePadding, y,
+        "Status", true, EpdFontFamily::BOLD);
+    y += heightText12 + metrics.verticalSpacing * 2;
+
+    // Check if an upload is currently active (relies on flag rather than total size)
+    const auto status = webServer->getWsUploadStatus();
+
+    if (lastCompleteAt > 0 && (millis() - lastCompleteAt) < 6000) {
+        // Success flash: "Received: [Title]"
+        std::string name = !lastCompleteName.empty() ? lastCompleteName.c_str() : "Fic";
+        std::string completionText = "Received: " + name;
+        
+        std::string truncatedCompletion = renderer.truncatedText(SMALL_FONT_ID,
+            completionText.c_str(),
+            pageWidth - metrics.contentSidePadding * 2);
+            
+        renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
+            truncatedCompletion.c_str(), true, EpdFontFamily::BOLD);
+    }
+
+    const auto labels = mappedInput.mapLabels(tr(STR_EXIT), "", "", "");
+    GUI.drawButtonHints(renderer, labels.btn1, "", "", "");
+}

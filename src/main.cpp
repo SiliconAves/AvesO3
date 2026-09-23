@@ -28,6 +28,7 @@
 #include "SdCardFontSystem.h"
 #include "activities/Activity.h"
 #include "activities/ActivityManager.h"
+#include "activities/network/Ao3ReceiveActivity.h"
 #include "activities/settings/SdFirmwareUpdateActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -556,6 +557,14 @@ void loop() {
   // Placed after sleep guards so we never queue a render that won't be processed.
   if (gpio.wasUsbStateChanged()) {
     activityManager.requestUpdate();
+  }
+
+  // Start AO3 Receive Activity with Power Button (outside reader)
+  if (mappedInputManager.wasReleased(MappedInputManager::Button::Power) &&
+      SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::AVESO3_RECEIVE &&
+      !activityManager.isReaderActivity()) {
+    activityManager.replaceActivity(std::make_unique<Ao3ReceiveActivity>(renderer, mappedInputManager));
+    return;
   }
 
   const unsigned long activityStartTime = millis();

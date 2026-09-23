@@ -708,11 +708,16 @@ void CrossPointWebServer::handleUpload(UploadState& state) const {
     filePath += state.fileName;
 
     // Check if file already exists - SD operations can be slow
-    resetTaskWatchdogIfSubscribed();
+    bool overwrite = server->hasArg("overwrite") && server->arg("overwrite") == "true";
     if (Storage.exists(filePath.c_str())) {
-      state.error = "File already exists: " + state.fileName;
-      LOG_DBG("WEB", "[UPLOAD] Collision: %s", filePath.c_str());
-      return;
+      if (!overwrite) {
+          state.error = "File already exists: " + state.fileName;
+          LOG_DBG("WEB", "[UPLOAD] Collision: %s", filePath.c_str());
+          return;
+      }
+      clearBookCache(filePath.c_str());
+      Storage.remove(filePath.c_str());
+      LOG_DBG("WEB", "[UPLOAD] Overwrite: removed %s", filePath.c_str());
     }
 
     // Open file for writing - this can be slow due to FAT cluster allocation
@@ -772,6 +777,11 @@ void CrossPointWebServer::handleUpload(UploadState& state) const {
 
       if (state.error.isEmpty()) {
         state.success = true;
+        // Send to AvesO3 onscreen feedback 
+        wsLastCompleteName = state.fileName;
+        wsLastCompleteSize = state.size;
+        wsLastCompleteAt = millis();
+        // End of Send to AvesO3 onscreen feedback
         const unsigned long elapsed = millis() - uploadStartTime;
         const float avgKbps = (elapsed > 0) ? (state.size / 1024.0) / (elapsed / 1000.0) : 0;
         const float writePercent = (elapsed > 0) ? (totalWriteTime * 100.0 / elapsed) : 0;

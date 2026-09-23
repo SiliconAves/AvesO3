@@ -19,6 +19,7 @@
 #include "util/TaskWatchdog.h"
 
 #include "activities/home/Ao3LibraryActivity.h"
+#include "activities/network/Ao3ReceiveActivity.h"
 
 namespace {
 // AP Mode configuration
@@ -117,6 +118,8 @@ void CrossPointWebServerActivity::onNetworkModeSelected(const NetworkMode mode) 
     modeName = "Connect to Calibre";
   } else if (mode == NetworkMode::CREATE_HOTSPOT) {
     modeName = "Create Hotspot";
+  } else if (mode == NetworkMode::AVESO3_RECEIVE) {
+    modeName = "Send to AvesO3";
   }
   LOG_DBG("WEBACT", "Network mode selected: %s", modeName);
 
@@ -136,6 +139,22 @@ void CrossPointWebServerActivity::onNetworkModeSelected(const NetworkMode mode) 
                                      onNetworkModeSelected(std::get<NetworkModeResult>(result.data).mode);
                                    }
                                  });
+        });
+    return;
+  }
+
+  // AvesO3 Receive — identical pattern to Calibre ──
+  if (mode == NetworkMode::AVESO3_RECEIVE) {
+    startActivityForResult(
+        std::make_unique<Ao3ReceiveActivity>(renderer, mappedInput),
+        [this](const ActivityResult& result) {
+          state = WebServerActivityState::MODE_SELECTION;
+          startActivityForResult(
+              std::make_unique<NetworkModeSelectionActivity>(renderer, mappedInput),
+              [this](const ActivityResult& result) {
+                if (result.isCancelled) onGoHome();
+                else onNetworkModeSelected(std::get<NetworkModeResult>(result.data).mode);
+              });
         });
     return;
   }

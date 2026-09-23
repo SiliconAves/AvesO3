@@ -10,6 +10,7 @@ enum class AO3SyncState {
     UP_TO_DATE,
     UPDATE_FOUND,
     DOWNLOADING,
+    UPDATE_SUCCESSFUL,
     ERROR
 };
 
