@@ -183,13 +183,11 @@ void BookActionActivity::loop() {
   }
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    if (currentStatus != initialStatus) {
-      saveStatus();
-      BookActionResult res;
-      res.modified  = true;
-      res.newStatus = currentStatus;
-      setResult(ActivityResult(std::move(res)));
-    }
+    saveStatusIfModified();
+    BookActionResult res;
+    res.modified  = true;
+    res.newStatus = currentStatus;
+    setResult(ActivityResult(std::move(res)));
     finish();
     return;
   }
