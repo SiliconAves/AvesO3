@@ -25,6 +25,7 @@ class CrossPointWebServer {
     size_t total = 0;
     std::string filename;
     std::string lastCompleteName;
+    std::string lastCompletePath;
     size_t lastCompleteSize = 0;
     unsigned long lastCompleteAt = 0;
   };

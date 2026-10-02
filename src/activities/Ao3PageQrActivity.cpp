@@ -12,6 +12,7 @@
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "util/QrUtils.h"
+#include "network/Ao3ReceiveActivity.h"
 
 // ---------------------------------------------------------------------------
 //  loadMetadata
@@ -79,13 +80,18 @@ void Ao3PageQrActivity::loop() {
         return;
     }
 
-    // Update via AO3Sync (causes fragmentation; needs silent reboot strategy)
-    // if (!workId.empty() && mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    //     startActivityForResult(
-    //         std::make_unique<AO3SyncActivity>(renderer, mappedInput,
-    //             workId, std::string(updatedDate), filePath),
-    //         [this](const ActivityResult&) { requestUpdate(true); });
-    // }
+    // Left button: Update — only when workId is known
+    if (!workId.empty() && mappedInput.wasReleased(MappedInputManager::Button::Left)) {
+        startActivityForResult(
+            std::make_unique<Ao3ReceiveActivity>(
+                renderer, mappedInput,
+                Ao3ReceiveMode::UPDATE_SINGLE,
+                filePath,
+                storyUrl,
+                std::string(title)),
+            [this](const ActivityResult&) { requestUpdate(true); });
+        return;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +121,7 @@ void Ao3PageQrActivity::render(RenderLock&&) {
 
     std::string infoStr = "Chapters on Device: " + std::to_string(chapterCount);
     if (updatedDate[0]) {
-        infoStr += " • Updated on " + std::string(updatedDate);
+        infoStr += " • Updated " + std::string(updatedDate);
     }
 
     // Measure info line width to constrain tags
@@ -231,8 +237,9 @@ void Ao3PageQrActivity::render(RenderLock&&) {
     }
 
     // --- Button hints ---
+    const char* updateLabel = workId.empty() ? "" : "Update";
     const char* confirmLabel = filePath.empty() ? "" : tr(STR_OPEN);
-    const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, "", "");
+    const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, updateLabel, "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
     renderer.displayBuffer();

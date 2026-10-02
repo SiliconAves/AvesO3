@@ -50,6 +50,7 @@ size_t wsLastProgressSent = 0;
 String wsLastCompleteName;
 size_t wsLastCompleteSize = 0;
 unsigned long wsLastCompleteAt = 0;
+String wsLastCompletePath;
 
 String normalizeWebPath(const String& inputPath) {
   if (inputPath.isEmpty() || inputPath == "/") {
@@ -355,6 +356,7 @@ CrossPointWebServer::WsUploadStatus CrossPointWebServer::getWsUploadStatus() con
   status.lastCompleteName = wsLastCompleteName.c_str();
   status.lastCompleteSize = wsLastCompleteSize;
   status.lastCompleteAt = wsLastCompleteAt;
+  status.lastCompletePath = wsLastCompletePath.c_str();
   return status;
 }
 
@@ -780,6 +782,8 @@ void CrossPointWebServer::handleUpload(UploadState& state) const {
         // Send to AvesO3 onscreen feedback 
         wsLastCompleteName = state.fileName;
         wsLastCompleteSize = state.size;
+        wsLastCompletePath = state.path + state.fileName;
+        LOG_INF("WEB", "lastCompletePath set (HTTP POST): '%s'", wsLastCompletePath.c_str());
         wsLastCompleteAt = millis();
         // End of Send to AvesO3 onscreen feedback
         const unsigned long elapsed = millis() - uploadStartTime;
@@ -1707,6 +1711,8 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
             wsUploadFile.close();
             wsLastCompleteName = wsUploadFileName;
             wsLastCompleteSize = 0;
+            wsLastCompletePath = filePath;
+            LOG_INF("WS", "lastCompletePath set (zero-byte): '%s'", wsLastCompletePath.c_str());
             wsLastCompleteAt = millis();
             LOG_DBG("WS", "Zero-byte upload complete: %s", filePath.c_str());
             clearBookCache(filePath.c_str());
@@ -1766,7 +1772,6 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
 
         wsLastCompleteName = wsUploadFileName;
         wsLastCompleteSize = wsUploadSize;
-        wsLastCompleteAt = millis();
 
         unsigned long elapsed = millis() - wsUploadStartTime;
         float kbps = (elapsed > 0) ? (wsUploadSize / 1024.0) / (elapsed / 1000.0) : 0;
@@ -1778,6 +1783,9 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
         String filePath = wsUploadPath;
         if (!filePath.endsWith("/")) filePath += "/";
         filePath += wsUploadFileName;
+        wsLastCompletePath = filePath;
+        LOG_INF("WS", "lastCompletePath set (zero-byte): '%s'", wsLastCompletePath.c_str());
+        wsLastCompleteAt = millis();
         clearBookCache(filePath.c_str());
 
         wsServer->sendTXT(num, "DONE");
