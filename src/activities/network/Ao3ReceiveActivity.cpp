@@ -466,7 +466,10 @@ void Ao3ReceiveActivity::renderUpdateRunning() const {
         "2) Scan the QR code below");
     y += smallH;
     renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
-        "3) Press the BIRD button and send the fic to ROOT folder");
+        "3) Press the BIRD button and send the fic to any folder");
+    y += smallH;
+    renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y,
+        "4) The new file will automatically overwrite the outdated version");
     y += smallH + metrics.verticalSpacing * 3;
 
     // --- Fic Metadata & QR Code section ---

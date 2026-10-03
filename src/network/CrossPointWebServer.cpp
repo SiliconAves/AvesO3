@@ -782,7 +782,10 @@ void CrossPointWebServer::handleUpload(UploadState& state) const {
         // Send to AvesO3 onscreen feedback 
         wsLastCompleteName = state.fileName;
         wsLastCompleteSize = state.size;
-        wsLastCompletePath = state.path + state.fileName;
+        String completePath = state.path;
+        if (!completePath.endsWith("/")) completePath += "/";
+        completePath += state.fileName;
+        wsLastCompletePath = completePath;
         LOG_INF("WEB", "lastCompletePath set (HTTP POST): '%s'", wsLastCompletePath.c_str());
         wsLastCompleteAt = millis();
         // End of Send to AvesO3 onscreen feedback
