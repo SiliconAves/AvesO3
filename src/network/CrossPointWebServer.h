@@ -65,6 +65,9 @@ class CrossPointWebServer {
   bool isRunning() const { return running; }
 
   WsUploadStatus getWsUploadStatus() const;
+  // When true, upload-completion handlers skip clearBookCache() so the caller
+  // (e.g. AO3 update mode) can invalidate the cache selectively.
+  void setPreserveBookCacheOnUpload(bool preserve);
 
   // Get the port number
   uint16_t getPort() const { return port; }

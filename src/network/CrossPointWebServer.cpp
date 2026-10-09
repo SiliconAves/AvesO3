@@ -51,6 +51,8 @@ String wsLastCompleteName;
 size_t wsLastCompleteSize = 0;
 unsigned long wsLastCompleteAt = 0;
 String wsLastCompletePath;
+// Set by Ao3ReceiveActivity in update mode; see clearUploadedBookCache().
+bool preserveBookCacheOnUpload = false;
 
 String normalizeWebPath(const String& inputPath) {
   if (inputPath.isEmpty() || inputPath == "/") {
@@ -81,6 +83,15 @@ bool isProtectedItemName(const String& name) {
   }
   return false;
 }
+// Upload-completion cache clearing. Skipped when the caller does its own
+// selective invalidation (AO3 update mode).
+inline void clearUploadedBookCache(const char* path) {
+  if (preserveBookCacheOnUpload) {
+    LOG_DBG("WEB", "Keeping book cache (update mode): %s", path);
+    return;
+  }
+  clearBookCache(path);
+}
 }  // namespace
 
 // File listing page template - now using generated headers:
@@ -90,6 +101,7 @@ bool isProtectedItemName(const String& name) {
 CrossPointWebServer::CrossPointWebServer() {}
 
 CrossPointWebServer::~CrossPointWebServer() { stop(); }
+void CrossPointWebServer::setPreserveBookCacheOnUpload(bool preserve) { preserveBookCacheOnUpload = preserve; }
 
 void CrossPointWebServer::begin() {
   if (running) {
@@ -241,6 +253,7 @@ void CrossPointWebServer::abortWsUpload(const char* tag) {
 }
 
 void CrossPointWebServer::stop() {
+  preserveBookCacheOnUpload = false;  // never leak into a later session
   if (!running || !server) {
     LOG_DBG("WEB", "stop() called but already stopped (running=%d, server=%p)", running, server.get());
     if (watchdogTaskRegistered) {
@@ -717,7 +730,7 @@ void CrossPointWebServer::handleUpload(UploadState& state) const {
           LOG_DBG("WEB", "[UPLOAD] Collision: %s", filePath.c_str());
           return;
       }
-      clearBookCache(filePath.c_str());
+      clearUploadedBookCache(filePath.c_str());
       Storage.remove(filePath.c_str());
       LOG_DBG("WEB", "[UPLOAD] Overwrite: removed %s", filePath.c_str());
     }
@@ -801,7 +814,7 @@ void CrossPointWebServer::handleUpload(UploadState& state) const {
         String filePath = state.path;
         if (!filePath.endsWith("/")) filePath += "/";
         filePath += state.fileName;
-        clearBookCache(filePath.c_str());
+        clearUploadedBookCache(filePath.c_str());
       }
     }
   } else if (upload.status == UPLOAD_FILE_ABORTED) {
@@ -1718,7 +1731,7 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
             LOG_INF("WS", "lastCompletePath set (zero-byte): '%s'", wsLastCompletePath.c_str());
             wsLastCompleteAt = millis();
             LOG_DBG("WS", "Zero-byte upload complete: %s", filePath.c_str());
-            clearBookCache(filePath.c_str());
+            clearUploadedBookCache(filePath.c_str());
             wsServer->sendTXT(num, "DONE");
             wsLastProgressSent = 0;
             break;
@@ -1789,7 +1802,7 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
         wsLastCompletePath = filePath;
         LOG_INF("WS", "lastCompletePath set (zero-byte): '%s'", wsLastCompletePath.c_str());
         wsLastCompleteAt = millis();
-        clearBookCache(filePath.c_str());
+        clearUploadedBookCache(filePath.c_str());
 
         wsServer->sendTXT(num, "DONE");
         wsLastProgressSent = 0;

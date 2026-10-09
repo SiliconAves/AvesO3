@@ -1,28 +1,32 @@
 # What's Different in AvesO3
+
+> [!WARNING]
+> If you get stuck in a bootloop after flashing, **delete the .crosspoint folder from the SD card.**
+
+> [!NOTE]
+> Send to AvesO3 extension for seamless AO3 fic transfer is live. Download it from its Firefox Extension page: https://addons.mozilla.org/en-US/firefox/addon/send-to-aveso3/. Source code and step by step instructions are available at https://github.com/SiliconAves/Send-to-AvesO3.
+
 > [!NOTE]
 > Compatible with **new screen controller x3 starting from v.1.5.0**
 
 - [x] **AO3-style library browser**, complete with summary and metadata square. You can add **up to 1000 books** to the AO3 library.
 - [x] Compatible with **Calibre+FanFicFare epubs** with *<u>*unmodified metadata spine*</u>* and **epubs from AO3**
 - [x] AO3 Library **sorting and filtering** with 2 modes (Automatic & Folder Tree)
-- [x] **Download new chapters** directly from AO3
+- [x] **Download new chapters** directly from AO3, or by using the *Send to AvesO3 extension*
 - [x] **Dashboard Menu**: Marked for Later, New Chapter Fics, WIPs List, Recents
 - [x] **AO3 story page QR code** from context menu
 - [x] **Series continous reading**: find books in the same AO3 series when at End of Book
 - [x] **Auto index ao3 stories** in chunks
 - [x] **Track the status** of each fic directly from the File Browser (introduces 5 statuses, with a corresponding icon: Unread, Reading, Waiting for Chapter, New Chapter Available, Finished)
 - [x] **Pin your longfics** to the homescreen, so they aren't pushed off by your oneshots
-- [x] **Added Noto Sans 10pt** to replicate the experience of reading AO3 on a phone
 - [x] **Improved menu navigation**: hold left/right to skip multiple lines in File Browser, Reader Menu and Homescreen
 - [x] Support for **line breaks**
 
 What's Next in AvesO3:
-- [ ] Separate AO3 font and book font
 - [ ] Bookmark fics with notes
 - [ ] End of Book rework
-
-In progress:
-- [ ] Send to AvesO3 web extension for easy fic transfer, locked fic updates and series updates.
+- [ ] AO3 Metadata on Homepage
+- [ ] Separate AO3 font and book font
 
 # v.1.3.0 Features
 **1. Automatic Sort and Filter**

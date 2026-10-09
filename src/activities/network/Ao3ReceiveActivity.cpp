@@ -102,6 +102,9 @@ void Ao3ReceiveActivity::startWebServer() {
     }
 
     webServer.reset(new CrossPointWebServer());
+    if (mode == Ao3ReceiveMode::UPDATE_SINGLE) {
+        webServer->setPreserveBookCacheOnUpload(true);
+    }
     webServer->begin();
 
     if (webServer->isRunning()) {
@@ -138,34 +141,41 @@ void Ao3ReceiveActivity::handleUpdateComplete(const std::string& receivedPath) {
     }
 
     // --- Safe atomic swap: backup → rename → delete backup ---
-    const std::string backupPath = targetPath + ".bak";
+    // Skip the swap when the file was already uploaded directly to the target
+    // path (e.g. HTTP POST overwrite to the same location). In that case the
+    // new content is already in place; running the swap would mistakenly move
+    // it to .bak and then fail to rename it back, producing a spurious error
+    // even though the update succeeded.
+    if (receivedPath != targetPath) {
+        const std::string backupPath = targetPath + ".bak";
 
-    // Step 1: move original to backup (preserves it if rename fails)
-    bool hadOriginal = Storage.exists(targetPath.c_str());
-    if (hadOriginal) {
-        if (!Storage.rename(targetPath.c_str(), backupPath.c_str())) {
-            errorMessage = "Could not move original file. SD card issue?";
+        // Step 1: move original to backup (preserves it if rename fails)
+        bool hadOriginal = Storage.exists(targetPath.c_str());
+        if (hadOriginal) {
+            if (!Storage.rename(targetPath.c_str(), backupPath.c_str())) {
+                errorMessage = "Could not move original file. SD card issue?";
+                state = Ao3ReceiveState::ERROR;
+                requestUpdate();
+                return;
+            }
+        }
+
+        // Step 2: move received file to target path
+        if (!Storage.rename(receivedPath.c_str(), targetPath.c_str())) {
+            // Restore original from backup
+            if (hadOriginal) {
+                Storage.rename(backupPath.c_str(), targetPath.c_str());
+            }
+            errorMessage = "Could not move received file. SD card issue?";
             state = Ao3ReceiveState::ERROR;
             requestUpdate();
             return;
         }
-    }
 
-    // Step 2: move received file to target path
-    if (!Storage.rename(receivedPath.c_str(), targetPath.c_str())) {
-        // Restore original from backup
+        // Step 3: delete backup now that swap succeeded
         if (hadOriginal) {
-            Storage.rename(backupPath.c_str(), targetPath.c_str());
+            Storage.remove(backupPath.c_str());
         }
-        errorMessage = "Could not move received file. SD card issue?";
-        state = Ao3ReceiveState::ERROR;
-        requestUpdate();
-        return;
-    }
-
-    // Step 3: delete backup now that swap succeeded
-    if (hadOriginal) {
-        Storage.remove(backupPath.c_str());
     }
 
     // --- Cache invalidation (BMP preserved) ---
