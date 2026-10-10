@@ -116,7 +116,7 @@ Black with Checkmark: Finished reading<br>
 <br><br>Pinned fics are marked with a **bullet dot [·]** before the title.
 <br clear="left"/>
 
-## Installing (DO NOT INSTALL ON DEVICES WITH THE NEW DISPLAY CONTROLLER)
+## Installing
 1. Download the .bin file from the Releases section
 2. Connect your Xteink X4 to your computer via USB-C and wake/unlock the device
 3. Go to https://xteink.dve.al/ and click "Flash CrossPoint firmware"
