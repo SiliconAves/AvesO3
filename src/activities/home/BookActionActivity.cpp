@@ -55,7 +55,7 @@ int BookActionActivity::logicalRow(int visual) const {
   if (isEpub || isXtc)   { if (visual == idx) return 0; idx++; } // Status cycle
   if (hasAo3LibraryInfo) { if (visual == idx) return 1; idx++; } // Mark for Later
   if (hasAo3LibraryInfo) { if (visual == idx) return 6; idx++; } // Show AO3 Page QR
-  if (isEpub)            { if (visual == idx) return 2; idx++; } // Index Book
+  if (isEpub && !isAlreadyArchived) { if (visual == idx) return 2; idx++; } // Index Book
   if (hasAo3LibraryInfo) { if (visual == idx) return 3; idx++; } // Move to Read Folder / Restore
   if (visual == idx)     return 4;                               // Delete
   return -1;
@@ -72,7 +72,7 @@ int BookActionActivity::visibleRowCount() const {
   if (isEpub || isXtc)      n++;  // Status
   if (hasAo3LibraryInfo)    n++;  // Mark for Later
   if (hasAo3LibraryInfo)    n++;  // Show AO3 Page QR
-  if (isEpub)               n++;  // Index Book
+  if (isEpub && !isAlreadyArchived) n++;  // Index Book
   if (hasAo3LibraryInfo)    n++;  // Move to Read Folder / Restore
   return n;
 }

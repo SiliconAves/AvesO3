@@ -1,4 +1,5 @@
 #include "Ao3Librarian.h"
+#include "activities/Ao3ArchiveHelper.h"
 #include <memory>
 #include <Epub.h>
 #include <HalStorage.h>
@@ -692,6 +693,11 @@ void extractTagsFromAnchor(const char* anchor) {
 } // namespace
 
 bool Ao3Librarian::scrape(const Epub& epub, bool force) {
+  // Archived fics are intentionally outside the library; their sidecar filepath
+  // is the restore origin. Never overwrite it — return true so callers don't
+  // treat this as an indexing error.
+  if (Ao3ArchiveHelper::isInReadFolder(epub.getPath())) return true;
+
   const std::string infoPath = epub.getCachePath() + "/ao3_library_info";
 
   if (!force && Storage.exists(infoPath.c_str())) {
