@@ -12,7 +12,7 @@
  */
 struct Ao3LibraryMetadata {
   char magic[4];          // 'AO3L'
-  uint8_t version;        // 8
+  uint8_t version;        // 9
   char rating;            // G, T, M, E, -
   char warning;           // !, ?, -, B
   uint8_t isCompleted;    // 0 or 1
@@ -28,10 +28,11 @@ struct Ao3LibraryMetadata {
   char title[128];        // Book title
   char author[128];       // Book author
   char updatedDate[12];   // Last updated date YYYY-MM-DD
+  char fandom[32];        // Fandom string (v9)
 
   Ao3LibraryMetadata() {
     magic[0] = 'A'; magic[1] = 'O'; magic[2] = '3'; magic[3] = 'L';
-    version = 8;
+    version = 9;
     rating = '-';
     warning = 0;
     isCompleted = 0;
@@ -45,10 +46,11 @@ struct Ao3LibraryMetadata {
     memset(title, 0, sizeof(title));
     memset(author, 0, sizeof(author));
     memset(updatedDate, 0, sizeof(updatedDate));
+    memset(fandom, 0, sizeof(fandom));
   }
 
   bool isValid() const {
-    return magic[0] == 'A' && magic[1] == 'O' && magic[2] == '3' && magic[3] == 'L';
+    return magic[0] == 'A' && magic[1] == 'O' && magic[2] == '3' && magic[3] == 'L' && version == 9;
   }
 };
 

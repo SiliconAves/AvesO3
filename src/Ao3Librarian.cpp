@@ -703,7 +703,7 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
   if (!force && Storage.exists(infoPath.c_str())) {
     auto existing = std::unique_ptr<Ao3LibraryMetadata>(new Ao3LibraryMetadata());
     if (getLibraryInfo(epub, *existing)) {
-      if (existing->version == 8 && existing->rating != '-' && existing->warning != 0 && existing->summary[0] != 0 && existing->wordCount > 0) {
+      if (existing->version == 9 && existing->rating != '-' && existing->warning != 0 && existing->summary[0] != 0 && existing->wordCount > 0) {
         // If ao3-info.bin is missing but we already have cached library info,
         // we can still attempt to rebuild ao3-info.bin if we sniff a native preface
         if (!epub.hasAo3Info() && sniffNativeAo3Preface(epub)) {
@@ -757,6 +757,9 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
 
   strncpy(meta->updatedDate, scrapedDate.c_str(), sizeof(meta->updatedDate) - 1);
   meta->updatedDate[sizeof(meta->updatedDate) - 1] = '\0';
+
+  strncpy(meta->fandom, scrapedFandom, sizeof(meta->fandom) - 1);
+  meta->fandom[sizeof(meta->fandom) - 1] = '\0';
 
   // Generate the ao3-info.bin sidecar if missing and we extracted a valid Work ID
   if (!epub.hasAo3Info() && !scrapedWorkId.empty()) {
@@ -907,7 +910,7 @@ void Ao3Librarian::scanGlobalLibrary(std::vector<Ao3LibraryMetadata>& out) {
         if (Storage.openFileForRead("AO3L", infoPath, f)) {
           Ao3LibraryMetadata meta;
           if (f.read((uint8_t*)&meta, sizeof(meta)) == sizeof(meta)) {
-            if (meta.isValid() && meta.version == 8) {
+            if (meta.isValid() && meta.version == 9) {
               out.push_back(meta);
             }
           }

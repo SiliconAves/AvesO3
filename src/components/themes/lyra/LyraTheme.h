@@ -105,4 +105,8 @@ class LyraTheme : public BaseTheme {
                            std::function<bool()> storeCoverBuffer) const override;
   void drawEmptyRecents(const GfxRenderer& renderer, const Rect rect) const;
   bool showsFileIcons() const override { return true; }
+
+ private:
+  mutable std::string cachedBookPath;
+  mutable std::string ao3Fandom;
 };

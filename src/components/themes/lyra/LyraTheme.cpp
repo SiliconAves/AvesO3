@@ -8,8 +8,11 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
+
+#include "Ao3LibraryMetadata.h"
 
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
@@ -534,7 +537,29 @@ void LyraTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
   // Draw cover image as background if available (inside the box)
   // Only load from SD on first render, then use stored buffer
   if (hasContinueReading) {
-    RecentBook book = recentBooks[0];
+    const RecentBook& book = recentBooks[0];
+
+    if (book.path != cachedBookPath) {
+      cachedBookPath = book.path;
+      ao3Fandom.clear();
+
+      const std::string infoPath =
+          "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(book.path)) + "/ao3_library_info";
+
+      if (Storage.exists(infoPath.c_str())) {
+        HalFile f2;
+        if (Storage.openFileForRead("HOME", infoPath, f2)) {
+          auto ao3meta = std::unique_ptr<Ao3LibraryMetadata>(new Ao3LibraryMetadata());
+          if (f2.read((uint8_t*)ao3meta.get(), sizeof(Ao3LibraryMetadata)) == sizeof(Ao3LibraryMetadata) &&
+              ao3meta->isValid()) {
+            if (ao3meta->fandom[0]) {
+              ao3Fandom = ao3meta->fandom;
+            }
+          }
+          f2.close();
+        }
+      }
+    }
     if (!coverRendered) {
       std::string coverPath = book.coverBmpPath;
       bool hasCover = true;
@@ -607,6 +632,18 @@ void LyraTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
     const int totalBlockHeight = titleBlockHeight + authorHeight;
     int titleY = tileY + tileHeight / 2 - totalBlockHeight / 2;
     const int textX = tileX + hPaddingInSelection + coverWidth + LyraMetrics::values.verticalSpacing;
+
+    if (!ao3Fandom.empty()) {
+      const int pillH = 20;
+      const int pillY = titleY - pillH - 11;
+
+      std::string truncatedFandom = renderer.truncatedText(SMALL_FONT_ID, ao3Fandom.c_str(), textWidth - 16);
+      const int pillW = renderer.getTextWidth(SMALL_FONT_ID, truncatedFandom.c_str()) + 16;
+
+      renderer.drawRoundedRect(textX, pillY, pillW, pillH, 1, 6, true);
+      renderer.drawText(SMALL_FONT_ID, textX + 8, pillY - 2, truncatedFandom.c_str(), true);
+    }
+
     for (const auto& line : titleLines) {
       renderer.drawText(UI_12_FONT_ID, textX, titleY, line.c_str(), true, EpdFontFamily::BOLD);
       titleY += titleLineHeight;
