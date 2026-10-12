@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+#include "activities/home/Ao3FandomLogo.h"
 
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
@@ -184,6 +185,11 @@ void RoundedRaffTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, con
             "/ao3_library_info").c_str());
         renderer.drawIcon(hasAo3Info ? Ao3Icon : CoverIcon,
                           tileX + (tileWidth - coverWidth) / 2 + 24, imgY + 24, 32);
+
+        if (hasAo3Info) drawFandomLogoForBook(renderer, book.path, tileX + (tileWidth - coverWidth) / 2,
+                          imgY + RoundedRaffMetrics::values.homeCoverHeight / 3, coverWidth,
+                          2 * RoundedRaffMetrics::values.homeCoverHeight / 3);
+                        
         renderer.maskRoundedRectOutsideCorners(tileX + (tileWidth - coverWidth) / 2, imgY, coverWidth,
                                                RoundedRaffMetrics::values.homeCoverHeight, kCoverRadius,
                                                Color::LightGray);

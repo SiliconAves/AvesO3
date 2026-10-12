@@ -2202,3 +2202,27 @@ void GfxRenderer::getOrientedViewableTRBL(int* outTop, int* outRight, int* outBo
       break;
   }
 }
+
+void GfxRenderer::drawBitmap1BitStencil(const Bitmap& bmp, int x, int y, int dstW, int dstH) const {
+  if (fontCacheManager_ && fontCacheManager_->isScanning()) return;
+  const int srcW = bmp.getWidth(), srcH = bmp.getHeight();
+  if (dstW <= 0 || dstH <= 0) return;
+  auto* out = static_cast<uint8_t*>(malloc((srcW + 3) / 4));
+  auto* row = static_cast<uint8_t*>(malloc(bmp.getRowBytes()));
+  if (!out || !row) { free(out); free(row); return; }
+
+  for (int by = 0; by < srcH; by++) {
+    if (bmp.readNextRow(out, row) != BmpReaderError::Ok) break;
+    const int iy = bmp.isTopDown() ? by : srcH - 1 - by;          // image row (top-down)
+    const int r0 = (iy * dstH + srcH - 1) / srcH;                 // dest rows that sample this source row
+    const int r1 = ((iy + 1) * dstH + srcH - 1) / srcH;
+    for (int ry = r0; ry < r1; ry++) {
+      for (int dx = 0; dx < dstW; dx++) {
+        const int sx = dx * srcW / dstW;
+        const uint8_t v = (out[sx / 4] >> (6 - ((sx * 2) % 8))) & 0x3;
+        if (v < 3) drawPixel(x + dx, y + ry, false);              // dark source px -> white ink
+      }                                                           // light px left alone (black shows through)
+    }
+  }
+  free(out); free(row);
+}

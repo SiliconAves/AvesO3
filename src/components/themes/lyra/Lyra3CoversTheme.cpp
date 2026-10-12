@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "activities/home/Ao3FandomLogo.h"
 
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
@@ -77,6 +78,10 @@ void Lyra3CoversTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, con
           ("/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(recentBooks[i].path)) + "/ao3_library_info").c_str());
           const uint8_t* icon = hasAo3Info ? Ao3Icon : CoverIcon;
           renderer.drawIcon(icon, tileX + hPaddingInSelection + 24, tileY + hPaddingInSelection + 24, 32);
+
+          if (hasAo3Info) drawFandomLogoForBook(renderer, recentBooks[i].path, tileX + hPaddingInSelection,
+                          tileY + hPaddingInSelection + Lyra3CoversMetrics::values.homeCoverHeight / 3,
+                          tileWidth - 2 * hPaddingInSelection, 2 * Lyra3CoversMetrics::values.homeCoverHeight / 3);
         }
       }
 

@@ -6,6 +6,7 @@
 #include <Logging.h>
 #include <I18n.h>
 #include "Ao3FolderPickerActivity.h"
+#include "Ao3CoverAssignmentActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 
@@ -188,7 +189,12 @@ void Ao3LibrarySettingsActivity::loop() {
       swapNavButtons = !swapNavButtons;
       saveSettings();
       requestUpdate();
-    } else if (selectorIndex == 8) {
+    } else if (selectorIndex == 8) {                       
+      auto handler = [this](const ActivityResult&) { requestUpdate(true); };
+      startActivityForResult(
+          std::make_unique<Ao3CoverAssignmentActivity>(renderer, mappedInput), handler);
+      return;
+    } else if (selectorIndex == 9) {                      
       showingCleanupConfirm = true;
       requestUpdate(true);
       return;
@@ -197,7 +203,7 @@ void Ao3LibrarySettingsActivity::loop() {
 }
 
   buttonNavigator.onNextRelease([this] {
-    selectorIndex = (selectorIndex + 1) % 9;
+    selectorIndex = (selectorIndex + 1) % 10;
     // Skip "Merge Similar Tags" if disabled (moving forward)
     if (selectorIndex == 6 && filterMode != FilterMode::AUTOMATIC) {
       selectorIndex = 7;
@@ -206,7 +212,7 @@ void Ao3LibrarySettingsActivity::loop() {
   });
 
   buttonNavigator.onPreviousRelease([this] {
-    selectorIndex = (selectorIndex + 8) % 9;
+    selectorIndex = (selectorIndex + 9) % 10;
     // Skip "Merge Similar Tags" if disabled (moving backward)
     if (selectorIndex == 6 && filterMode != FilterMode::AUTOMATIC) {
       selectorIndex = 5;
@@ -215,7 +221,7 @@ void Ao3LibrarySettingsActivity::loop() {
   });
 
   buttonNavigator.onNextContinuous([this] {
-    selectorIndex = (selectorIndex + 2) % 9;
+    selectorIndex = (selectorIndex + 2) % 10;
     // Skip "Merge Similar Tags" if disabled (fast scrolling forward)
     if (selectorIndex == 6 && filterMode != FilterMode::AUTOMATIC) {
       selectorIndex = 7;
@@ -224,7 +230,7 @@ void Ao3LibrarySettingsActivity::loop() {
   });
 
   buttonNavigator.onPreviousContinuous([this] {
-    selectorIndex = (selectorIndex + 7) % 9;
+    selectorIndex = (selectorIndex + 8) % 10;
     // Skip "Merge Similar Tags" if disabled (fast scrolling backward)
     if (selectorIndex == 6 && filterMode != FilterMode::AUTOMATIC) {
       selectorIndex = 5;
@@ -303,6 +309,7 @@ void Ao3LibrarySettingsActivity::render(RenderLock&&) {
     "Filter Mode",
     "Merge Similar Tags",
     "Side Button Layout",
+    "Customize Fandom Covers",
     "Library Cleanup"
   };
 
@@ -329,7 +336,7 @@ void Ao3LibrarySettingsActivity::render(RenderLock&&) {
   int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
   int contentHeight = pageHeight - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing * 2;
 
-  GUI.drawList(renderer, Rect{0, contentTop, pageWidth, contentHeight}, 9, selectorIndex,
+  GUI.drawList(renderer, Rect{0, contentTop, pageWidth, contentHeight}, 10, selectorIndex,
                rowTitle, nullptr, nullptr, rowValue, true, rowDimmed);
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), "Select", tr(STR_DIR_UP), tr(STR_DIR_DOWN));

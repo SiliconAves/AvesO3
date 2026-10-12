@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "Ao3LibraryMetadata.h"
+#include "activities/home/Ao3FandomLogo.h"
 
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
@@ -598,6 +599,10 @@ void LyraTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
             "/ao3_library_info").c_str());
         renderer.drawIcon(hasAo3Info ? Ao3Icon : CoverIcon,
                     tileX + hPaddingInSelection + 24, tileY + hPaddingInSelection + 24, 32);
+
+        if (hasAo3Info) drawFandomLogo(renderer, ao3Fandom, tileX + hPaddingInSelection,
+                    tileY + hPaddingInSelection + LyraMetrics::values.homeCoverHeight / 3, coverWidth,
+                    2 * LyraMetrics::values.homeCoverHeight / 3);
       }
 
       coverBufferStored = storeCoverBuffer();
