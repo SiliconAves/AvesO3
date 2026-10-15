@@ -159,9 +159,30 @@ void Ao3CoverAssignmentActivity::renderFiles() {
              [this](int i) { return files[i]; }, nullptr, nullptr, nullptr, false);
 
   if (files.size() == 1) {
-    const char* hint = "Put .bmp logos in /.fandom_covers";
-    const int tw = renderer.getTextWidth(SMALL_FONT_ID, hint);
-    renderer.drawText(SMALL_FONT_ID, (w - tw) / 2, h - m.buttonHintsHeight - 35, hint);
+    const int startY = top + m.listRowHeight + 24;
+    renderer.drawCenteredText(UI_10_FONT_ID, startY, "No .bmp files found in /.fandom_covers", true, EpdFontFamily::BOLD);
+
+    const int subY = startY + renderer.getLineHeight(SMALL_FONT_ID) + 10;
+    renderer.drawCenteredText(SMALL_FONT_ID, subY, "To add covers, create images with:");
+
+    const char* specs[] = {
+      "- Size: 80 x 80 px (or smaller)",
+      "- Format: 1-bit monochrome .bmp",
+      "- Colors: Black logo on white background",
+      "- Folder: place it in /.fandom_covers"
+    };
+
+    int maxTextWidth = 0;
+    for (const char* line : specs) {
+      maxTextWidth = std::max(maxTextWidth, renderer.getTextWidth(SMALL_FONT_ID, line));
+    }
+    const int leftX = std::max(m.contentSidePadding, (w - maxTextWidth) / 2);
+    const int itemLh = renderer.getLineHeight(SMALL_FONT_ID) + 6;
+    int curY = subY + renderer.getLineHeight(SMALL_FONT_ID) + 10;
+    for (const char* line : specs) {
+      renderer.drawText(SMALL_FONT_ID, leftX, curY, line);
+      curY += itemLh;
+    }
   }
   const auto l = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, l.btn1, l.btn2, l.btn3, l.btn4);
