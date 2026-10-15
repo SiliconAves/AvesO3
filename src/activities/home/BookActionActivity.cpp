@@ -267,7 +267,12 @@ void BookActionActivity::loop() {
                     renderer, mappedInput, Ao3IndexMode::SINGLE, restoredPath),
                     handler);
             } else {
-              requestUpdate(true);  // restore failed, stay open
+              startActivityForResult(
+                  std::make_unique<ConfirmationActivity>(
+                      renderer, mappedInput,
+                      "Cannot Restore: Outdated Metadata",
+                      "Reindex /read, or move the file to your AO3 folder."),
+                  [this](const ActivityResult&) { requestUpdate(true); });
             }
         } else {
           // Archive: move to read folder.
