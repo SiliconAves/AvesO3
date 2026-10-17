@@ -1,6 +1,7 @@
 #include "CrossPointWebServer.h"
 
 #include <ArduinoJson.h>
+#include <BoardConfig.h>
 #include <FsHelpers.h>
 #include <HalGPIO.h>
 #include <HalStorage.h>
@@ -218,13 +219,10 @@ void CrossPointWebServer::begin() {
   udpActive = udp.begin(LOCAL_UDP_PORT);
   LOG_DBG("WEB", "Discovery UDP %s on port %d", udpActive ? "enabled" : "failed", LOCAL_UDP_PORT);
 
-  // All request handlers run on the task that calls handleClient(). Register
-  // that task before any handler can call esp_task_wdt_reset().
-  const esp_err_t watchdogResult = esp_task_wdt_add(nullptr);
-  watchdogTaskRegistered = watchdogResult == ESP_OK;
-  if (!watchdogTaskRegistered) {
-    LOG_ERR("WEB", "Failed to register web server task with watchdog: %s", esp_err_to_name(watchdogResult));
-  }
+  // Do not subscribe the serving task to the task watchdog. Arduino WebServer
+  // permits five-second client and ACK waits, which can consume the entire
+  // default watchdog window on a weak connection. The interrupt watchdog still
+  // catches hard CPU lockups, matching the rest of the application lifecycle.
 
   running = true;
 
@@ -422,7 +420,11 @@ void CrossPointWebServer::handleStatus() const {
   doc["rssi"] = apMode ? 0 : WiFi.RSSI();
   doc["freeHeap"] = ESP.getFreeHeap();
   doc["uptime"] = millis() / 1000;
+#if FREEINK_DEVICE_X4 || FREEINK_DEVICE_X3
   doc["device"] = gpio.deviceIsX3() ? "X3" : "X4";
+#else
+  doc["device"] = BoardConfig::ACTIVE.name;
+#endif
 
   char snBuf[33] = {0};
   bool valid = false;
@@ -723,6 +725,7 @@ void CrossPointWebServer::handleUpload(UploadState& state) const {
     filePath += state.fileName;
 
     // Check if file already exists - SD operations can be slow
+    resetTaskWatchdogIfSubscribed();
     bool overwrite = server->hasArg("overwrite") && server->arg("overwrite") == "true";
     if (Storage.exists(filePath.c_str())) {
       if (!overwrite) {

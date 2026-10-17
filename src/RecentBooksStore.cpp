@@ -18,7 +18,7 @@ void RecentBooksStore::toJson(JsonDocument& doc) const {
     obj["title"] = book.title;
     obj["author"] = book.author;
     obj["coverBmpPath"] = book.coverBmpPath;
-    obj["pinned"] = book.pinned;  // ← add this
+    obj["pinned"] = book.pinned;
   }
 }
 

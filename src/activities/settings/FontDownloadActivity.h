@@ -5,8 +5,7 @@
 
 #include "FontInstaller.h"
 #include "SdCardFont.h"
-#include "activities/Activity.h"
-#include "util/ButtonNavigator.h"
+#include "activities/UiListActivity.h"
 
 // JSON schema version of the fonts.json manifest. The canonical version for
 // the build tooling lives in lib/EpdFont/scripts/cpfont_version.py. This
@@ -26,13 +25,12 @@
       FONTS_MANIFEST_VERSION) "-b" FONT_MANIFEST_URL_STRINGIFY(CPFONT_VERSION) "/fonts.json"
 #endif
 
-class FontDownloadActivity : public Activity {
+class FontDownloadActivity final : public UiListActivity {
  public:
   explicit FontDownloadActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
 
   void onEnter() override;
   void onExit() override;
-  void loop() override;
   void render(RenderLock&&) override;
   bool preventAutoSleep() override {
     return state_ == LOADING_MANIFEST || state_ == DOWNLOADING ||
@@ -47,6 +45,7 @@ class FontDownloadActivity : public Activity {
   enum State {
     WIFI_SELECTION,
     LOADING_MANIFEST,
+    GROUP_LIST,
     FAMILY_LIST,
     DOWNLOADING,
     COMPLETE,
@@ -67,16 +66,23 @@ class FontDownloadActivity : public Activity {
     size_t totalSize = 0;
     bool installed = false;
     bool hasUpdate = false;
+    uint32_t scriptMask = 0;
   };
+
+  static constexpr size_t MAX_SCRIPT_GROUPS = 32;
 
   State state_ = WIFI_SELECTION;
   FontInstaller fontInstaller_;
-  ButtonNavigator buttonNavigator_;
 
   // Manifest data
   std::string baseUrl_;
   std::vector<ManifestFamily> families_;
-  int selectedIndex_ = 0;
+  // Manifest-defined labels are dynamic; cap them at the 32-bit membership
+  // mask and retain only labels after parsing so group tags consume no steady-state heap.
+  std::vector<std::string> scriptGroupLabels_;
+  // One 4-byte index per manifest family, allocated once and reused for every group.
+  std::vector<int> filteredIndices_;
+  freeink::ui::ListNav groupNav_;
 
   // Download progress
   size_t currentFileIndex_ = 0;
@@ -86,6 +92,29 @@ class FontDownloadActivity : public Activity {
   int downloadingFamilyIndex_ = 0;
   std::string errorMessage_;
   bool cancelRequested_ = false;
+  // Set when the cancel came from the home gesture (consumed by the download
+  // callback's own input pump); exit to home after the abort unwinds.
+  bool goHomeRequested_ = false;
+
+  // Shared cache for group and family rows. It is rebuilt only when the visible
+  // list changes, never for cursor movement or tap flash repaints.
+  std::vector<std::string> rowLabels_;
+  std::vector<freeink::ui::ListItem> rowItems_;
+  bool rowsDirty_ = true;
+  void rebuildRowItems();
+  void rebuildGroupRowItems();
+  void rebuildFamilyRowItems();
+
+  int listCount() const override;
+  void buildScreen(UiScreen& screen) override;
+  void activateIndex(int index) override;
+  freeink::ui::ListNav& activeNav() override;
+  void onBackButton() override;
+  // Non-list states (loading, downloading, complete, error) consume the loop
+  // pass here; the group and family lists use the base list protocol.
+  bool handleCustomInput() override;
+
+  void activateSelected();
 
   void onWifiSelectionComplete(bool success);
   bool fetchAndParseManifest();
@@ -101,8 +130,13 @@ class FontDownloadActivity : public Activity {
   bool isSelectedFamilyDeletable() const;
   void promptDeleteSelectedFamily();
   void onDeleteConfirmationResult(const ActivityResult& result);
-  int familyIndexFromList(int listIndex) const { return listIndex - specialRowCount(); }
+  int familyIndexFromList(int listIndex) const;
   int listItemCount() const;
+  bool hasGroupScreen() const { return !scriptGroupLabels_.empty(); }
+  int groupListItemCount() const { return 1 + static_cast<int>(scriptGroupLabels_.size()); }
+  int groupMemberCount(int scriptGroupIndex) const;
+  void buildFilteredIndices(int groupListIndex);
+  void enterGroup(int groupListIndex);
   size_t totalDownloadSize() const;
   size_t totalUpdateSize() const;
   static std::string formatSize(size_t bytes);

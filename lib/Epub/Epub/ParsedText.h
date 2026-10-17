@@ -25,9 +25,22 @@ class ParsedText {
   // each, they never approach the contiguous-block ceiling.
   std::deque<std::string> words;
   std::vector<EpdFontFamily::Style> wordStyles;
-  std::vector<bool> wordContinues;      // true = word attaches to previous with no break
-  std::vector<bool> wordNoSpaceBefore;  // true = may break before token, but no synthetic space when joined
-  std::vector<bool> wordIsFocusSuffix;  // true = token is the regular tail of a focus bold-prefix split
+  // Boundary flags use all four combinations:
+  //   continues=false, noSpace=false: ordinary breakable word gap
+  //   continues=false, noSpace=true:  breakable zero-width, stretchable CJK/Korean gap
+  //   continues=true,  noSpace=false: unbreakable attachment
+  //   continues=true,  noSpace=true:  breakable zero-width, non-stretching attachment
+  std::vector<bool> wordContinues;
+  std::vector<bool> wordNoSpaceBefore;
+  // Focus Reading emphasis: bytes [0, wordFocusBoundary) render bold, the rest at wordStyles.
+  // 0 = none. An annotation rather than a token split, so the hyphenator and line breaker still
+  // see whole words; TextBlock stores emphasis the same way, so extractLine passes it through.
+  std::vector<uint8_t> wordFocusBoundary;
+  // Internal-link identity through tokenization, hyphenation and BiDi reorder.
+  // Zero means plain text; non-zero indexes linkTargets. Kept at one byte per
+  // token and discarded after layout, never added to the page-cache TextBlock.
+  std::vector<uint8_t> wordLinkIds;
+  std::vector<std::string> linkTargets;
   // Zero-based visible Unicode-codepoint offsets in the spine body, stored as
   // uint16_t deltas from a shared base to keep this layout-only metadata small.
   // Pathological spans wider than uint16_t use sparse rebases; rendered
@@ -51,7 +64,7 @@ class ParsedText {
   std::vector<uint16_t> reorderedWidthsScratch;
   std::vector<bool> reorderedContinuesScratch;
   std::vector<bool> reorderedNoSpaceBeforeScratch;
-  std::vector<bool> reorderedFocusSuffixScratch;
+  std::vector<uint8_t> reorderedFocusBoundaryScratch;
   std::vector<uint16_t> visualOrderScratch;
 
   uint32_t visibleOffsetBaseAt(size_t wordIndex) const;
@@ -90,7 +103,9 @@ class ParsedText {
   ~ParsedText() = default;
 
   void addWord(std::string word, EpdFontFamily::Style fontStyle, bool underline = false, bool attachToPrevious = false,
-               uint32_t visibleTextOffset = 0);
+               uint32_t visibleTextOffset = 0, uint8_t linkId = 0);
+  uint8_t addLinkTarget(const char* href);
+  bool linkTargetMatches(uint8_t linkId, const char* href) const;
   void setRubyForWordAt(size_t index, const std::string& ruby);
   void setRubyGroupAt(size_t startIndex, size_t count, const std::string& ruby);
   EpdFontFamily::Style getWordStyleAt(size_t index) const {

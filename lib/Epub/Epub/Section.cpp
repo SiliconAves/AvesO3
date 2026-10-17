@@ -31,7 +31,23 @@ namespace {
 //      match. Keeps <br>-per-paragraph books (common CJK formatting) from
 //      re-adding container spacing at every paragraph.
 // v35: Persist a uint32_t visible-text start offset for every page.
-constexpr uint8_t SECTION_FILE_VERSION = 36;
+// v36: Ruby and CJK justification layout changes invalidate cached word positions.
+// v37: Footnote href records grew from 96 to 256 bytes.
+// v38: Focus Reading line breaking changed — a visible hyphen/dash inside a word is now a
+//      break opportunity, and hyphenation of a focus-split word considers the whole word
+//      instead of only its regular-weight suffix. Pages cached by older versions were laid
+//      out with the previous, more restrictive break set and no longer match.
+// v39: Image top margin is clamped so a full-viewport-height image cannot
+//      overflow the page bottom; older caches can hold placements that panels
+//      with no bottom inset refuse to draw.
+// v40: Ruby groups remain intact when a large text block is soft-flushed.
+// v41: Simple HTML table rows are laid out as positioned columns instead of
+//      flattened paragraphs with synthetic row/cell labels.
+// v42: Closing a block strips inherited vertical margins and padding.
+// v43: Paragraph base direction excludes direction changes from inline elements.
+// v44: Persist internal-link rectangles with each page for touch navigation.
+// v45: Internal EPUB links preserve CSS superscript/subscript positioning.
+constexpr uint8_t SECTION_FILE_VERSION = 45;
 // Written into the version field while a build is in progress; patched to
 // SECTION_FILE_VERSION only when the build is finalized. An abandoned /
 // crash-interrupted .bin therefore carries version 0, which loadSectionFile rejects
@@ -361,8 +377,19 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const std::function<void(
 
   if (spec.embeddedStyle) {
     ctx->cssParser = epub->getCssParser();
-    if (ctx->cssParser && !ctx->cssParser->loadFromCache()) {
-      LOG_ERR("SCT", "Failed to load CSS from cache");
+    if (ctx->cssParser) {
+      const CssParser::CacheLoadResult cacheResult = ctx->cssParser->loadFromCache();
+      if (cacheResult == CssParser::CacheLoadResult::LowMemory) {
+        LOG_ERR("SCT", "Insufficient heap to hydrate CSS; section build deferred");
+        ctx->cssParser->clear();
+        file.close();
+        Storage.remove(binTmpPath().c_str());
+        if (!ctx->reusedHtml) Storage.remove(ctx->tmpHtmlPath.c_str());
+        return false;
+      }
+      if (cacheResult == CssParser::CacheLoadResult::Invalid) {
+        LOG_ERR("SCT", "Failed to load CSS from cache");
+      }
     }
   }
 

@@ -205,7 +205,7 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
   serialization::writePod(bookOut, lutOffset);
   serialization::writePod(bookOut, spineCount);
   serialization::writePod(bookOut, tocCount);
-// Metadata
+  // Metadata
   serialization::writeString(bookOut, metadata.title);
   serialization::writeString(bookOut, metadata.author);
   serialization::writeString(bookOut, metadata.language);
@@ -488,9 +488,28 @@ bool BookMetadataCache::load() {
   serialization::readString(bookFile, coreMetadata.ao3UpdateDate);
   serialization::readPod(bookFile, coreMetadata.ao3IsCompleted);
 
+  // Cache cumulative spine sizes in RAM. The progress bar (every render) and percent
+  // jumps otherwise pay 2 seeks + a heap-allocating SpineEntry read per access. Spine
+  // entries are stored contiguously in index order immediately after the LUTs, so read
+  // them in a single sequential pass.
+  cumulativeSizes.clear();
+  cumulativeSizes.reserve(spineCount);
+  const uint32_t lutSize = (static_cast<uint32_t>(spineCount) + tocCount) * sizeof(uint32_t);
+  bookFile.seek(lutOffset + lutSize);
+  for (uint16_t i = 0; i < spineCount; i++) {
+    cumulativeSizes.push_back(readSpineEntry(bookFile).cumulativeSize);
+  }
+
   loaded = true;
   LOG_DBG("BMC", "Loaded cache data: %d spine, %d TOC entries", spineCount, tocCount);
   return true;
+}
+
+uint32_t BookMetadataCache::getCumulativeSize(const int index) const {
+  if (index < 0 || index >= static_cast<int>(cumulativeSizes.size())) {
+    return 0;
+  }
+  return cumulativeSizes[index];
 }
 
 BookMetadataCache::SpineEntry BookMetadataCache::getSpineEntry(const int index) {

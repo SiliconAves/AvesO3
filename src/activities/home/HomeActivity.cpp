@@ -4,11 +4,13 @@
 #include <Epub.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
+#include <HalDisplay.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Utf8.h>
 #include <Xtc.h>
 
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -221,6 +223,47 @@ void HomeActivity::loop() {
   const int menuCount = getMenuItemCount();
   const auto& metrics = UITheme::getInstance().getMetrics();
 
+  auto activateSelection = [this] {
+    if (selectorIndex < static_cast<int>(recentBooks.size())) {
+      onSelectBook(recentBooks[selectorIndex].path);
+      return;
+    }
+
+    const int menuIndex = selectorIndex - static_cast<int>(recentBooks.size());
+
+    if (menuPage == 1) {
+      // NOTE: selectorIndex=0 (Continue Reading) is already caught by the
+      // early-return above (selectorIndex < recentBooks.size()). Do NOT prepend
+      // it here — that would shift OPDS Browser to index 1 while menuIndex for
+      // selectorIndex=1 computes to 0, causing OPDS to open the book instead.
+      std::vector<std::function<void()>> page1Actions;
+      if (hasOpdsServers) page1Actions.push_back([this] { onOpdsBrowserOpen(); });
+      // future page-1 entries go here
+      if (menuIndex >= 0 && menuIndex < static_cast<int>(page1Actions.size())) {
+        page1Actions[menuIndex]();
+      }
+      return;
+    }
+
+    // Page 0
+    std::vector<std::function<void()>> page0Actions = {
+      [this] { onAo3LibraryOpen(); },
+      [this] { onRecentsOpen(); },
+      [this] { onFileBrowserOpen(); },
+      [this] { onFileTransferOpen(); },
+      [this] { onSettingsOpen(); }
+    };
+
+    // NOTE: when homeContinueReadingInMenu is true, selectorIndex=0 is already
+    // handled by the early-return above (selectorIndex < recentBooks.size()).
+    // Do NOT prepend a Continue Reading action here – that would shift every
+    // subsequent action one slot forward and break them all.
+
+    if (menuIndex >= 0 && menuIndex < static_cast<int>(page0Actions.size())) {
+      page0Actions[menuIndex]();
+    }
+  };
+
 auto activateSelection = [this] {
   if (selectorIndex < static_cast<int>(recentBooks.size())) {
     onSelectBook(recentBooks[selectorIndex].path);
@@ -376,7 +419,7 @@ auto activateSelection = [this] {
     return;
   }
 
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     backPressSeen = true;
   }
 
@@ -417,21 +460,45 @@ auto activateSelection = [this] {
     return;
   }
 
+  // 1.6.0 cover grid touch logic
+  const int coverColumnCount = std::max(1, metrics.homeRecentBooksCount);
+  const int recentCount = std::min(static_cast<int>(recentBooks.size()), coverColumnCount);
+  const int coverColumnWidth = (renderer.getScreenWidth() - 2 * metrics.contentSidePadding) / coverColumnCount;
+  int touchedBook = -1;
+  const auto coverTouch = mappedInput.colTouch(touchedBook, metrics.contentSidePadding, coverColumnWidth, recentCount,
+                                               metrics.homeTopPadding,
+                                               metrics.homeTopPadding + metrics.homeCoverTileHeight, coverColumnWidth);
+  if (coverTouch != MappedInputManager::RowTouch::None) {
+    if (coverTouch == MappedInputManager::RowTouch::Down) {
+      if (selectorIndex != touchedBook) {
+        selectorIndex = touchedBook;
+        requestUpdate();
+      }
+    } else {
+      selectorIndex = touchedBook;
+      activateSelection();
+    }
+    return;
+  }
+
   if (!recentBooks.empty() &&
       mappedInput.wasTapInRect(0, metrics.homeTopPadding, renderer.getScreenWidth(), metrics.homeCoverTileHeight)) {
     selectorIndex = 0;
     activateSelection();
     return;
   }
-
+  
   const int menuTop = metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset;
   const int renderedMenuSelection =
       metrics.homeContinueReadingInMenu ? selectorIndex : selectorIndex - recentBooks.size();
   const int renderedMenuCount =
       menuCount - (metrics.homeContinueReadingInMenu ? 0 : static_cast<int>(recentBooks.size()));
   int menuRow = -1;
-  const auto menuTouch = mappedInput.rowTouch(menuRow, menuTop, metrics.menuRowHeight + metrics.menuSpacing,
-                                              renderedMenuCount, 0, INT32_MAX, metrics.menuRowHeight);
+  // Row height from the theme, not the metrics table: RoundedRaff draws
+  // font-derived rows and the touch grid must match the visuals exactly.
+  const int menuRowHeight = GUI.getMenuRowHeight(renderer);
+  const auto menuTouch = mappedInput.rowTouch(menuRow, menuTop, menuRowHeight + metrics.menuSpacing, renderedMenuCount,
+                                              0, INT32_MAX, menuRowHeight);
   if (menuTouch != MappedInputManager::RowTouch::None) {
     const int touchedIndex =
         metrics.homeContinueReadingInMenu ? menuRow : menuRow + static_cast<int>(recentBooks.size());
@@ -460,7 +527,10 @@ void HomeActivity::render(RenderLock&&) {
   renderer.clearScreen();
   bool bufferRestored = coverBufferStored && restoreCoverBuffer();
 
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.homeTopPadding},
+  // Band spans topPadding..homeTopPadding: the cover tile starts at the fixed
+  // homeTopPadding, so the height must shrink by topPadding or the band (and a
+  // centered title, e.g. RoundedRaff's book title) sinks into the tile.
+  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.homeTopPadding - metrics.topPadding},
                  metrics.homeContinueReadingInMenu && !recentBooks.empty() ? recentBooks[0].title.c_str() : nullptr);
 
   // Record the tile rect so storeCoverBuffer (called from the theme) knows
@@ -509,21 +579,25 @@ void HomeActivity::render(RenderLock&&) {
       [&menuItems](int index) { return std::string(menuItems[index]); },
       [&menuIcons](int index) { return menuIcons[index]; });
 
-  const char* backLabel = "";
+const char* backLabel = "";
   if (selectorIndex < static_cast<int>(recentBooks.size())) {
+    // Books are highlighted
     if (recentBooks[selectorIndex].pinned) {
       backLabel = tr(STR_UNPIN);
     } else if (RECENT_BOOKS.getPinnedCount() < metrics.homeRecentBooksCount) {
       backLabel = tr(STR_PIN);
     }
   } else {
-    if (menuPage == 1 || getPage1ItemCount() > 0) backLabel = "Switch";
+    // Menu entries are highlighted
+    if (getPage1ItemCount() > 0) {
+      backLabel = "Switch";
+    }
   }
 
   const auto labels = mappedInput.mapLabels(backLabel, tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
-  renderer.displayBuffer();
+  renderer.displayBuffer(cleanInitialRefresh && !firstRenderDone ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
 
   if (!firstRenderDone) {
     firstRenderDone = true;

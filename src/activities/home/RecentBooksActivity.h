@@ -1,70 +1,57 @@
 #pragma once
 #include <I18n.h>
- 
 #include <string>
 #include <vector>
- 
+#include <map>
+
 #include "Ao3NewChaptersStore.h"
 #include "Ao3WipsStore.h"
 #include "Ao3MarkedForLaterStore.h"
-
-#include "BookStatus.h"
-#include <map>
-
 #include "RecentBooksStore.h"
-#include "activities/Activity.h"
-#include "util/ButtonNavigator.h"
- 
-class RecentBooksActivity final : public Activity {
+#include "BookStatus.h"
+#include "activities/UiListActivity.h"
+
+class RecentBooksActivity final : public UiListActivity {
  private:
   static constexpr int TAB_COUNT            = 4;
   static constexpr int TAB_MARKED_FOR_LATER = 0;
   static constexpr int TAB_NEW_CHAPTERS     = 1;
   static constexpr int TAB_WIPS             = 2;
   static constexpr int TAB_RECENT_BOOKS     = 3;
- 
-  ButtonNavigator buttonNavigator;
- 
-  // selectedTabIndex  : which tab is active (0–3)
-  // selectedItemIndex : 0 = tab bar focused, >= 1 = list item
-  // (mirrors SettingsActivity's selectedCategoryIndex / selectedSettingIndex)
-  int selectedTabIndex  = TAB_RECENT_BOOKS;
-  int selectedItemIndex = 0;
-  unsigned long lastTabCycleMs = 0;
- 
-  // Set when a long-press has fired; swallows input until Confirm is released.
-  bool longPressFired = false;
-  // Universal loading state for instant UI response on open
-  bool isLoading = false;
- 
-  // Tab 0 data
-  std::vector<Ao3MarkedForLaterEntry> markedForLater;
-  
-  // Tab 1 data
-  std::vector<Ao3NewChaptersEntry> newChapters;
 
-  // Tab 2 data
+  int selectedTabIndex  = TAB_RECENT_BOOKS;
+  bool tabBarFocused    = true; // Replaces selectedItemIndex == 0
+  unsigned long lastTabCycleMs = 0;
+
+  // Tab Data Payloads
+  std::vector<Ao3MarkedForLaterEntry> markedForLater;
+  std::vector<Ao3NewChaptersEntry> newChapters;
   std::vector<Ao3WipEntry> wipsEntries;
- 
-  // Tab 3 data
   std::vector<RecentBook> recentBooks;
- 
-  int  getCurrentListSize() const;
-  void promptRemoveBook(const std::string& path, const std::string& title);
-  void launchDashboardMenu(const std::string& path, const std::string& title);
-  void clampSelectorIndex();
-  void revertMarkedForLaterStatus(const std::string& path);
-  
-  BookStatus getBookStatus(const std::string& path);
+
+  // 1.6 UI Engine Data
+  std::vector<freeink::ui::ListItem> rowItems;
   std::map<int, BookStatus> visibleStatusCache;
   int lastRenderedTab = -1;
- 
+
+  // Engine Overrides
+  int listCount() const override { return static_cast<int>(rowItems.size()); }
+  void buildScreen(UiScreen& screen) override;
+  void drawChrome() override;
+  void drawFooter() override;
+  void activateIndex(int index) override;
+  void onRowLongPress(int index) override;
+  bool handleCustomInput() override;
+  bool handleButtons() override;
+
+  // Custom AvesO3 Logic
+  void rebuildRowItems();
+  void launchDashboardMenu(const std::string& path, const std::string& title);
+  void revertMarkedForLaterStatus(const std::string& path);
+  BookStatus getBookStatus(const std::string& path);
+
  public:
-  explicit RecentBooksActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-      : Activity("RecentBooks", renderer, mappedInput) {}
- 
+  explicit RecentBooksActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
   void onEnter() override;
-  void onExit()  override;
-  void loop()    override;
-  void render(RenderLock&&) override;
+  void onExit() override;
 };

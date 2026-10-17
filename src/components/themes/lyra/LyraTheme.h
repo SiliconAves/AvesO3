@@ -18,6 +18,19 @@ constexpr ThemeMetrics values = {.batteryWidth = 16,
                                  .contentSidePadding = 20,
                                  .listRowHeight = 40,
                                  .listWithSubtitleRowHeight = 60,
+                                 .listRowGap = 0,
+                                 .listRowRadius = 6,
+                                 .listInset = 20,
+                                 .listSidePadding = 8,
+                                 .listSelectionStyle = 1,  // light pill
+                                 .listScrollWidth = 4,
+                                 .listScrollSide = 0,
+                                 .listTitleBold = false,
+                                 .headerSidePadding = 18,
+                                 .headerUnderlineSize = 3,
+                                 .headerTitleAlign = 0,  // left
+                                 .headerBatterySide = 0,
+                                 .headerBatteryDetached = true,
                                  .menuRowHeight = 64,
                                  .menuSpacing = 8,
                                  .tabSpacing = 8,
@@ -57,43 +70,23 @@ constexpr ThemeMetrics values = {.batteryWidth = 16,
                                  .popupProgressOutlineInverted = false,
                                  .optionPopupItemSpacing = 8,
                                  .optionPopupInnerPadding = 20,
-                                 .optionPopupSelectionHPadding = 16,
                                  .optionPopupSelectionVPadding = 12,
-                                 .optionPopupTitleGap = 16,
-                                 .optionPopupUseSmallFont = true,
-                                 .optionPopupOptionFontBold = false,
-                                 .optionPopupSelectionRadius = 6,
-                                 .optionPopupSelectionLight = true,
-                                 .optionPopupDrawAllRows = false,
                                  .optionPopupDialogSideMargin = 20,
-                                 .optionPopupTitleSeparator = true,
                                  .textFieldHorizontalPadding = 6,
                                  .textFieldNormalThickness = 1,
                                  .textFieldCursorThickness = 3,
-                                 .textFieldLineEndOffset = 0};
+                                 .textFieldLineEndOffset = 0,
+                                 .controlRadius = 6,
+                                 .sheetRadius = 6,
+                                 .capsuleRadius = 6};
 }
 
 class LyraTheme : public BaseTheme {
  public:
   // Component drawing methods
   void fillBatteryIcon(const GfxRenderer& renderer, Rect rect, uint16_t percentage) const override;
-  void drawHeader(const GfxRenderer& renderer, Rect rect, const char* title, const char* subtitle) const override;
   void drawSubHeader(const GfxRenderer& renderer, Rect rect, const char* label,
                      const char* rightLabel = nullptr) const override;
-  void drawTabBar(const GfxRenderer& renderer, Rect rect, const std::vector<TabInfo>& tabs,
-                  bool selected) const override;
-  bool tabIndexFromPoint(const GfxRenderer& renderer, Rect rect, const std::vector<TabInfo>& tabs, int x, int y,
-                         int& index) const override;
-  int getListRowStep(bool hasSubtitle) const override;
-  int getListPageItems(int contentHeight, bool hasSubtitle) const override;
-  void drawList(const GfxRenderer& renderer, Rect rect, int itemCount, int selectedIndex,
-                const std::function<std::string(int index)>& rowTitle,
-                const std::function<std::string(int index)>& rowSubtitle = nullptr,
-                const std::function<UIIcon(int index)>& rowIcon = nullptr,
-                const std::function<std::string(int index)>& rowValue = nullptr,
-                bool highlightValue = false,
-                const std::function<bool(int index)>& rowDimmed = nullptr,
-                const std::function<BookStatus(int index)>& rowStatus = nullptr) const override;
   void drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
                        const char* btn4) const override;
   void drawSideButtonHints(const GfxRenderer& renderer, const char* topBtn, const char* bottomBtn) const override;

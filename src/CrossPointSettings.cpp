@@ -6,7 +6,7 @@
 
 #include <algorithm>
 #include <cstring>
-#include <iterator>
+#include <limits>
 #include <string>
 
 #include "I18nKeys.h"
@@ -103,6 +103,11 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
   // Language -- managed by LanguageSelectActivity, not in SettingsList.
   // Stored as ISO code string ("EN", "DE", ...) for stability across enum reorders.
   doc["language"] = (language < getLanguageCount()) ? LANGUAGE_CODES[language] : "EN";
+  // A uint16_t mask, so it does not fit the uint8_t generic loop. Omitted while
+  // unconfigured, so the default keeps following the UI language.
+  if (keyboardLayouts != 0) {
+    doc["keyboardLayouts"] = keyboardLayouts;
+  }
 }
 
 bool CrossPointSettings::fromJson(JsonVariantConst doc) {
@@ -221,6 +226,10 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
     language = static_cast<uint8_t>(I18n::languageFromCode(doc["language"].as<const char*>()));
   }
 
+  // Absent means unconfigured, which is the default.
+  if (doc["keyboardLayouts"].is<uint16_t>()) {
+    keyboardLayouts = doc["keyboardLayouts"].as<uint16_t>();
+  }
   if (needsResave) {
     LOG_DBG("CPS", "Resaving settings to update format");
     requestResave();
@@ -275,6 +284,8 @@ float CrossPointSettings::getReaderLineCompression() const {
         return 1.0f;
       case WIDE:
         return 1.1f;
+      case EXTRA_WIDE:
+        return 1.2f;
     }
   }
 
@@ -289,6 +300,8 @@ float CrossPointSettings::getReaderLineCompression() const {
           return 1.0f;
         case WIDE:
           return 1.1f;
+        case EXTRA_WIDE:
+          return 1.2f;
       }
     case NOTOSANS:
       switch (lineSpacing) {
@@ -299,6 +312,8 @@ float CrossPointSettings::getReaderLineCompression() const {
           return 0.95f;
         case WIDE:
           return 1.0f;
+        case EXTRA_WIDE:
+          return 1.05f;
       }
   }
 }
@@ -323,6 +338,10 @@ int CrossPointSettings::getRefreshFrequency() const {
       return 15;
     case REFRESH_30:
       return 30;
+    case REFRESH_NEVER:
+      // Effectively disables the periodic full refresh; the page counter
+      // counts down from here and never reaches the threshold in practice.
+      return std::numeric_limits<int>::max();
   }
 }
 
@@ -348,18 +367,13 @@ int CrossPointSettings::getReaderFontId() const {
   const uint8_t pt =
       snapToNearestPointSize(BUILTIN_READER_POINT_SIZES, std::size(BUILTIN_READER_POINT_SIZES), fontPointSize);
   const bool sans = (fontFamily == NOTOSANS);
-  
   switch (pt) {
-    case 10:
-      // Noto Serif lacks 10pt; fall back to its smallest size (12pt)
-      return sans ? NOTOSANS_10_FONT_ID : NOTOSERIF_12_FONT_ID;
     case 12:
       return sans ? NOTOSANS_12_FONT_ID : NOTOSERIF_12_FONT_ID;
     case 16:
       return sans ? NOTOSANS_16_FONT_ID : NOTOSERIF_16_FONT_ID;
     case 18:
-      // Noto Sans lacks 18pt; cap at its largest size (16pt)
-      return sans ? NOTOSANS_16_FONT_ID : NOTOSERIF_18_FONT_ID;
+      return sans ? NOTOSANS_18_FONT_ID : NOTOSERIF_18_FONT_ID;
     case 14:
     default:
       return sans ? NOTOSANS_14_FONT_ID : NOTOSERIF_14_FONT_ID;
