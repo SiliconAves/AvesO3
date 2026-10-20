@@ -46,6 +46,7 @@ class RecentBooksActivity final : public UiTabListActivity {
   void onRowLongPress(int index) override;
   bool handleButtons() override;
   bool handleCustomInput() override; // NEW: Touch long-press intercept
+  void onRowAction(const freeink::ui::ActionEvent& event) override;
   void navigateButtons() override;
 
   void rebuildRowItems();

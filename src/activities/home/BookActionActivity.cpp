@@ -15,11 +15,15 @@
 #include "Ao3WipsStore.h"
 #include "Ao3MarkedForLaterStore.h"
 
+#include "fontIds.h"
+
 namespace fui = freeink::ui;
 
 // ---------------------------------------------------------------------------
 //  Constructor
 // ---------------------------------------------------------------------------
+
+#include "fontIds.h" // Add this include at the top if not present
 
 BookActionActivity::BookActionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                        std::string filePath, std::string fileName,
@@ -27,7 +31,10 @@ BookActionActivity::BookActionActivity(GfxRenderer& renderer, MappedInputManager
     : UiListActivity("BookAction", renderer, mappedInput, false), // wantsTouchLongPress = false
       filePath(std::move(filePath)),
       fileName(std::move(fileName)),
-      mode(mode) {}
+      mode(mode) {
+  // Map BODY to 10pt font globally for this screen
+  uiTarget.setFont(fui::GfxRendererTarget::FONT_BODY, UI_10_FONT_ID);
+}
 
 // ---------------------------------------------------------------------------
 //  Logical row constants
@@ -113,9 +120,6 @@ void BookActionActivity::onEnter() {
   if (logicalRow(nav.selected) == 0 && currentStatus == BookStatus::MARKED_FOR_LATER)
     nav.selected = std::min(nav.selected + 1, maxIdx);
 
-  // Swallow the Confirm release that fired the long-press in the Dashboard
-  skipFirstConfirmRelease = (mode == BookActionMode::DASHBOARD);
-
   requestUpdate(true);
 }
 
@@ -129,6 +133,15 @@ void BookActionActivity::drawFooter() {
 }
 
 void BookActionActivity::buildScreen(UiScreen& uiScreen) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+
+  // FIX 1: Restore the standard distance from the header using metrics.verticalSpacing
+  uiScreen.setContentMarginFromScreen(fui::Insets{
+      static_cast<int16_t>(metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing),
+      0,
+      static_cast<int16_t>(metrics.buttonHintsHeight),
+      0});
+
   fui::ListProps props;
   syncListViewport(uiScreen, props, false);
 
@@ -155,35 +168,39 @@ void BookActionActivity::buildScreen(UiScreen& uiScreen) {
     items[i].label = titles[i].c_str();
     if (!values[i].empty()) items[i].value = values[i].c_str();
 
-    // The 1.6 framework natively dims the row grey and disables touches if enabled = false
+    // Disable interactions for Book Status when Marked for Later
     if (logicalRow(i) == 0 && currentStatus == BookStatus::MARKED_FOR_LATER) {
       items[i].enabled = false;
     }
   }
 
+  props.labelText = uiScreen.theme().bodyText;
   props.valueText = uiScreen.theme().smallText;
   props.items = items.data();
   props.count = count;
+
+  // Draw the list to the framebuffer
   uiScreen.list(props);
+
+  // FIX 2: Restore the 1.5 manual checkerboard pixel mask over the disabled row
+  if (currentStatus == BookStatus::MARKED_FOR_LATER) {
+    fui::Rect body = uiScreen.body();
+    // Calculate the physical height of one list row
+    const int rowHeight = uiTarget.lineHeight(fui::GfxRendererTarget::FONT_BODY) + uiScreen.theme().listRowGap + 12; 
+    
+    for (int py = body.y; py < body.y + rowHeight; py++) {
+      for (int px = body.x; px < body.x + body.width; px++) {
+        if ((px + py) % 2 == 0) {
+          renderer.drawPixel(px, py, false); // Draw white to punch holes in the black ink
+        }
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
 //  Input Handlers
 // ---------------------------------------------------------------------------
-
-bool BookActionActivity::handleCustomInput() {
-  // Swallow the Confirm release that opened this menu via long-press
-  if (skipFirstConfirmRelease) {
-    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm))
-      skipFirstConfirmRelease = false;
-    // Still allow Back so the user can dismiss immediately
-    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-      finish();
-    }
-    return true;
-  }
-  return false;
-}
 
 bool BookActionActivity::handleButtons() {
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {

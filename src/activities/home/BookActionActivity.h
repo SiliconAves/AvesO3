@@ -19,7 +19,6 @@ class BookActionActivity final : public UiListActivity {
   bool isMarkedForLater        = false;
   bool isEpub                  = false;
   bool isXtc                   = false;
-  bool skipFirstConfirmRelease = false;
   bool isAlreadyArchived       = false;
   BookActionMode mode;
 
@@ -36,7 +35,6 @@ class BookActionActivity final : public UiListActivity {
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
 
-  bool handleCustomInput() override;
   bool handleButtons() override;
   void navigateButtons() override;
 

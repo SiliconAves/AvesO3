@@ -242,14 +242,6 @@ void RecentBooksActivity::onRowLongPress(int index) {
   launchDashboardMenu(path, title);
 }
 
-bool RecentBooksActivity::handleCustomInput() {
-  // Re-enable touch long-presses manually since UiTabListActivity drops them
-  auto route = UiAppHost::routeTouch(mappedInput, /*withLongPress=*/true);
-  if (route.routed && app.invalidated()) requestUpdate(true);
-  if (route.routed) return true; // Consume touch frame so base loop ignores it
-  return false;
-}
-
 bool RecentBooksActivity::handleButtons() {
   if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, 1000)) {
     if (ringPos() > 0) {
@@ -306,6 +298,32 @@ void RecentBooksActivity::navigateButtons() {
         else moveRingTo(std::max(current - 2, 1));
         requestUpdate(true);
     });
+}
+
+bool RecentBooksActivity::handleCustomInput() {
+  // Intercept the FUI touch router to manually inject the long-press flag
+  auto route = UiAppHost::routeTouch(mappedInput, /*withLongPress=*/true);
+  
+  // If the touch resulted in a visual state change (like a row highlight), request a screen update
+  if (route.routed && app.invalidated()) requestUpdate(true);
+  
+  // Return the event state. If true (a tap/hold occurred), the base loop consumes it. 
+  // If false (a swipe or empty touch), the base loop continues to handle gestures.
+  return static_cast<bool>(route); 
+}
+
+void RecentBooksActivity::onRowAction(const fui::ActionEvent& event) {
+  // UiTabListActivity requires the selected index to be offset by 1 (0 is the tab bar)
+  activeNav().selected = event.value + 1; 
+  
+  // Catch the FUI touch long-press event before it defaults to a standard tap
+  if (event.longPress) {
+    onRowLongPress(event.value);
+    return;
+  }
+  
+  // Standard tap
+  activateIndex(event.value);
 }
 
 // ---------------------------------------------------------------------------
