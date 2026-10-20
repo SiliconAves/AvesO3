@@ -1,29 +1,48 @@
 #pragma once
 #include <string>
 #include <vector>
-#include "../Activity.h"
-#include "../../util/ButtonNavigator.h"
+#include "activities/UiTabListActivity.h"
+#include "util/ButtonNavigator.h"
 
-class Ao3TagMergeActivity final : public Activity {
+class Ao3TagMergeActivity final : public UiTabListActivity {
 public:
     explicit Ao3TagMergeActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-        : Activity("Ao3TagMerge", renderer, mappedInput) {}
+        : UiTabListActivity("Ao3TagMerge", renderer, mappedInput) {}
 
     void onEnter() override;
     void onExit() override;
-    void loop() override;
-    void render(RenderLock&&) override;
+
+protected:
+    // --- UiTabListActivity Overrides ---
+    int tabCount() const override { return kTabCount; }
+    int activeTab() const override { return selectedTabIndex; }
+    const char* tabLabel(int index) const override { return index == 0 ? "Fandoms" : "Relationships"; }
+    
+    void onTabAction(int index) override;
+    void stepTab(int direction) override;
+    
+    bool handleButtons() override;
+    void navigateButtons() override;
+
+    int listCount() const override;
+    void buildScreen(UiScreen& screen) override;
+    void activateIndex(int index) override;
+    freeink::ui::ListNav& activeNav() override;
+
+    // --- Chrome & Footer Overrides ---
+    const char* headerTitle() const override;
+    void drawFooter() override;
 
 private:
     static constexpr int kTabCount = 2;
-
-    // Tab + list selection — mirrors SettingsActivity pattern
-    int selectedTabIndex     = 0; // 0 = Fandoms, 1 = Relationships
-    int selectedSettingIndex = 0; // 0 = tab bar focused, 1..n = list item
+    int selectedTabIndex = 0; // 0 = Fandoms, 1 = Relationships
 
     enum class Screen { MAIN, SECONDARY };
     Screen screen = Screen::MAIN;
-    ButtonNavigator buttonNavigator;
+
+    // Custom secondary viewport tracker (MAIN screens use the inherited tabNavs array)
+    freeink::ui::ListNav secondaryNav;
+    std::string headerTitleStr;
 
     // Main list
     struct DisplayItem {
@@ -38,7 +57,6 @@ private:
         bool selected;
     };
     std::vector<PickerItem> pickerItems;
-    int pickerSelectorIndex = 0;
     std::string editingMaster;
     std::string relFandomFilter_; // empty = fandom list visible in rel tab
 
@@ -62,6 +80,6 @@ private:
     void loadFandomsForRelTab(std::vector<std::string>& out) const;
     void loadRelationshipsForFandom(const std::string& fandom, std::vector<std::string>& out) const;
 
-    void renderMain();
-    void renderSecondary();
+    void buildMainScreen(UiScreen& screen);
+    void buildSecondaryScreen(UiScreen& screen);
 };

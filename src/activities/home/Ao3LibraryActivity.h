@@ -92,6 +92,7 @@ class Ao3LibraryActivity final : public Activity {
   // Pickers support
   std::vector<std::string> uniqueFandoms;
   std::vector<std::string> pickerItems;
+  size_t pickerTopIndex = 0;
   size_t pickerSelectedIndex = 0;
   bool pickerHasNone = false;
 

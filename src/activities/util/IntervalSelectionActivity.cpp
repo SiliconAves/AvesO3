@@ -134,8 +134,8 @@ void IntervalSelectionActivity::loop() {
   // of a drag can also register as a swipe (e.g. the left-edge rightward back
   // gesture) — the drag must consume it so it can't cancel or confirm the dialog.
   if (mappedInput.isScreenTouchHeld(tx, ty)) {
-    if (draggingBar || (ty >= barY - 20 && ty < barY + barHeight + 20 && tx >= barX && tx < barX + barWidth)) {
-      draggingBar = true;
+    if (draggingSlider || (ty >= barY - 20 && ty < barY + barHeight + 20 && tx >= barX && tx < barX + barWidth)) {
+      draggingSlider = true;
       const int range = std::max(1, maxValue - minValue);
       const int dragged =
           clampedValue(minValue + std::clamp(tx - barX, 0, barWidth - 1) * range / std::max(1, barWidth - 1));
@@ -145,9 +145,9 @@ void IntervalSelectionActivity::loop() {
       }
       return;
     }
-  } else if (draggingBar) {
+  } else if (draggingSlider) {
     // Release frame of a drag: swallow the tap/swipe events it produced.
-    draggingBar = false;
+    draggingSlider = false;
     return;
   }
 

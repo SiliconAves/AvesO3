@@ -3,27 +3,41 @@
 #include <algorithm>
 #include <cstring>
 #include <I18n.h>
-#include "../../Ao3CompactIndexRecord.h"
-#include "../../Ao3FandomCoverStore.h"
-#include "../../components/UITheme.h"
-#include "../../fontIds.h"
+#include "Ao3CompactIndexRecord.h"
+#include "Ao3FandomCoverStore.h"
+#include "components/UITheme.h"
+#include "fontIds.h"
+
+#include "components/UIThemeTokens.h"
+#include "components/UiAppHelpers.h"
+
+namespace fui = freeink::ui;
 
 namespace {
 bool ciLess(const std::string& a, const std::string& b) { return strcasecmp(a.c_str(), b.c_str()) < 0; }
 }
 
 void Ao3CoverAssignmentActivity::onEnter() {
-  Activity::onEnter();
+  fandomsNav.reset();
+  filesNav.reset();
+  UiListActivity::onEnter();
   screen = Screen::FANDOMS;
-  selector = 0;
   loadFandoms();
   requestUpdate();
 }
 
 void Ao3CoverAssignmentActivity::onExit() {
-  Activity::onExit();
+  UiListActivity::onExit();
   fandoms.clear(); fandoms.shrink_to_fit();
   files.clear();   files.shrink_to_fit();
+}
+
+fui::ListNav& Ao3CoverAssignmentActivity::activeNav() {
+  return screen == Screen::FILES ? filesNav : fandomsNav;
+}
+
+int Ao3CoverAssignmentActivity::listCount() const {
+  return screen == Screen::FILES ? files.size() : fandoms.size();
 }
 
 void Ao3CoverAssignmentActivity::loadFandoms() {
@@ -54,7 +68,7 @@ void Ao3CoverAssignmentActivity::loadFiles() {
     dir.rewindDirectory();
     char name[128];
     HalFile e;
-    while (e = dir.openNextFile()) {
+    while ((e = dir.openNextFile())) {
       e.getName(name, sizeof(name));
       const size_t len = strlen(name);
       if (!e.isDirectory() && name[0] != '.' && len > 4 && strcasecmp(name + len - 4, ".bmp") == 0)
@@ -66,105 +80,130 @@ void Ao3CoverAssignmentActivity::loadFiles() {
   std::sort(files.begin() + 1, files.end(), ciLess);
 }
 
-void Ao3CoverAssignmentActivity::loop() {
+bool Ao3CoverAssignmentActivity::handleButtons() {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    if (screen == Screen::FILES) {
+      screen = Screen::FANDOMS;
+      requestUpdate(true);
+      return true;
+    }
+    finish();
+    return true;
+  }
+
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    int index = activeNav().selected;
+    if (index >= 0 && index < listCount()) {
+      activateIndex(index);
+    }
+    return true;
+  }
+  return false;
+}
+
+void Ao3CoverAssignmentActivity::activateIndex(int index) {
   auto& store = Ao3FandomCoverStore::getInstance();
 
   if (screen == Screen::FILES) {
-    const int total = static_cast<int>(files.size());
-    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-      screen = Screen::FANDOMS; requestUpdate(true); return;
+    store.assign(fandoms[cachedFandomSelector].c_str(), index == 0 ? std::string() : files[index]);
+    screen = Screen::FANDOMS;
+    requestUpdate(true);
+  } else {
+    cachedFandomSelector = index;
+    loadFiles();
+    filesNav.reset(); // preselect the current assignment
+    if (const auto* cur = store.find(fandoms[cachedFandomSelector].c_str())) {
+      for (size_t i = 1; i < files.size(); i++) {
+        if (files[i] == *cur) { filesNav.selected = static_cast<int>(i); break; }
+      }
     }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-      store.assign(fandoms[selector].c_str(), fileSelector == 0 ? std::string() : files[fileSelector]);
-      screen = Screen::FANDOMS; requestUpdate(true); return;
-    }
-    buttonNavigator.onNextRelease([this, total] {
-      fileSelector = ButtonNavigator::nextIndex(fileSelector, total); requestUpdate(); });
-    buttonNavigator.onPreviousRelease([this, total] {
-      fileSelector = ButtonNavigator::previousIndex(fileSelector, total); requestUpdate(); });
-    buttonNavigator.onNextContinuous([this, total] {
-      fileSelector = (fileSelector + 2) % total; requestUpdate(); });
-    buttonNavigator.onPreviousContinuous([this, total] {
-      fileSelector = (fileSelector + total - 2) % total; requestUpdate(); });
+    screen = Screen::FILES;
+    requestUpdate(true);
+  }
+}
+
+void Ao3CoverAssignmentActivity::drawChrome() {
+  UiListActivity::drawChrome();
+  const auto pageWidth = renderer.getScreenWidth();
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  
+  if (screen == Screen::FILES) {
+    std::string title = "Cover: " + fandoms[cachedFandomSelector];
+    if (title.length() > 30) title = title.substr(0, 28) + "..";
+    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, title.c_str());
+  } else {
+    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, "Customize Fandom Covers");
+  }
+}
+
+void Ao3CoverAssignmentActivity::drawFooter() {
+  const char* btn2 = (screen == Screen::FILES) ? tr(STR_SELECT) : "Assign";
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), btn2, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+}
+
+void Ao3CoverAssignmentActivity::buildScreen(UiScreen& uiScreen) {
+  if (screen == Screen::FILES) {
+    buildFilesScreen(uiScreen);
+  } else {
+    buildFandomsScreen(uiScreen);
+  }
+}
+
+void Ao3CoverAssignmentActivity::buildFandomsScreen(UiScreen& uiScreen) {
+  if (fandoms.empty()) {
+    uiScreen.centeredText("No fandoms indexed yet.", uiScreen.theme().bodyText);
     return;
   }
 
-  const int total = static_cast<int>(fandoms.size());
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) { finish(); return; }
-
-  if (total > 0 && mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    loadFiles();
-    fileSelector = 0;                                   // preselect the current assignment
-    if (const auto* cur = store.find(fandoms[selector].c_str())) {
-      for (size_t i = 1; i < files.size(); i++)
-        if (files[i] == *cur) { fileSelector = static_cast<int>(i); break; }
-    }
-    screen = Screen::FILES; requestUpdate(true); return;
-  }
-
-  buttonNavigator.onNextRelease([this, total] {
-    selector = ButtonNavigator::nextIndex(selector, total); requestUpdate(); });
-  buttonNavigator.onPreviousRelease([this, total] {
-    selector = ButtonNavigator::previousIndex(selector, total); requestUpdate(); });
-  buttonNavigator.onNextContinuous([this, total] {
-    selector = (selector + 2) % total; requestUpdate(); });
-  buttonNavigator.onPreviousContinuous([this, total] {
-    selector = (selector + total - 2) % total; requestUpdate(); });
-}
-
-void Ao3CoverAssignmentActivity::render(RenderLock&&) {
-  if (screen == Screen::FILES) renderFiles(); else renderFandoms();
-}
-
-void Ao3CoverAssignmentActivity::renderFandoms() {
-  renderer.clearScreen();
-  const auto w = renderer.getScreenWidth(), h = renderer.getScreenHeight();
-  const auto& m = UITheme::getInstance().getMetrics();
-  GUI.drawHeader(renderer, Rect{0, m.topPadding, w, m.headerHeight}, "Customize Fandom Covers");
-
-  const int top = m.topPadding + m.headerHeight + m.verticalSpacing;
-  const int ht  = h - top - m.buttonHintsHeight - m.verticalSpacing;
-
-  if (fandoms.empty()) {
-    renderer.drawCenteredText(UI_10_FONT_ID, h / 2, "No fandoms indexed yet.");
-  } else {
-    auto& store = Ao3FandomCoverStore::getInstance();
-    GUI.drawList(renderer, Rect{0, top, w, ht}, static_cast<int>(fandoms.size()), selector,
-                 [this](int i) { return fandoms[i]; }, nullptr, nullptr,
-                 [this, &store](int i) -> std::string {
-                   const auto* f = store.find(fandoms[i].c_str());
-                   return f ? *f : std::string();
-                 }, true);
-  }
-  const auto l = mappedInput.mapLabels(tr(STR_BACK), "Assign", tr(STR_DIR_UP), tr(STR_DIR_DOWN));
-  GUI.drawButtonHints(renderer, l.btn1, l.btn2, l.btn3, l.btn4);
-  renderer.displayBuffer();
-}
-
-void Ao3CoverAssignmentActivity::renderFiles() {
-  renderer.clearScreen();
-  const auto w = renderer.getScreenWidth(), h = renderer.getScreenHeight();
-  const auto& m = UITheme::getInstance().getMetrics();
-
-  std::string title = "Cover: " + fandoms[selector];
-  if (title.length() > 30) title = title.substr(0, 28) + "..";
-  GUI.drawHeader(renderer, Rect{0, m.topPadding, w, m.headerHeight}, title.c_str());
-
-  const int top = m.topPadding + m.headerHeight + m.verticalSpacing;
-  const int ht  = h - top - m.buttonHintsHeight - m.verticalSpacing;
-
+  fui::ListProps props;
+  syncListViewport(uiScreen, props, false);
+  
   auto& store = Ao3FandomCoverStore::getInstance();
-  const std::string* cur = store.find(fandoms[selector].c_str());
-  GUI.drawList(renderer, Rect{0, top, w, ht}, static_cast<int>(files.size()), fileSelector,
-             [this](int i) { return files[i]; }, nullptr, nullptr, nullptr, false);
+  std::vector<fui::ListItem> items(fandoms.size());
+  
+  for (size_t i = 0; i < fandoms.size(); i++) {
+    items[i].label = fandoms[i].c_str();
+    
+    // The 1.6 framework natively applies the black pill format to item.value
+    const auto* f = store.find(fandoms[i].c_str());
+    if (f) {
+      items[i].value = f->c_str(); 
+    }
+  }
+
+  // Ensure default small text styling is passed for standard 1.6 values
+  props.valueText = uiScreen.theme().smallText;
+  
+  props.items = items.data();
+  props.count = static_cast<uint16_t>(items.size());
+  uiScreen.list(props);
+}
+
+void Ao3CoverAssignmentActivity::buildFilesScreen(UiScreen& uiScreen) {
+  fui::ListProps props;
+  syncListViewport(uiScreen, props, false);
+
+  std::vector<fui::ListItem> items(files.size());
+  for (size_t i = 0; i < files.size(); i++) {
+    items[i].label = files[i].c_str();
+  }
+
+  props.items = items.data();
+  props.count = static_cast<uint16_t>(items.size());
+  uiScreen.list(props);
 
   if (files.size() == 1) {
-    const int startY = top + m.listRowHeight + 24;
-    renderer.drawCenteredText(UI_10_FONT_ID, startY, "No .bmp files found in /.fandom_covers", true, EpdFontFamily::BOLD);
-
-    const int subY = startY + renderer.getLineHeight(SMALL_FONT_ID) + 10;
-    renderer.drawCenteredText(SMALL_FONT_ID, subY, "To add covers, create images with:");
-
+    // Exact translation of your manual helper text into FreeInkUI spacing logic
+    uiScreen.spacer(24);
+    fui::TextStyle boldText = uiScreen.theme().smallText;
+    boldText.font = uiScaleSpec().bodyFontId; 
+    
+    uiScreen.centeredText("No .bmp files found in /.fandom_covers", boldText);
+    uiScreen.spacer(10);
+    uiScreen.centeredText("To add covers, create images with:", uiScreen.theme().smallText);
+    uiScreen.spacer(10);
+    
     const char* specs[] = {
       "- Size: 80 x 80 px (or smaller)",
       "- Format: 1-bit monochrome .bmp",
@@ -172,19 +211,12 @@ void Ao3CoverAssignmentActivity::renderFiles() {
       "- Folder: place it in /.fandom_covers"
     };
 
-    int maxTextWidth = 0;
+    auto leftAlignStyle = uiScreen.theme().smallText;
+    leftAlignStyle.align = fui::TextAlign::Left;
+    
     for (const char* line : specs) {
-      maxTextWidth = std::max(maxTextWidth, renderer.getTextWidth(SMALL_FONT_ID, line));
-    }
-    const int leftX = std::max(m.contentSidePadding, (w - maxTextWidth) / 2);
-    const int itemLh = renderer.getLineHeight(SMALL_FONT_ID) + 6;
-    int curY = subY + renderer.getLineHeight(SMALL_FONT_ID) + 10;
-    for (const char* line : specs) {
-      renderer.drawText(SMALL_FONT_ID, leftX, curY, line);
-      curY += itemLh;
+      fui::Rect block = uiScreen.takeTop(uiScreen.target().lineHeight(leftAlignStyle.font) + 6);
+      uiScreen.target().text(block.inset(fui::Insets{0, 40, 0, 0}), line, leftAlignStyle);
     }
   }
-  const auto l = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
-  GUI.drawButtonHints(renderer, l.btn1, l.btn2, l.btn3, l.btn4);
-  renderer.displayBuffer();
 }

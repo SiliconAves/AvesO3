@@ -264,47 +264,6 @@ void HomeActivity::loop() {
     }
   };
 
-auto activateSelection = [this] {
-  if (selectorIndex < static_cast<int>(recentBooks.size())) {
-    onSelectBook(recentBooks[selectorIndex].path);
-    return;
-  }
-
-  const int menuIndex = selectorIndex - static_cast<int>(recentBooks.size());
-
-  if (menuPage == 1) {
-    // NOTE: selectorIndex=0 (Continue Reading) is already caught by the
-    // early-return above (selectorIndex < recentBooks.size()). Do NOT prepend
-    // it here — that would shift OPDS Browser to index 1 while menuIndex for
-    // selectorIndex=1 computes to 0, causing OPDS to open the book instead.
-    std::vector<std::function<void()>> page1Actions;
-    if (hasOpdsServers) page1Actions.push_back([this] { onOpdsBrowserOpen(); });
-    // future page-1 entries go here
-    if (menuIndex >= 0 && menuIndex < static_cast<int>(page1Actions.size())) {
-      page1Actions[menuIndex]();
-    }
-    return;
-  }
-
-  // Page 0
-  std::vector<std::function<void()>> page0Actions = {
-    [this] { onAo3LibraryOpen(); },
-    [this] { onRecentsOpen(); },
-    [this] { onFileBrowserOpen(); },
-    [this] { onFileTransferOpen(); },
-    [this] { onSettingsOpen(); }
-  };
-
-  // NOTE: when homeContinueReadingInMenu is true, selectorIndex=0 is already
-  // handled by the early-return above (selectorIndex < recentBooks.size()).
-  // Do NOT prepend a Continue Reading action here – that would shift every
-  // subsequent action one slot forward and break them all.
-
-  if (menuIndex >= 0 && menuIndex < static_cast<int>(page0Actions.size())) {
-    page0Actions[menuIndex]();
-  }
-};
-
   if (SETTINGS.uiTheme == CrossPointSettings::LYRA_3_COVERS) {
     const int booksCount = static_cast<int>(recentBooks.size());
 

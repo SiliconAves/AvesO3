@@ -6,6 +6,7 @@
 #include "MappedInputManager.h"
 #include "components/UITheme.h"
 #include "components/UiAppHelpers.h"
+#include "fontIds.h"
 
 namespace fui = freeink::ui;
 
@@ -50,6 +51,9 @@ constexpr NetworkMode menuModes[NetworkModeSelectionActivity::MENU_ITEM_COUNT] =
 
 NetworkModeSelectionActivity::NetworkModeSelectionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
     : UiListActivity("NetworkModeSelection", renderer, mappedInput) {
+  uiTarget.setFont(fui::GfxRendererTarget::FONT_BODY, UI_10_FONT_ID);
+  uiTarget.setFont(fui::GfxRendererTarget::FONT_SMALL, SMALL_FONT_ID);
+
   // Entirely static, so built once here rather than every buildScreen() call.
   for (int i = 0; i < MENU_ITEM_COUNT; i++) {
     fui::ListItem item;
@@ -88,6 +92,8 @@ void NetworkModeSelectionActivity::buildScreen(UiScreen& screen) {
   props.count = static_cast<uint16_t>(MENU_ITEM_COUNT);
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
+  props.labelText = screen.theme().bodyText;
+  props.labelText.maxLines = 2;
   props.subtitleText = screen.theme().smallText;
   props.subtitleText.maxLines = 2;
   syncListViewport(screen, props, /*hasSubtitle=*/true);

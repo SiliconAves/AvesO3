@@ -811,21 +811,6 @@ bool FontDownloadActivity::handleCustomInput() {
         }
         requestUpdate();
       }
-    } else {
-      int x = 0;
-      int y = 0;
-      if (mappedInput.wasScreenTapped(x, y)) {
-        if (downloadingFamilyIndex_ >= 0 && downloadingFamilyIndex_ < static_cast<int>(families_.size())) {
-          downloadFamily(families_[downloadingFamilyIndex_]);
-          requestUpdateAndWait();
-          return;
-        }
-        {
-          RenderLock lock(*this);
-          state_ = FAMILY_LIST;
-        }
-        requestUpdate();
-      }
     }
   }
 

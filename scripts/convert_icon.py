@@ -29,7 +29,7 @@ def load_image(path, width, height):
         background.paste(img, mask=img.split()[3])
         img = background
     # Rotate 90 degrees counterclockwise
-    img = img.rotate(90, expand=True)
+    # img = img.rotate(90, expand=True)
     return img
 
 def image_to_c_array(img, array_name):

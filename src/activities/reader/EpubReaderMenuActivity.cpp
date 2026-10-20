@@ -82,10 +82,6 @@ void EpubReaderMenuActivity::closeCancelled() {
   finish();
 }
 
-bool EpubReaderMenuActivity::handleHomeGesture() {
-  closeCancelled();
-  return true;
-}
 
 void EpubReaderMenuActivity::activateIndex(const int index) {
   if (optionPopup.isActive()) return;

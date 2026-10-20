@@ -2327,6 +2327,37 @@ void GfxRenderer::cleanupGrayscaleWithFrameBuffer() const {
   }
 }
 
+// --- Restored Upstream 1.6 Method ---
+void GfxRenderer::getOrientedViewableTRBL(int* outTop, int* outRight, int* outBottom, int* outLeft) const {
+  const BoardConfig::ViewableInsets& vi = BoardConfig::ACTIVE.viewableInsets;
+  switch (orientation) {
+    case Portrait:
+      *outTop = vi.top;
+      *outRight = vi.right;
+      *outBottom = vi.bottom;
+      *outLeft = vi.left;
+      break;
+    case LandscapeClockwise:
+      *outTop = vi.left;
+      *outRight = vi.top;
+      *outBottom = vi.right;
+      *outLeft = vi.bottom;
+      break;
+    case PortraitInverted:
+      *outTop = vi.bottom;
+      *outRight = vi.left;
+      *outBottom = vi.top;
+      *outLeft = vi.right;
+      break;
+    case LandscapeCounterClockwise:
+      *outTop = vi.right;
+      *outRight = vi.bottom;
+      *outBottom = vi.left;
+      *outLeft = vi.top;
+      break;
+  }
+}
+
 void GfxRenderer::drawBitmap1BitStencil(const Bitmap& bmp, int x, int y, int dstW, int dstH) const {
   if (fontCacheManager_ && fontCacheManager_->isScanning()) return;
   const int srcW = bmp.getWidth(), srcH = bmp.getHeight();

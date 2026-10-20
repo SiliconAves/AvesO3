@@ -2,8 +2,7 @@
 
 #include <string>
 #include "BookStatus.h"
-#include "activities/Activity.h"
-#include "util/ButtonNavigator.h"
+#include "activities/UiListActivity.h"
 #include "../Ao3ArchiveHelper.h"
 
 enum class BookActionMode {
@@ -11,13 +10,11 @@ enum class BookActionMode {
   DASHBOARD  // Dashboard tabs 0-2 long-press
 };
 
-class BookActionActivity final : public Activity {
+class BookActionActivity final : public UiListActivity {
   std::string filePath;
   std::string fileName;
-  int selectorIndex = 0;
   BookStatus currentStatus = BookStatus::START;
   BookStatus initialStatus = BookStatus::START;
-  ButtonNavigator buttonNavigator;
   bool hasAo3LibraryInfo       = false;
   bool isMarkedForLater        = false;
   bool isEpub                  = false;
@@ -32,12 +29,23 @@ class BookActionActivity final : public Activity {
                      BookActionMode mode = BookActionMode::FULL);
 
   void onEnter() override;
-  void render(RenderLock&& lock) override;
-  void loop() override;
+
+ protected:
+  // --- UiListActivity Overrides ---
+  int listCount() const override;
+  void buildScreen(UiScreen& screen) override;
+  void activateIndex(int index) override;
+
+  bool handleCustomInput() override;
+  bool handleButtons() override;
+  void navigateButtons() override;
+
+  // --- Chrome & Footer Overrides ---
+  const char* headerTitle() const override { return fileName.c_str(); }
+  void drawFooter() override;
 
  private:
   void saveStatus();
   void saveStatusIfModified();
   int  logicalRow(int visualIndex) const;
-  int  visibleRowCount() const;
 };

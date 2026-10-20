@@ -105,12 +105,12 @@ EpdFont notosans16ItalicFont(&notosans_16_italic);
 EpdFont notosans16BoldItalicFont(&notosans_16_bolditalic);
 EpdFontFamily notosans16FontFamily(&notosans16RegularFont, &notosans16BoldFont, &notosans16ItalicFont,
                                    &notosans16BoldItalicFont);
-EpdFont notosans10RegularFont(&notosans_10_regular);
-EpdFont notosans10BoldFont(&notosans_10_bold);
-EpdFont notosans10ItalicFont(&notosans_10_italic);
-EpdFont notosans10BoldItalicFont(&notosans_10_bolditalic);
-EpdFontFamily notosans10FontFamily(&notosans10RegularFont, &notosans10BoldFont, &notosans10ItalicFont,
-                                   &notosans10BoldItalicFont);
+EpdFont notosans18RegularFont(&notosans_18_regular);
+EpdFont notosans18BoldFont(&notosans_18_bold);
+EpdFont notosans18ItalicFont(&notosans_18_italic);
+EpdFont notosans18BoldItalicFont(&notosans_18_bolditalic);
+EpdFontFamily notosans18FontFamily(&notosans18RegularFont, &notosans18BoldFont, &notosans18ItalicFont,
+                                   &notosans18BoldItalicFont);
 
 #endif  // OMIT_FONTS
 
@@ -263,9 +263,8 @@ void enterDeepSleep(bool fromTimeout = false) {
       SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::QUICK_RESUME ||
       (fromTimeout &&
        SETTINGS.quickResumeSleepScreen == CrossPointSettings::QUICK_RESUME_SLEEP_SCREEN::QUICK_RESUME_AFTER_TIMEOUT);
-  // Every sleep mode leaves a complete retained frame on the e-ink panel. Keep
-  // it visible until the first useful reader or home paint replaces it.
-  APP_STATE.showBootScreen = false;
+  // Keep boot splash visible on wake
+  APP_STATE.showBootScreen = true;
 
   APP_STATE.saveToFile();
 
@@ -327,10 +326,10 @@ void setupDisplayAndFonts(bool seamless = false) {
   renderer.insertFont(NOTOSERIF_16_FONT_ID, notoserif16FontFamily);
   renderer.insertFont(NOTOSERIF_18_FONT_ID, notoserif18FontFamily);
 
-  renderer.insertFont(NOTOSANS_10_FONT_ID, notosans10FontFamily);
   renderer.insertFont(NOTOSANS_12_FONT_ID, notosans12FontFamily);
   renderer.insertFont(NOTOSANS_14_FONT_ID, notosans14FontFamily);
   renderer.insertFont(NOTOSANS_16_FONT_ID, notosans16FontFamily);
+  renderer.insertFont(NOTOSANS_18_FONT_ID, notosans18FontFamily);
 
 #endif  // OMIT_FONTS
   renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);

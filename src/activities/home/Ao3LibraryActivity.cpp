@@ -22,6 +22,7 @@
 #include "../../CrossPointState.h"
 #include "Ao3MarkedForLaterStore.h"
 
+#include <FreeInkUIGfxRenderer.h>
 // ---------------------------------------------------------------------------
 //  onEnter
 // ---------------------------------------------------------------------------
@@ -1071,15 +1072,39 @@ void Ao3LibraryActivity::renderPicker() {
 
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.headerHeight}, title);
 
-  auto rowTitle = [this](int index) {
-    return pickerItems[index];
-  };
+  // 1. Create a native FreeInkUI Rect using makeRect
+  freeink::ui::Rect fuiListRect = freeink::ui::makeRect(
+      0, 
+      metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing,
+      renderer.getScreenWidth(),
+      renderer.getScreenHeight() - metrics.headerHeight - metrics.buttonHintsHeight - metrics.verticalSpacing * 2
+  );
 
-  Rect listRect{0, metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing,
-               renderer.getScreenWidth(),
-               renderer.getScreenHeight() - metrics.headerHeight - metrics.buttonHintsHeight - metrics.verticalSpacing * 2};
+  // 2. Set up the explicit manual frame API
+  freeink::ui::InputSnapshot input; 
+  freeink::ui::InteractionBuffer<32> interactions;
+  freeink::ui::GfxRendererTarget target(renderer);
+  freeink::ui::Frame<32> ui(target, target.deviceContext(), input, interactions);
 
-  GUI.drawList(renderer, listRect, pickerItems.size(), pickerSelectedIndex, rowTitle);
+  // 3. Convert to FreeInkUI ListItems
+  std::vector<freeink::ui::ListItem> items;
+  items.reserve(pickerItems.size());
+  for (size_t i = 0; i < pickerItems.size(); ++i) {
+    items.push_back({.label = pickerItems[i].c_str(), .actionValue = static_cast<int16_t>(i)});
+  }
+
+  // 4. Calculate virtualization using a hardcoded standard row height (44px)
+  const uint16_t rowHeight = 44;
+  const uint16_t visibleRows = freeink::ui::listVisibleRows(fuiListRect, rowHeight);
+  pickerTopIndex = freeink::ui::listTopIndexFor(pickerSelectedIndex, pickerTopIndex, visibleRows, items.size());
+
+  // 5. Draw the list using the FreeInkUI Rect
+  freeink::ui::ListProps props;
+  props.items = items.data();
+  props.count = items.size();
+  props.topIndex = pickerTopIndex;
+  props.selectedIndex = pickerSelectedIndex;
+  freeink::ui::list(ui, fuiListRect, props);
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_CONFIRM), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);

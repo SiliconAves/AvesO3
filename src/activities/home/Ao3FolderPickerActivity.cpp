@@ -4,9 +4,12 @@
 #include <Logging.h>
 #include <I18n.h>
 #include <algorithm>
-#include "../../components/UITheme.h"
-#include "../../fontIds.h"
+#include "components/UITheme.h"
+#include "fontIds.h"
 
+#include "components/UiAppHelpers.h"
+
+namespace fui = freeink::ui;
 
 void Ao3FolderPickerActivity::loadDirectories() {
   directories.clear();
@@ -19,7 +22,7 @@ void Ao3FolderPickerActivity::loadDirectories() {
   root.rewindDirectory();
   char name[256];
   HalFile file;
-  while (file = root.openNextFile()) {
+  while ((file = root.openNextFile())) {
     file.getName(name, sizeof(name));
     if (name[0] != '.' && file.isDirectory() && strcmp(name, "System Volume Information") != 0 && strcmp(name, ".crosspoint") != 0) {
       directories.push_back(name);
@@ -50,57 +53,57 @@ void Ao3FolderPickerActivity::toggleSelection(const std::string& path) {
   }
 }
 
+std::string Ao3FolderPickerActivity::getFullPath(int index) const {
+  if (currentPath == "/" && index == 0 && mode == PickerMode::SINGLE) return "/";
+  std::string fullPath = currentPath;
+  if (fullPath.back() != '/') fullPath += "/";
+  fullPath += directories[index];
+  return fullPath;
+}
+
 void Ao3FolderPickerActivity::onEnter() {
-  Activity::onEnter();
+  UiListActivity::onEnter();
   loadDirectories();
-  selectorIndex = 0;
   requestUpdate();
 }
 
 void Ao3FolderPickerActivity::onExit() {
-  Activity::onExit();
+  UiListActivity::onExit();
   directories.clear();
 }
 
-void Ao3FolderPickerActivity::loop() {
-  int listSize = static_cast<int>(directories.size());
+int Ao3FolderPickerActivity::listCount() const {
+  return directories.size();
+}
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    if (listSize > 0 && selectorIndex < directories.size()) {
-      std::string nextDir = directories[selectorIndex];
-      const bool isRootSentinel = (currentPath == "/" && selectorIndex == 0 && mode == PickerMode::SINGLE);
-
-      std::string fullPath = currentPath;
-      if (!isRootSentinel) {
-        if (fullPath.back() != '/') fullPath += "/";
-        fullPath += nextDir;
-      }
-
-      if (mappedInput.getHeldTime() >= 1000) {
-        // Hold Confirm -> Navigate into
-        currentPath = fullPath;
-        loadDirectories();
-        selectorIndex = 0;
-        requestUpdate();
-      } else {
-        // Short Confirm
-        if (mode == PickerMode::SINGLE) {
-          // Select and exit
-          FolderPickerResult res;
-          res.singlePath = fullPath;
-          res.isMulti = false;
-          setResult(ActivityResult(std::move(res)));
-          finish();
-        } else {
-          // Toggle selection in MULTI mode
-          toggleSelection(fullPath);
-          requestUpdate();
-        }
-      }
-    }
-    return;
+// Replaces the old Short Confirm
+void Ao3FolderPickerActivity::activateIndex(int index) {
+  std::string fullPath = getFullPath(index);
+  
+  if (mode == PickerMode::SINGLE) {
+    FolderPickerResult res;
+    res.singlePath = fullPath;
+    res.isMulti = false;
+    setResult(ActivityResult(std::move(res)));
+    finish();
+  } else {
+    toggleSelection(fullPath);
+    requestUpdate();
   }
+}
 
+// Replaces the old Hold Confirm
+void Ao3FolderPickerActivity::onRowLongPress(int index) {
+  std::string fullPath = getFullPath(index);
+  if (fullPath == "/") return; // Sentinel, don't navigate into root sentinel
+
+  currentPath = fullPath;
+  loadDirectories();
+  nav.selected = 0; // Reset scroll position for the new folder
+  requestUpdate();
+}
+
+bool Ao3FolderPickerActivity::handleButtons() {
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     if (mode == PickerMode::SINGLE) {
       if (currentPath != "/") {
@@ -112,10 +115,10 @@ void Ao3FolderPickerActivity::loop() {
           currentPath = currentPath.substr(0, lastSlash);
         }
         loadDirectories();
-        selectorIndex = 0;
+        nav.selected = 0;
         requestUpdate();
       } else {
-        // Already at root `/`, exit without selecting (cancelled)
+        // Cancelled
         setResult(ActivityResult::cancel());
         finish();
       }
@@ -127,61 +130,41 @@ void Ao3FolderPickerActivity::loop() {
       setResult(ActivityResult(std::move(res)));
       finish();
     }
-    return;
+    return true;
   }
 
-  buttonNavigator.onNextRelease([this, listSize] {
-    selectorIndex = ButtonNavigator::nextIndex(static_cast<int>(selectorIndex), listSize);
-    requestUpdate();
-  });
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    int index = nav.selected;
+    if (index >= 0 && index < listCount()) {
+      if (mappedInput.getHeldTime() >= 1000) {
+        onRowLongPress(index);
+      } else {
+        activateIndex(index);
+      }
+    }
+    return true;
+  }
 
-  buttonNavigator.onPreviousRelease([this, listSize] {
-    selectorIndex = ButtonNavigator::previousIndex(static_cast<int>(selectorIndex), listSize);
-    requestUpdate();
-  });
+  return false;
 }
 
-void Ao3FolderPickerActivity::render(RenderLock&&) {
-  renderer.clearScreen();
-
-  const auto pageWidth = renderer.getScreenWidth();
-  const auto pageHeight = renderer.getScreenHeight();
-  const auto& metrics = UITheme::getInstance().getMetrics();
-
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, title.c_str());
-
+void Ao3FolderPickerActivity::drawChrome() {
+  UiListActivity::drawChrome(); // Draws standard header
+  
   // Draw current path below header
+  const auto& metrics = UITheme::getInstance().getMetrics();
   std::string displayPath = "root" + currentPath;
   if (displayPath.back() != '/') displayPath += "/";
-    renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding,
-                metrics.topPadding + metrics.headerHeight + 5,
-                displayPath.c_str(), true, EpdFontFamily::BOLD);
+  
+  renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding,
+                    metrics.topPadding + metrics.headerHeight + 5,
+                    displayPath.c_str(), true, EpdFontFamily::BOLD);
+}
 
-  const int contentTop = metrics.topPadding + metrics.headerHeight + 38;
-  const int helperTextHeight = 37;
-  const int contentHeight = pageHeight - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing - helperTextHeight;
-
-  if (directories.empty()) {
-    renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, contentTop + 20, "No directories found.");
-  } else {
-    auto rowTitle = [this](int index) -> std::string {
-      if (currentPath == "/" && index == 0 && mode == PickerMode::SINGLE) return "root/";
-      return directories[index];
-    };
-    auto rowValue = [this](int index) {
-      if (mode == PickerMode::MULTI) {
-        std::string path = (currentPath == "/") ? "/" + directories[index] : currentPath + "/" + directories[index];
-        return isSelected(path) ? "•" : "";
-      }
-      return "";
-    };
-    auto rowIcon = [this](int index) {
-      return UITheme::getFileIcon(directories[index] + "/");
-    };
-
-    GUI.drawList(renderer, Rect{0, contentTop, pageWidth, contentHeight}, directories.size(), selectorIndex,
-                 rowTitle, nullptr, rowIcon, rowValue, false);
-  }
+void Ao3FolderPickerActivity::drawFooter() {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const auto pageWidth = renderer.getScreenWidth();
+  const auto pageHeight = renderer.getScreenHeight();
 
   // Draw Helper Text
   const std::string helperText = "Hold: Enter Folder | Short Press: Select Folder";
@@ -197,6 +180,42 @@ void Ao3FolderPickerActivity::render(RenderLock&&) {
 
   const auto labels = mappedInput.mapLabels(btn1Label, btn2Label, btn3Label, btn4Label);
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+}
 
-  renderer.displayBuffer();
+void Ao3FolderPickerActivity::buildScreen(UiScreen& screen) {
+  // Push the list down slightly so it doesn't overlap our manually drawn path in drawChrome
+  screen.spacer(25);
+  // Reserve space for the helper text
+  screen.takeBottom(37);
+
+  if (directories.empty()) {
+    // FIX 1: Use screen.theme().bodyText directly (it returns the correct fui::TextStyle)
+    screen.target().text(screen.takeTop(30), "No directories found.", screen.theme().bodyText);
+    return;
+  }
+
+  fui::ListProps props;
+  syncListViewport(screen, props, false);
+
+  std::vector<fui::ListItem> items(directories.size());
+  for (size_t i = 0; i < directories.size(); i++) {
+    if (currentPath == "/" && i == 0 && mode == PickerMode::SINGLE) {
+      items[i].label = "root/";
+    } else {
+      items[i].label = directories[i].c_str();
+    }
+    
+    // FIX 2: Wrap the legacy UIIcon in listIconFor() to satisfy the 1.6 BitmapRef requirement
+    items[i].icon = listIconFor(UITheme::getFileIcon(directories[i] + "/"));
+    
+    if (mode == PickerMode::MULTI) {
+      if (isSelected(getFullPath(i))) {
+        items[i].value = "•";
+      }
+    }
+  }
+
+  props.items = items.data();
+  props.count = static_cast<uint16_t>(items.size());
+  screen.list(props);
 }

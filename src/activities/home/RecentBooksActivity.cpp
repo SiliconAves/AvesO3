@@ -19,12 +19,11 @@
 #include "activities/util/ConfirmationActivity.h"
 #include "components/UITheme.h"
 #include "components/UiAppHelpers.h"
+#include "fontIds.h" // Needed for the specific 8pt and 10pt font mapping
 
 namespace fui = freeink::ui;
 
 namespace {
-constexpr unsigned long LONG_PRESS_MS = 1000;
-
 constexpr const char* TAB_NAMES[4] = {
     "For Later",
     "New Chapters",
@@ -41,7 +40,10 @@ constexpr const char* EMPTY_MESSAGES[4] = {
 }  // namespace
 
 RecentBooksActivity::RecentBooksActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-    : UiListActivity("RecentBooks", renderer, mappedInput, /*wantsTouchLongPress=*/true) {}
+    : UiTabListActivity("RecentBooks", renderer, mappedInput) {
+  // Map fonts precisely for 10pt Titles and 8pt Authors
+  uiTarget.setFont(fui::GfxRendererTarget::FONT_BODY, UI_10_FONT_ID);
+}
 
 BookStatus RecentBooksActivity::getBookStatus(const std::string& path) {
   if (path.empty()) return BookStatus::START;
@@ -58,6 +60,10 @@ BookStatus RecentBooksActivity::getBookStatus(const std::string& path) {
   return status;
 }
 
+fui::BitmapRef RecentBooksActivity::getStatusIcon(BookStatus status, const std::string& path) {
+    return listIconFor(UITheme::getFileIcon(path), 32);
+}
+
 void RecentBooksActivity::rebuildRowItems() {
   rowItems.clear();
   
@@ -68,10 +74,9 @@ void RecentBooksActivity::rebuildRowItems() {
 
   auto addRow = [&](const std::string& title, const std::string& author, const std::string& path, int index, BookStatus status) {
     fui::ListItem item;
-    item.label = title.c_str();
+    item.label = title.c_str(); 
     if (!author.empty()) item.subtitle = author.c_str();
-    // TODO: Map visibleStatusCache to static Lucide icon
-    item.icon = listIconFor(UITheme::getFileIcon(path), 32); 
+    item.icon = getStatusIcon(status, path); 
     item.actionValue = static_cast<int16_t>(index);
     rowItems.push_back(item);
   };
@@ -117,21 +122,18 @@ void RecentBooksActivity::rebuildRowItems() {
 }
 
 void RecentBooksActivity::onEnter() {
-  UiListActivity::onEnter();
+  UiTabListActivity::onEnter();
 
   MARKED_FOR_LATER_STORE.loadFromFile();
   if (MARKED_FOR_LATER_STORE.pruneMissing()) MARKED_FOR_LATER_STORE.saveToFile();
-  MARKED_FOR_LATER_STORE.loadFromFile();
   markedForLater = MARKED_FOR_LATER_STORE.getEntries();
   
   NEW_CHAPTERS_STORE.loadFromFile();
   if (NEW_CHAPTERS_STORE.pruneMissing()) NEW_CHAPTERS_STORE.saveToFile();
-  NEW_CHAPTERS_STORE.loadFromFile();
   newChapters = NEW_CHAPTERS_STORE.getEntries();
 
   AO3_WIPS_STORE.loadFromFile();
   if (AO3_WIPS_STORE.pruneMissing()) AO3_WIPS_STORE.saveToFile();
-  AO3_WIPS_STORE.loadFromFile();
   wipsEntries = AO3_WIPS_STORE.getEntries();
 
   if (RECENT_BOOKS.pruneMissing()) RECENT_BOOKS.saveToFile();
@@ -142,15 +144,13 @@ void RecentBooksActivity::onEnter() {
   else if (!wipsEntries.empty()) selectedTabIndex = TAB_WIPS;
   else selectedTabIndex = TAB_RECENT_BOOKS;
 
-  tabBarFocused = true;
-  nav.selected = 0;
-  
-  // NOTE: Loading title patches for Marked For Later has been moved to a separate initialization flow or should happen here before rebuild.
-  rebuildRowItems();
+  rowItems.clear();
+  isLoading = true;
+  requestUpdate(true);
 }
 
 void RecentBooksActivity::onExit() {
-  Activity::onExit();
+  UiTabListActivity::onExit();
   rowItems.clear();
   markedForLater.clear();
   newChapters.clear();
@@ -161,7 +161,62 @@ void RecentBooksActivity::onExit() {
   AO3_WIPS_STORE.clearEntries(); 
 }
 
-void RecentBooksActivity::activateIndex(const int index) {
+void RecentBooksActivity::loop() {
+  if (isLoading) {
+    if (selectedTabIndex == TAB_MARKED_FOR_LATER) {
+      bool storeNeedsSave = false;
+      for (auto& entry : markedForLater) {
+        if (!entry.title.empty()) continue;
+        std::string infoPath = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(entry.path)) + "/ao3_library_info";
+        HalFile f;
+        if (Storage.openFileForRead("MFL", infoPath, f)) {
+          Ao3LibraryMetadata meta;
+          if (f.read((uint8_t*)&meta, sizeof(meta)) == sizeof(meta) && meta.isValid()) {
+            entry.title  = meta.title;
+            entry.author = meta.author;
+            MARKED_FOR_LATER_STORE.updateEntryMetadata(entry.path, meta.title, meta.author);
+            storeNeedsSave = true;
+          }
+          f.close();
+        }
+      }
+      if (storeNeedsSave) MARKED_FOR_LATER_STORE.saveToFile();
+    }
+
+    isLoading = false;
+    rebuildRowItems();
+    requestUpdate(true);
+    return;
+  }
+  
+  UiListActivity::loop(); 
+}
+
+const char* RecentBooksActivity::tabLabel(int index) const {
+    if (index >= 0 && index < TAB_COUNT) return TAB_NAMES[index];
+    return "";
+}
+
+// ---------------------------------------------------------------------------
+//  Framework Input Routing
+// ---------------------------------------------------------------------------
+
+void RecentBooksActivity::onTabAction(int index) {
+  selectedTabIndex = index;
+  moveRingTo(0);
+  rebuildRowItems();
+  requestUpdate(true);
+}
+
+void RecentBooksActivity::stepTab(int direction) {
+  selectedTabIndex = direction > 0 ? ButtonNavigator::nextIndex(selectedTabIndex, TAB_COUNT)
+                                   : ButtonNavigator::previousIndex(selectedTabIndex, TAB_COUNT);
+  moveRingTo(0);
+  rebuildRowItems();
+  requestUpdate(true);
+}
+
+void RecentBooksActivity::activateIndex(int index) {
   if (index < 0 || index >= listCount()) return;
   app.clearTapFlash();
   
@@ -174,7 +229,7 @@ void RecentBooksActivity::activateIndex(const int index) {
   if (!path.empty()) onSelectBook(path);
 }
 
-void RecentBooksActivity::onRowLongPress(const int index) {
+void RecentBooksActivity::onRowLongPress(int index) {
   if (index < 0 || index >= listCount()) return;
   app.clearTapFlash();
 
@@ -188,80 +243,138 @@ void RecentBooksActivity::onRowLongPress(const int index) {
 }
 
 bool RecentBooksActivity::handleCustomInput() {
-  if (mappedInput.hasTouch()) {
-    const auto& metrics = UITheme::getInstance().getMetrics();
-    const int topPadding = metrics.topPadding / 2;
-    const int tabBarTop = topPadding + metrics.headerHeight;
-
-    int tappedTab = 0;
-    const int tabStep = renderer.getScreenWidth() / TAB_COUNT;
-    const auto tabTouch = mappedInput.colTouch(
-        tappedTab, 0, tabStep, TAB_COUNT,
-        tabBarTop, tabBarTop + metrics.tabBarHeight, tabStep);
-        
-    if (tabTouch == MappedInputManager::RowTouch::Tap && tappedTab != selectedTabIndex) {
-      RenderLock lock(*this);
-      selectedTabIndex = tappedTab;
-      tabBarFocused = true;
-      nav.selected = 0;
-      rebuildRowItems();
-      lock.unlock();
-      requestUpdate();
-      return true;
-    }
-  }
+  // Re-enable touch long-presses manually since UiTabListActivity drops them
+  auto route = UiAppHost::routeTouch(mappedInput, /*withLongPress=*/true);
+  if (route.routed && app.invalidated()) requestUpdate(true);
+  if (route.routed) return true; // Consume touch frame so base loop ignores it
   return false;
 }
 
 bool RecentBooksActivity::handleButtons() {
+  if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, 1000)) {
+    if (ringPos() > 0) {
+      onRowLongPress(ringPos() - 1); 
+    }
+    return true; 
+  }
+
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    if (tabBarFocused) {
-      const bool initialPress = mappedInput.wasPressed(MappedInputManager::Button::Confirm);
-      if (initialPress || (millis() - lastTabCycleMs) >= 400) {
-        lastTabCycleMs = millis();
-        RenderLock lock(*this);
-        selectedTabIndex = (selectedTabIndex + 1) % TAB_COUNT;
-        nav.selected = 0;
-        rebuildRowItems();
-        lock.unlock();
-        requestUpdate();
-      }
-      return true;
+    if (ringPos() == 0) {
+      stepTab(1); 
     } else {
-      if (nav.selected >= 0 && nav.selected < listCount()) {
-        activateIndex(nav.selected);
-      }
-      return true;
+      activateIndex(ringPos() - 1); 
     }
-  }
-
-  // Intercept Down/Up to seamlessly transition focus between the Tab Bar and the List
-  if (mappedInput.wasReleased(MappedInputManager::Button::Next) && tabBarFocused) {
-    if (listCount() > 0) {
-      tabBarFocused = false;
-      nav.selected = 0;
-      requestUpdate();
-    }
-    return true;
-  }
-
-  if (mappedInput.wasReleased(MappedInputManager::Button::Previous) && !tabBarFocused && nav.selected == 0) {
-    tabBarFocused = true;
-    requestUpdate();
     return true;
   }
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    if (!tabBarFocused) {
-      tabBarFocused = true;
-      requestUpdate();
+    if (ringPos() > 0) {
+      moveRingTo(0); 
+      requestUpdate(true);
     } else {
-      onGoHome();
+      onGoHome(); 
     }
     return true;
   }
   return false;
 }
+
+void RecentBooksActivity::navigateButtons() {
+    const int listSize = listCount();
+    
+    buttonNavigator.onNextRelease([this, listSize] {
+        moveRingTo(ButtonNavigator::nextIndex(ringPos(), listSize + 1));
+        requestUpdate(true);
+    });
+    buttonNavigator.onPreviousRelease([this, listSize] {
+        moveRingTo(ButtonNavigator::previousIndex(ringPos(), listSize + 1));
+        requestUpdate(true);
+    });
+    
+    buttonNavigator.onSideNextContinuous([this] { stepTab(1); });
+    buttonNavigator.onSidePreviousContinuous([this] { stepTab(-1); });
+    
+    buttonNavigator.onFrontNextContinuous([this, listSize] {
+        int current = ringPos();
+        if (current == 0) moveRingTo(std::min(2, listSize));
+        else moveRingTo(std::min(current + 2, listSize));
+        requestUpdate(true);
+    });
+    buttonNavigator.onFrontPreviousContinuous([this, listSize] {
+        int current = ringPos();
+        if (current == 0) moveRingTo(listSize);
+        else moveRingTo(std::max(current - 2, 1));
+        requestUpdate(true);
+    });
+}
+
+// ---------------------------------------------------------------------------
+//  Engine Layout & Render
+// ---------------------------------------------------------------------------
+
+void RecentBooksActivity::buildScreen(UiScreen& screen) {
+  // 1. Force the FUI Small Font slot to 10pt so the Tab Bar renders at the correct size
+  uiTarget.setFont(fui::GfxRendererTarget::FONT_SMALL, UI_10_FONT_ID);
+
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  screen.setContentMarginFromScreen(fui::Insets{
+      static_cast<int16_t>(metrics.topPadding + metrics.headerHeight),
+      0,
+      static_cast<int16_t>(metrics.buttonHintsHeight),
+      0});
+  buildTabBar(screen);
+
+  int textOffset = screen.theme().listSidePadding + 12 + 10;
+
+  if (isLoading) {
+    fui::Rect loadingRect = screen.takeTop(20);
+    fui::TextStyle loadingStyle = screen.theme().bodyText;
+    loadingStyle.align = fui::TextAlign::Left;
+    loadingRect.x += textOffset;
+    screen.target().text(loadingRect, "Loading...", loadingStyle);
+    return;
+  }
+
+  if (rowItems.empty()) {
+    screen.spacer(20);
+    const char* msg = (selectedTabIndex == TAB_RECENT_BOOKS) ? tr(STR_NO_RECENT_BOOKS) : EMPTY_MESSAGES[selectedTabIndex];
+    fui::Rect emptyRect = screen.takeTop(40);
+    fui::TextStyle emptyStyle = screen.theme().bodyText;
+    emptyStyle.align = fui::TextAlign::Left;
+    emptyRect.x += textOffset;
+    screen.target().text(emptyRect, msg, emptyStyle);
+    return;
+  }
+
+  screen.insetContent(fui::Insets{-6, 0, 0, 0});
+
+  fui::ListProps props;
+  syncTabListViewport(screen, props, /*hasSubtitle=*/true);
+
+  props.items = rowItems.data();
+  props.count = static_cast<uint16_t>(rowItems.size());
+  
+  props.action = ACTION_ROW;
+  props.inputMask = fui::InputTouch | fui::InputLongPress;
+
+  props.labelText = screen.theme().bodyText;
+  props.subtitleText = screen.theme().smallText;
+  
+  // 2. Switch the FUI Small Font slot to 8pt right before drawing the list for the Authors
+  uiTarget.setFont(fui::GfxRendererTarget::FONT_SMALL, SMALL_FONT_ID);
+
+  screen.list(props);
+}
+
+void RecentBooksActivity::drawFooter() {
+  const char* confirmLabel = (ringPos() == 0) ? TAB_NAMES[(selectedTabIndex + 1) % TAB_COUNT] : tr(STR_OPEN);
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+}
+
+// ---------------------------------------------------------------------------
+//  Secondary Logic
+// ---------------------------------------------------------------------------
 
 void RecentBooksActivity::revertMarkedForLaterStatus(const std::string& path) {
   const std::string cachePath = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(path));
@@ -284,7 +397,7 @@ void RecentBooksActivity::launchDashboardMenu(const std::string& path, const std
 
   auto handler = [this, path, savedTab](const ActivityResult& res) {
     if (const auto* r = std::get_if<BookActionResult>(&res.data)) {
-      RenderLock lock(*this); // Lock before touching UI arrays
+      RenderLock lock(*this); 
       if (r->removedFromList) {
         switch (savedTab) {
           case TAB_MARKED_FOR_LATER:
@@ -308,21 +421,22 @@ void RecentBooksActivity::launchDashboardMenu(const std::string& path, const std
             recentBooks = RECENT_BOOKS.getBooks();
             break;
         }
+        visibleStatusCache.clear();
       } else if (r->modified) {
         markedForLater = MARKED_FOR_LATER_STORE.getEntries();
         newChapters    = NEW_CHAPTERS_STORE.getEntries();
         wipsEntries    = AO3_WIPS_STORE.getEntries();
         recentBooks    = RECENT_BOOKS.getBooks();
+        visibleStatusCache.clear();
       }
       
       rebuildRowItems();
-      if (rowItems.empty()) {
-        tabBarFocused = true;
-        nav.selected = 0;
-      } else if (nav.selected >= listCount()) {
-        nav.selected = listCount() - 1;
+      int listSize = listCount();
+      if (listSize == 0) {
+        moveRingTo(0);
+      } else if (ringPos() - 1 >= listSize) {
+        moveRingTo(listSize);
       }
-      nav.follow(listCount());
       lock.unlock();
       requestUpdate(true);
     }
@@ -331,58 +445,4 @@ void RecentBooksActivity::launchDashboardMenu(const std::string& path, const std
   startActivityForResult(
       std::make_unique<BookActionActivity>(renderer, mappedInput, path, title, BookActionMode::DASHBOARD),
       std::move(handler));
-}
-
-void RecentBooksActivity::buildScreen(UiScreen& screen) {
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  // Clear space for both the Header AND the Tab Bar
-  const int topPadding = metrics.topPadding / 2;
-  const int contentTop = topPadding + metrics.headerHeight + metrics.tabBarHeight + 10;
-  
-  screen.setContentMarginFromScreen(fui::Insets{static_cast<int16_t>(contentTop), 0,
-                                                static_cast<int16_t>(metrics.buttonHintsHeight), 0});
-
-  if (rowItems.empty()) {
-    const char* msg = (selectedTabIndex == TAB_RECENT_BOOKS) ? tr(STR_NO_RECENT_BOOKS) : EMPTY_MESSAGES[selectedTabIndex];
-    screen.centeredText(msg, screen.theme().bodyText);
-    return;
-  }
-
-  fui::ListProps props;
-  props.items = rowItems.data();
-  props.count = static_cast<uint16_t>(rowItems.size());
-  props.action = ACTION_ROW;
-  props.inputMask = fui::InputTouch | fui::InputLongPress;
-  
-  // If the Tab Bar is focused, explicitly clear selection visualization from the list
-  if (tabBarFocused) props.selectionOverride = -1;
-
-  fui::TextStyle label = screen.theme().smallText;
-  label.bold = true;
-  props.labelText = label;
-  syncListViewport(screen, props, /*hasSubtitle=*/true);
-  screen.list(props);
-}
-
-void RecentBooksActivity::drawChrome() {
-  const auto pageWidth = renderer.getScreenWidth();
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  const int topPadding = metrics.topPadding / 2;
-
-  GUI.drawHeader(renderer, Rect{0, topPadding, pageWidth, metrics.headerHeight}, tr(STR_MENU_RECENT_BOOKS));
-
-  std::vector<TabInfo> tabs;
-  tabs.reserve(TAB_COUNT);
-  for (int i = 0; i < TAB_COUNT; i++) {
-    tabs.push_back({TAB_NAMES[i], selectedTabIndex == i});
-  }
-  
-  GUI.drawTabBar(renderer, Rect{0, topPadding + metrics.headerHeight, pageWidth, metrics.tabBarHeight},
-                 tabs, tabBarFocused);
-}
-
-void RecentBooksActivity::drawFooter() {
-  const char* confirmLabel = tabBarFocused ? TAB_NAMES[(selectedTabIndex + 1) % TAB_COUNT] : tr(STR_OPEN);
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
-  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }

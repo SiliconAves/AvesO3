@@ -284,7 +284,7 @@ void LyraTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
       coverBufferStored = storeCoverBuffer();
       coverRendered = coverBufferStored;  // Only consider it rendered if we successfully stored the buffer
     }
-
+  }
     bool bookSelected = (selectorIndex == 0);
 
     int tileX = LyraMetrics::values.contentSidePadding;
@@ -379,57 +379,3 @@ void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
     renderer.drawText(UI_12_FONT_ID, textX, textY, label, true);
   }
 }
-
-
-// --- AVESO3 STATUS OVERLAY MATH (SAVE FOR LATER ICON CREATION) ---
-// 24x24 STATUS OVERLAY
-if (status == BookStatus::READING) {
-  renderer.fillRectDither(iconX + 5, iconY + 3, 14, 13, Color::DarkGray);
-} else if (status == BookStatus::FINISHED) {
-  renderer.fillRect(iconX + 5, iconY + 3, 14, 13, true);
-  renderer.drawLine(iconX + 8, iconY + 9, iconX + 11, iconY + 12, 3, false);
-  renderer.drawLine(iconX + 11, iconY + 12, iconX + 16, iconY + 5, 3, false);
-} else if (status == BookStatus::WAITING_FOR_CHAPTER) {
-  const int tx[] = {iconX + 12, iconX + 7, iconX + 17};
-  const int ty[] = {iconY + 5,  iconY + 13, iconY + 13};
-  renderer.fillPolygon(tx, ty, 3, true);
-} else if (status == BookStatus::NEW_CHAPTER_AVAILABLE) {
-  const int tx[] = {iconX + 12, iconX + 7, iconX + 17};
-  const int ty[] = {iconY + 5,  iconY + 13, iconY + 13};
-  renderer.fillPolygon(tx, ty, 3, true);
-  renderer.fillRoundedRect(iconX + 24 - 8, iconY, 8, 7, 4, Color::Black);
-} else if (status == BookStatus::MARKED_FOR_LATER) {
-  renderer.drawRoundedRect(iconX + 6, iconY + 4, 12, 11, 1, 5, Color::Black);
-}
-
-// 32x32 STATUS OVERLAY
-const int coverX = iconX + 6;
-const int coverY = iconY + 4;
-const int coverW = 20;             
-const int coverH = 18;
-const int centerX = iconX + 14;
-const int centerY = iconY + 13; 
-
-if (status == BookStatus::READING || status == BookStatus::FINISHED) {
-  for (int dy = 0; dy < coverH; ++dy) {
-    for (int dx = 0; dx < coverW; ++dx) {
-      if (dx == 0 && dy == 0) continue;
-      if (dx == coverW - 1 && dy == coverH - 1) continue;
-      if (status == BookStatus::FINISHED || (dx + dy) % 2 == 0) {
-        renderer.drawPixel(coverX + dx, coverY + dy, true);
-      }
-    }
-  }
-  if (status == BookStatus::FINISHED) {
-    renderer.drawLine(centerX - 2, centerY,     centerX + 1, centerY + 3, 3, false);
-    renderer.drawLine(centerX + 1, centerY + 3, centerX + 7, centerY - 4, 3, false);
-  }
-} else if (status == BookStatus::WAITING_FOR_CHAPTER || status == BookStatus::NEW_CHAPTER_AVAILABLE) {
-  const int tx[] = {centerX - 5, centerX + 1, centerX + 7};
-  const int ty[] = {centerY + 5, centerY - 6, centerY + 5};
-  renderer.fillPolygon(tx, ty, 3, true);
-  if (status == BookStatus::NEW_CHAPTER_AVAILABLE) {
-    renderer.fillRoundedRect(coverX + coverW - 3, coverY - 4, 9, 9, 4, Color::Black);
-  }
-}
-// -----------------------------------------------------------------

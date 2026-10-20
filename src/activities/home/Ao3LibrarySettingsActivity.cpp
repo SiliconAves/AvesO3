@@ -10,6 +10,8 @@
 #include "components/UITheme.h"
 #include "fontIds.h"
 
+namespace fui = freeink::ui;
+
 void Ao3LibrarySettingsActivity::loadSettings() {
   ao3Folder = "";
   excludedFolders.clear();
@@ -87,28 +89,36 @@ std::string Ao3LibrarySettingsActivity::formatExclusionsPill() const {
 }
 
 void Ao3LibrarySettingsActivity::onEnter() {
-  Activity::onEnter();
+  UiListActivity::onEnter();
   loadSettings();
-  selectorIndex = 0;
   requestUpdate();
 }
 
-void Ao3LibrarySettingsActivity::loop() {
+int Ao3LibrarySettingsActivity::listCount() const {
+  return 10;
+}
+
+bool Ao3LibrarySettingsActivity::handleCustomInput() {
   if (showingCleanupConfirm) {
     if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
       showingCleanupConfirm = false;
       requestUpdate(true);
+      return true;
     } else if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       showingCleanupConfirm = false;
       cleaningUpIndex = true;
       requestUpdate(true);
-      render(RenderLock());
+      
+      // Force an immediate render so the "Please Wait" screen appears during the blocking call
+      render(RenderLock(*this));
+      
       cleanupRemovedCount = Ao3Librarian::sanitizeIndex();
       cleaningUpIndex = false;
       showingCleanupResult = true;
       requestUpdate(true);
+      return true;
     }
-    return;
+    return true; // Input absorbed by popup state
   }
 
   if (showingCleanupResult) {
@@ -117,189 +127,194 @@ void Ao3LibrarySettingsActivity::loop() {
       showingCleanupResult = false;
       requestUpdate(true);
     }
-    return;
+    return true; // Input absorbed by popup state
   }
+  return false;
+}
 
+bool Ao3LibrarySettingsActivity::handleButtons() {
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     saveSettings();
     finish();
-    return;
+    return true;
   }
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    if (selectorIndex == 0) {
-      auto handler = [this](const ActivityResult& res) {
-        if (!res.isCancelled) {
-          if (const auto* pickerRes = std::get_if<FolderPickerResult>(&res.data)) {
-            if (!pickerRes->isMulti) {
-              ao3Folder = pickerRes->singlePath;
-              excludedFolders.clear();
-              saveSettings();
-            }
-          }
-        }
-        requestUpdate(true);
-      };
-      startActivityForResult(std::make_unique<Ao3FolderPickerActivity>(renderer, mappedInput, "Select AO3 Folder", PickerMode::SINGLE), handler);
-    } else if (selectorIndex == 1) {
-      auto handler = [this](const ActivityResult& res) {
-        if (!res.isCancelled) {
-          if (const auto* pickerRes = std::get_if<FolderPickerResult>(&res.data)) {
-            if (pickerRes->isMulti) {
-              excludedFolders = pickerRes->multiPaths;
-              saveSettings();
-            }
-          }
-        }
-        requestUpdate(true);
-      };
-      std::string startPath = ao3Folder.empty() ? "/" : ao3Folder;
-      startActivityForResult(std::make_unique<Ao3FolderPickerActivity>(renderer, mappedInput, "Select Folders to Exclude", PickerMode::MULTI, excludedFolders, startPath), handler);
-    } else if (selectorIndex == 2) {
-      const int sizes[] = {10, 25, 50};
-      int current = 0;
-      for (int i = 0; i < 3; i++) {
-        if (sizes[i] == batchSize) { current = i; break; }
-      }
-      batchSize = sizes[(current + 1) % 3];
-      saveSettings();
-      requestUpdate();
-    } else if (selectorIndex == 3) {
-      autoIndexOnOpen = !autoIndexOnOpen;
-      saveSettings();
-      requestUpdate();
-    } else if (selectorIndex == 4) {
-      hideFinished = !hideFinished;
-      saveSettings();
-      requestUpdate();
-    } else if (selectorIndex == 5) {
-      filterMode = (filterMode == FilterMode::AUTOMATIC)
-                     ? FilterMode::FOLDER_TREE
-                     : FilterMode::AUTOMATIC;
-      saveSettings();
-      requestUpdate();
-    } else if (selectorIndex == 6) {
-      // Merge Similar Tags — only active in Automatic mode
-      if (filterMode == FilterMode::AUTOMATIC) {
-        auto handler = [this](const ActivityResult&) { requestUpdate(true); };
-        startActivityForResult(std::make_unique<Ao3TagMergeActivity>(renderer, mappedInput), handler);
-      }
-      return;
-    } else if (selectorIndex == 7) {
-      swapNavButtons = !swapNavButtons;
-      saveSettings();
-      requestUpdate();
-    } else if (selectorIndex == 8) {                       
-      auto handler = [this](const ActivityResult&) { requestUpdate(true); };
-      startActivityForResult(
-          std::make_unique<Ao3CoverAssignmentActivity>(renderer, mappedInput), handler);
-      return;
-    } else if (selectorIndex == 9) {                      
-      showingCleanupConfirm = true;
-      requestUpdate(true);
-      return;
-    }
-    return;
+    activateIndex(nav.selected);
+    return true;
+  }
+
+  return false;
 }
 
-  buttonNavigator.onNextRelease([this] {
-    selectorIndex = (selectorIndex + 1) % 10;
-    // Skip "Merge Similar Tags" if disabled (moving forward)
-    if (selectorIndex == 6 && filterMode != FilterMode::AUTOMATIC) {
-      selectorIndex = 7;
-    }
+void Ao3LibrarySettingsActivity::navigateButtons() {
+  // Override navigation to natively skip the greyed-out Tag Merge row
+  auto nextVisual = [this](int current) -> int {
+    int next = (current + 1) % 10;
+    if (next == 6 && filterMode != FilterMode::AUTOMATIC) next = 7;
+    return next;
+  };
+
+  auto prevVisual = [this](int current) -> int {
+    int prev = (current + 9) % 10;
+    if (prev == 6 && filterMode != FilterMode::AUTOMATIC) prev = 5;
+    return prev;
+  };
+
+  buttonNavigator.onNextRelease([this, nextVisual] {
+    nav.selected = nextVisual(nav.selected);
+    nav.follow(10);
     requestUpdate();
   });
 
-  buttonNavigator.onPreviousRelease([this] {
-    selectorIndex = (selectorIndex + 9) % 10;
-    // Skip "Merge Similar Tags" if disabled (moving backward)
-    if (selectorIndex == 6 && filterMode != FilterMode::AUTOMATIC) {
-      selectorIndex = 5;
-    }
+  buttonNavigator.onPreviousRelease([this, prevVisual] {
+    nav.selected = prevVisual(nav.selected);
+    nav.follow(10);
     requestUpdate();
   });
 
   buttonNavigator.onNextContinuous([this] {
-    selectorIndex = (selectorIndex + 2) % 10;
-    // Skip "Merge Similar Tags" if disabled (fast scrolling forward)
-    if (selectorIndex == 6 && filterMode != FilterMode::AUTOMATIC) {
-      selectorIndex = 7;
-    }
+    int next = (nav.selected + 2) % 10;
+    if (next == 6 && filterMode != FilterMode::AUTOMATIC) next = 7;
+    nav.selected = next;
+    nav.follow(10);
     requestUpdate();
   });
 
   buttonNavigator.onPreviousContinuous([this] {
-    selectorIndex = (selectorIndex + 8) % 10;
-    // Skip "Merge Similar Tags" if disabled (fast scrolling backward)
-    if (selectorIndex == 6 && filterMode != FilterMode::AUTOMATIC) {
-      selectorIndex = 5;
-    }
+    int prev = (nav.selected + 8) % 10;
+    if (prev == 6 && filterMode != FilterMode::AUTOMATIC) prev = 5;
+    nav.selected = prev;
+    nav.follow(10);
     requestUpdate();
   });
 }
 
-void Ao3LibrarySettingsActivity::render(RenderLock&&) {
-  if (cleaningUpIndex) {
-    renderer.clearScreen();
-    const auto pageHeight = renderer.getScreenHeight();
-    const auto& metrics = UITheme::getInstance().getMetrics();
-    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.headerHeight}, "Library Cleanup");
-    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "Please Wait. Cleaning up library...");
-    renderer.displayBuffer();
-    return;
+void Ao3LibrarySettingsActivity::activateIndex(int index) {
+  if (index == 0) {
+    auto handler = [this](const ActivityResult& res) {
+      if (!res.isCancelled) {
+        if (const auto* pickerRes = std::get_if<FolderPickerResult>(&res.data)) {
+          if (!pickerRes->isMulti) {
+            ao3Folder = pickerRes->singlePath;
+            excludedFolders.clear();
+            saveSettings();
+          }
+        }
+      }
+      requestUpdate(true);
+    };
+    startActivityForResult(std::make_unique<Ao3FolderPickerActivity>(renderer, mappedInput, "Select AO3 Folder", PickerMode::SINGLE), handler);
+  } else if (index == 1) {
+    auto handler = [this](const ActivityResult& res) {
+      if (!res.isCancelled) {
+        if (const auto* pickerRes = std::get_if<FolderPickerResult>(&res.data)) {
+          if (pickerRes->isMulti) {
+            excludedFolders = pickerRes->multiPaths;
+            saveSettings();
+          }
+        }
+      }
+      requestUpdate(true);
+    };
+    std::string startPath = ao3Folder.empty() ? "/" : ao3Folder;
+    startActivityForResult(std::make_unique<Ao3FolderPickerActivity>(renderer, mappedInput, "Select Folders to Exclude", PickerMode::MULTI, excludedFolders, startPath), handler);
+  } else if (index == 2) {
+    const int sizes[] = {10, 25, 50};
+    int current = 0;
+    for (int i = 0; i < 3; i++) {
+      if (sizes[i] == batchSize) { current = i; break; }
+    }
+    batchSize = sizes[(current + 1) % 3];
+    saveSettings();
+    requestUpdate();
+  } else if (index == 3) {
+    autoIndexOnOpen = !autoIndexOnOpen;
+    saveSettings();
+    requestUpdate();
+  } else if (index == 4) {
+    hideFinished = !hideFinished;
+    saveSettings();
+    requestUpdate();
+  } else if (index == 5) {
+    filterMode = (filterMode == FilterMode::AUTOMATIC)
+                   ? FilterMode::FOLDER_TREE
+                   : FilterMode::AUTOMATIC;
+    saveSettings();
+    requestUpdate();
+  } else if (index == 6) {
+    // Merge Similar Tags
+    if (filterMode == FilterMode::AUTOMATIC) {
+      auto handler = [this](const ActivityResult&) { requestUpdate(true); };
+      startActivityForResult(std::make_unique<Ao3TagMergeActivity>(renderer, mappedInput), handler);
+    }
+  } else if (index == 7) {
+    swapNavButtons = !swapNavButtons;
+    saveSettings();
+    requestUpdate();
+  } else if (index == 8) {                       
+    auto handler = [this](const ActivityResult&) { requestUpdate(true); };
+    startActivityForResult(std::make_unique<Ao3CoverAssignmentActivity>(renderer, mappedInput), handler);
+  } else if (index == 9) {                      
+    showingCleanupConfirm = true;
+    requestUpdate(true);
   }
+}
+
+void Ao3LibrarySettingsActivity::drawFooter() {
+  if (cleaningUpIndex) return;
 
   if (showingCleanupConfirm) {
-    renderer.clearScreen();
-    const auto pageHeight = renderer.getScreenHeight();
-    const auto& metrics = UITheme::getInstance().getMetrics();
-    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.headerHeight}, "Library Cleanup");
-    const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
-    const int blockTop = pageHeight / 2 - lineHeight * 2;
-    renderer.drawCenteredText(UI_10_FONT_ID, blockTop,
-      "The cleanup process will remove");
-    renderer.drawCenteredText(UI_10_FONT_ID, blockTop + lineHeight,
-      "ghost books from your AO3 Library.");
-    renderer.drawCenteredText(UI_10_FONT_ID, blockTop + lineHeight * 3,
-      "This process can take up to a few minutes ");
-    renderer.drawCenteredText(UI_10_FONT_ID, blockTop + lineHeight * 4,
-      "to complete.");
     const auto labels = mappedInput.mapLabels("Cancel", "Start", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-    renderer.displayBuffer();
     return;
   }
 
   if (showingCleanupResult) {
-    renderer.clearScreen();
-    const auto pageHeight = renderer.getScreenHeight();
-    const auto& metrics = UITheme::getInstance().getMetrics();
-    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.headerHeight}, "Library Cleanup");
-    if (cleanupRemovedCount < 0) {
-      renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "Index not found.");
-    } else if (cleanupRemovedCount == 0) {
-      renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "Nothing to clean up.");
-    } else {
-      char buf[64];
-      sprintf(buf, "%d ghost entr%s removed.", cleanupRemovedCount, cleanupRemovedCount == 1 ? "y" : "ies");
-      renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, buf);
-    }
     const auto labels = mappedInput.mapLabels("", "Done", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-    renderer.displayBuffer();
     return;
   }
 
-  renderer.clearScreen();
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), "Select", tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+}
 
-  const auto pageWidth = renderer.getScreenWidth();
-  const auto pageHeight = renderer.getScreenHeight();
-  const auto& metrics = UITheme::getInstance().getMetrics();
+void Ao3LibrarySettingsActivity::buildScreen(UiScreen& uiScreen) {
+  if (cleaningUpIndex) {
+    uiScreen.centeredText("Please Wait. Cleaning up library...", uiScreen.theme().bodyText);
+    return;
+  }
 
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, "AO3 Library Settings");
+  if (showingCleanupConfirm) {
+    uiScreen.spacer(60);
+    fui::TextStyle style = uiScreen.theme().bodyText;
+    uiScreen.centeredText("The cleanup process will remove", style);
+    uiScreen.spacer(5);
+    uiScreen.centeredText("ghost books from your AO3 Library.", style);
+    uiScreen.spacer(20);
+    uiScreen.centeredText("This process can take up to a few minutes ", style);
+    uiScreen.spacer(5);
+    uiScreen.centeredText("to complete.", style);
+    return;
+  }
 
-  // Two rows: Your AO3 Folder and Non-AO3 Folders
+  if (showingCleanupResult) {
+    if (cleanupRemovedCount < 0) {
+      uiScreen.centeredText("Index not found.", uiScreen.theme().bodyText);
+    } else if (cleanupRemovedCount == 0) {
+      uiScreen.centeredText("Nothing to clean up.", uiScreen.theme().bodyText);
+    } else {
+      char buf[64];
+      sprintf(buf, "%d ghost entr%s removed.", cleanupRemovedCount, cleanupRemovedCount == 1 ? "y" : "ies");
+      uiScreen.centeredText(buf, uiScreen.theme().bodyText);
+    }
+    return;
+  }
+
+  fui::ListProps props;
+  syncListViewport(uiScreen, props, false);
+
   std::vector<std::string> rows = {
     "Your AO3 Folder",
     "Never Index",
@@ -313,34 +328,31 @@ void Ao3LibrarySettingsActivity::render(RenderLock&&) {
     "Library Cleanup"
   };
 
-  auto rowTitle = [&rows](int index) {
-    return rows[index];
-  };
+  std::vector<fui::ListItem> items(10);
+  std::vector<std::string> values(10);
 
-  auto rowValue = [this](int index) -> std::string {
-    if (index == 0) return formatFolderPill();
-    if (index == 1) return formatExclusionsPill();
-    if (index == 2) return std::to_string(batchSize);
-    if (index == 3) return autoIndexOnOpen ? "ON" : "OFF";
-    if (index == 4) return hideFinished ? "ON" : "OFF";
-    if (index == 5) return (filterMode == FilterMode::FOLDER_TREE) ? "Folder Tree" : "Automatic";
-    if (index == 6) return "";
-    if (index == 7) return swapNavButtons ? "Scroll List" : "Open Panels";
-    return "";
-};
+  for (int i = 0; i < 10; i++) {
+    items[i].label = rows[i].c_str();
 
-  auto rowDimmed = [this](int index) -> bool {
-    return index == 6 && filterMode != FilterMode::AUTOMATIC;
-};
+    if (i == 0) values[i] = formatFolderPill();
+    if (i == 1) values[i] = formatExclusionsPill();
+    if (i == 2) values[i] = std::to_string(batchSize);
+    if (i == 3) values[i] = autoIndexOnOpen ? "ON" : "OFF";
+    if (i == 4) values[i] = hideFinished ? "ON" : "OFF";
+    if (i == 5) values[i] = (filterMode == FilterMode::FOLDER_TREE) ? "Folder Tree" : "Automatic";
+    if (i == 7) values[i] = swapNavButtons ? "Scroll List" : "Open Panels";
 
-  int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
-  int contentHeight = pageHeight - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing * 2;
+    // Standard list component formatting handles the black pill inherently
+    if (!values[i].empty()) items[i].value = values[i].c_str();
 
-  GUI.drawList(renderer, Rect{0, contentTop, pageWidth, contentHeight}, 10, selectorIndex,
-               rowTitle, nullptr, nullptr, rowValue, true, rowDimmed);
+    // The 1.6 framework automatically dims the text when set to false
+    if (i == 6 && filterMode != FilterMode::AUTOMATIC) {
+      items[i].enabled = false;
+    }
+  }
 
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), "Select", tr(STR_DIR_UP), tr(STR_DIR_DOWN));
-  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-
-  renderer.displayBuffer();
+  props.valueText = uiScreen.theme().smallText;
+  props.items = items.data();
+  props.count = 10;
+  uiScreen.list(props);
 }

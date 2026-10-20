@@ -5,13 +5,15 @@
 #include <I18n.h>
 #include <algorithm>
 #include <cstring>
-#include "../../Ao3CompactIndexRecord.h"
-#include "../../Ao3TagMergeStore.h"
-#include "../../components/UITheme.h"
-#include "../../fontIds.h"
+#include "Ao3CompactIndexRecord.h"
+#include "Ao3TagMergeStore.h"
+#include "components/UITheme.h"
+#include "fontIds.h"
+
+namespace fui = freeink::ui;
 
 // ---------------------------------------------------------------------------
-//  Helpers
+//  Helpers & Data Loading
 // ---------------------------------------------------------------------------
 
 std::vector<Ao3TagMergeActivity::MergeGroup>& Ao3TagMergeActivity::activeGroups() {
@@ -75,7 +77,7 @@ void Ao3TagMergeActivity::loadAllTagsForActiveTab(std::vector<std::string>& out)
         memcmp(magic, "AO3X", 4) != 0) {
         f.close(); return;
     }
-    f.seek(12); // skip remaining header
+    f.seek(12);
 
     CompactIndexRecord rec;
     for (uint16_t i = 0; i < recordCount; i++) {
@@ -116,7 +118,6 @@ void Ao3TagMergeActivity::loadFandomsForRelTab(std::vector<std::string>& out) co
     }
     f.seek(12);
 
-    // Resolve a raw fandom name to its master using fandomGroups
     auto resolveName = [this](const char* name) -> std::string {
         for (const auto& g : fandomGroups)
             for (const auto& s : g.subs)
@@ -129,8 +130,8 @@ void Ao3TagMergeActivity::loadFandomsForRelTab(std::vector<std::string>& out) co
         if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
         if (rec.flags & 0x01) continue;
         if (rec.fandom[0] == '\0') continue;
-        // Only include fandoms that have at least one relationship tagged
         if (rec.relationship1[0] == '\0' && rec.relationship2[0] == '\0') continue;
+        
         std::string resolved = resolveName(rec.fandom);
         bool found = false;
         for (const auto& s : out) if (s == resolved) { found = true; break; }
@@ -144,7 +145,6 @@ void Ao3TagMergeActivity::loadFandomsForRelTab(std::vector<std::string>& out) co
 
 void Ao3TagMergeActivity::loadRelationshipsForFandom(const std::string& fandom,
                                                       std::vector<std::string>& out) const {
-    // Build the set of raw fandom names to match: master + all its subs
     std::vector<std::string> matchNames = {fandom};
     for (const auto& g : fandomGroups) {
         if (g.master == fandom) {
@@ -191,7 +191,6 @@ void Ao3TagMergeActivity::loadRelationshipsForFandom(const std::string& fandom,
 void Ao3TagMergeActivity::rebuildDisplayItems() {
     displayItems.clear();
 
-    // Relationship tab with no fandom selected: show fandom navigation list
     if (selectedTabIndex == 1 && relFandomFilter_.empty()) {
         std::vector<std::string> fandoms;
         loadFandomsForRelTab(fandoms);
@@ -230,17 +229,19 @@ void Ao3TagMergeActivity::rebuildDisplayItems() {
 
 void Ao3TagMergeActivity::openSecondaryPicker(const std::string& masterName) {
     editingMaster = masterName;
+
+    // Build the header title once when we enter the screen
+    headerTitleStr = "Add to: " + editingMaster;
+    if (headerTitleStr.length() > 30) headerTitleStr = headerTitleStr.substr(0, 28) + "..";
+
     pickerItems.clear();
-    pickerSelectorIndex = 0;
+    secondaryNav.reset();
 
     const auto& groups = activeGroups();
-
-    // Current subs of this master (pre-select them)
     std::vector<std::string> currentSubs;
     for (const auto& g : groups)
         if (g.master == masterName) { currentSubs = g.subs; break; }
 
-    // Tags that belong to OTHER groups (excluded from picker)
     std::vector<std::string> otherMasters, otherSubs;
     for (const auto& g : groups) {
         if (g.master == masterName) continue;
@@ -263,8 +264,9 @@ void Ao3TagMergeActivity::openSecondaryPicker(const std::string& masterName) {
     if (selectedTabIndex == 1 && !relFandomFilter_.empty()) {
          loadRelationshipsForFandom(relFandomFilter_, allTags);
     } else {
-     loadAllTagsForActiveTab(allTags);
+         loadAllTagsForActiveTab(allTags);
     }
+    
     for (const auto& tag : allTags) {
         if (isExcluded(tag)) continue;
         pickerItems.push_back({tag, isCurrentSub(tag)});
@@ -294,246 +296,273 @@ void Ao3TagMergeActivity::commitSecondaryPicker() {
     screen = Screen::MAIN;
     rebuildDisplayItems();
 
-    // Clamp the cursor so it doesn't point to a ghost entry if the list shrank
-    const int maxIndex = static_cast<int>(displayItems.size());
-    if (selectedSettingIndex > maxIndex) {
-        selectedSettingIndex = maxIndex;
+    // Clamp viewport to prevent ghost pointers if list shrank
+    int listSize = static_cast<int>(displayItems.size());
+    if (ringPos() > listSize) {
+        moveRingTo(listSize);
     }
-
     requestUpdate(true);
 }
 
 // ---------------------------------------------------------------------------
-//  Activity lifecycle
+//  Activity Lifecycle & Overrides
 // ---------------------------------------------------------------------------
 
 void Ao3TagMergeActivity::onEnter() {
-    Activity::onEnter();
-    selectedTabIndex     = 0;
-    selectedSettingIndex = 0;
+    UiTabListActivity::onEnter();
+    selectedTabIndex = 0;
+    secondaryNav.reset();
     screen = Screen::MAIN;
-    dirty  = false;
+    dirty = false;
     loadMergeData();
     rebuildDisplayItems();
     requestUpdate();
 }
 
 void Ao3TagMergeActivity::onExit() {
-    Activity::onExit();
+    UiTabListActivity::onExit();
     if (dirty) saveMergeData();
     displayItems.clear(); displayItems.shrink_to_fit();
     pickerItems.clear();  pickerItems.shrink_to_fit();
     fandomGroups.clear(); relGroups.clear();
 }
 
-// ---------------------------------------------------------------------------
-//  loop
-// ---------------------------------------------------------------------------
+fui::ListNav& Ao3TagMergeActivity::activeNav() {
+    return (screen == Screen::SECONDARY) ? secondaryNav : UiTabListActivity::activeNav();
+}
 
-void Ao3TagMergeActivity::loop() {
-    // --- SECONDARY SCREEN ---
+int Ao3TagMergeActivity::listCount() const {
+    return screen == Screen::SECONDARY ? static_cast<int>(pickerItems.size()) 
+                                       : static_cast<int>(displayItems.size());
+}
+
+const char* Ao3TagMergeActivity::headerTitle() const {
     if (screen == Screen::SECONDARY) {
-        const int total = static_cast<int>(pickerItems.size());
+        return headerTitleStr.c_str();
+    }
+    return "Merge Similar Tags";
+}
 
+void Ao3TagMergeActivity::drawFooter() {
+    if (screen == Screen::SECONDARY) {
+        const auto labels = mappedInput.mapLabels("Save", "Toggle", tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+        GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    } else {
+        const char* confirmLabel = (ringPos() == 0) 
+            ? (selectedTabIndex == 0 ? "Ships" : "Fandoms") 
+            : "Edit";
+        const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+        GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  Tab & Input Handling
+// ---------------------------------------------------------------------------
+
+void Ao3TagMergeActivity::onTabAction(int index) {
+    selectedTabIndex = index;
+    relFandomFilter_.clear();
+    rebuildDisplayItems();
+    moveRingTo(0);
+    requestUpdate(true);
+}
+
+void Ao3TagMergeActivity::stepTab(int direction) {
+    selectedTabIndex = direction > 0 ? ButtonNavigator::nextIndex(selectedTabIndex, kTabCount)
+                                     : ButtonNavigator::previousIndex(selectedTabIndex, kTabCount);
+    relFandomFilter_.clear();
+    rebuildDisplayItems();
+    moveRingTo(0);
+    requestUpdate(true);
+}
+
+bool Ao3TagMergeActivity::handleButtons() {
+    if (screen == Screen::SECONDARY) {
         if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
             commitSecondaryPicker();
-            return;
+            return true;
         }
-        if (mappedInput.wasPressed(MappedInputManager::Button::Confirm) && total > 0) {
-            pickerItems[pickerSelectorIndex].selected = !pickerItems[pickerSelectorIndex].selected;
-            requestUpdate(true);
-            return;
+        if (mappedInput.wasPressed(MappedInputManager::Button::Confirm) && !pickerItems.empty()) {
+            activateIndex(secondaryNav.selected); // <-- Routes through the safe function now
+            return true;
         }
-        if (total > 0) {
-            buttonNavigator.onNextRelease([this, total] {
-                pickerSelectorIndex = (pickerSelectorIndex + 1) % total;
-                requestUpdate();
-            });
-            buttonNavigator.onPreviousRelease([this, total] {
-                pickerSelectorIndex = (pickerSelectorIndex + total - 1) % total;
-                requestUpdate();
-            });
-            buttonNavigator.onNextContinuous([this, total] {
-                pickerSelectorIndex = (pickerSelectorIndex + 2) % total;
-                requestUpdate();
-            });
-            buttonNavigator.onPreviousContinuous([this, total] {
-                pickerSelectorIndex = (pickerSelectorIndex + total - 2) % total;
-                requestUpdate();
-            });
-        }
-        return;
+        return false;
     }
-    
 
-    // --- MAIN SCREEN ---
-    bool tabChanged = false;
-
-    // Confirm: cycle tab (when on tab bar) or open secondary picker (when in list)
-    // Uses wasPressed to match SettingsActivity pattern
+    // MAIN Screen
     if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-        if (selectedSettingIndex == 0) {
-            selectedTabIndex = (selectedTabIndex + 1) % kTabCount;
-            tabChanged = true;
-            requestUpdate();
-            // fall through — no early return, matches SettingsActivity
+        if (ringPos() == 0) {
+            stepTab(1); // Cycle tab
         } else {
-            const int idx = selectedSettingIndex - 1;
-            if (idx >= 0 && idx < static_cast<int>(displayItems.size())) {
-                if (selectedTabIndex == 1 && relFandomFilter_.empty()) {
-                    // Fandom selected in relationship tab — drill into its relationships
-                    relFandomFilter_ = displayItems[idx].name;
-                    selectedSettingIndex = 1;
-                    rebuildDisplayItems();
-                    requestUpdate(true);
-                } else {
-                    openSecondaryPicker(displayItems[idx].name);
-                }
-            }
-            return;
+            activateIndex(ringPos() - 1); // Drill down
         }
+        return true;
     }
 
     if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
         if (selectedTabIndex == 1 && !relFandomFilter_.empty()) {
-         // Return to fandom list from relationship list
             relFandomFilter_.clear();
-         selectedSettingIndex = 1;
-         rebuildDisplayItems();
-         requestUpdate(true);
-        } else if (selectedSettingIndex > 0) {
-          selectedSettingIndex = 0;
-         requestUpdate();
+            rebuildDisplayItems();
+            moveRingTo(1);
+            requestUpdate(true);
+        } else if (ringPos() > 0) {
+            moveRingTo(0);
+            requestUpdate(true);
         } else {
-          if (dirty) saveMergeData();
-         finish();
+            if (dirty) saveMergeData();
+            finish();
+        }
+        return true;
+    }
+
+    return false;
+}
+
+void Ao3TagMergeActivity::navigateButtons() {
+    if (screen == Screen::SECONDARY) {
+        const int total = static_cast<int>(pickerItems.size());
+        if (total == 0) return;
+
+        buttonNavigator.onNextRelease([this, total] {
+            secondaryNav.selected = ButtonNavigator::nextIndex(secondaryNav.selected, total);
+            secondaryNav.follow(total);
+            requestUpdate();
+        });
+        buttonNavigator.onPreviousRelease([this, total] {
+            secondaryNav.selected = ButtonNavigator::previousIndex(secondaryNav.selected, total);
+            secondaryNav.follow(total);
+            requestUpdate();
+        });
+        buttonNavigator.onNextContinuous([this, total] {
+            secondaryNav.selected = (secondaryNav.selected + 2) % total;
+            secondaryNav.follow(total);
+            requestUpdate();
+        });
+        buttonNavigator.onPreviousContinuous([this, total] {
+            secondaryNav.selected = (secondaryNav.selected + total - 2) % total;
+            secondaryNav.follow(total);
+            requestUpdate();
+        });
+    } else {
+        const int listSize = static_cast<int>(displayItems.size());
+        
+        buttonNavigator.onNextRelease([this, listSize] {
+            moveRingTo(ButtonNavigator::nextIndex(ringPos(), listSize + 1));
+            requestUpdate(true);
+        });
+        buttonNavigator.onPreviousRelease([this, listSize] {
+            moveRingTo(ButtonNavigator::previousIndex(ringPos(), listSize + 1));
+            requestUpdate(true);
+        });
+        // Side buttons continuously held: cycle tabs
+        buttonNavigator.onSideNextContinuous([this] {
+            stepTab(1);
+        });
+        buttonNavigator.onSidePreviousContinuous([this] {
+            stepTab(-1);
+        });
+        // Front buttons continuously held: skip 2 rows
+        buttonNavigator.onFrontNextContinuous([this, listSize] {
+            int current = ringPos();
+            if (current == 0) moveRingTo(std::min(2, listSize));
+            else moveRingTo(std::min(current + 2, listSize));
+            requestUpdate(true);
+        });
+        buttonNavigator.onFrontPreviousContinuous([this, listSize] {
+            int current = ringPos();
+            if (current == 0) moveRingTo(listSize);
+            else moveRingTo(std::max(current - 2, 1));
+            requestUpdate(true);
+        });
+    }
+}
+
+void Ao3TagMergeActivity::activateIndex(int index) {
+    // Safely intercept touches on the secondary picker screen
+    if (screen == Screen::SECONDARY) {
+        if (index >= 0 && index < static_cast<int>(pickerItems.size())) {
+            pickerItems[index].selected = !pickerItems[index].selected;
+            requestUpdate(true);
         }
         return;
     }
 
-    const int listSize = static_cast<int>(displayItems.size());
+    // Main screen routing
+    if (index >= 0 && index < static_cast<int>(displayItems.size())) {
+        if (selectedTabIndex == 1 && relFandomFilter_.empty()) {
+            relFandomFilter_ = displayItems[index].name;
+            rebuildDisplayItems();
+            moveRingTo(1);
+            requestUpdate(true);
+        } else {
+            openSecondaryPicker(displayItems[index].name);
+        }
+    }
+}
 
-    buttonNavigator.onNextRelease([this, listSize] {
-        selectedSettingIndex = ButtonNavigator::nextIndex(selectedSettingIndex, listSize + 1);
-        requestUpdate();
-    });
-    buttonNavigator.onPreviousRelease([this, listSize] {
-        selectedSettingIndex = ButtonNavigator::previousIndex(selectedSettingIndex, listSize + 1);
-        requestUpdate();
-    });
-    // Side buttons held: cycle tabs
-    buttonNavigator.onSideNextContinuous([this, &tabChanged] {
-        selectedTabIndex = ButtonNavigator::nextIndex(selectedTabIndex, kTabCount);
-        tabChanged = true;
-        requestUpdate();
-    });
-    buttonNavigator.onSidePreviousContinuous([this, &tabChanged] {
-        selectedTabIndex = ButtonNavigator::previousIndex(selectedTabIndex, kTabCount);
-        tabChanged = true;
-        requestUpdate();
-    });
-    // Front buttons held: skip 2 rows
-    buttonNavigator.onFrontNextContinuous([this, listSize] {
-        if (selectedSettingIndex == 0) selectedSettingIndex = 2;
-        else selectedSettingIndex = std::min(selectedSettingIndex + 2, listSize);
-        requestUpdate();
-    });
-    buttonNavigator.onFrontPreviousContinuous([this, listSize] {
-        if (selectedSettingIndex == 0) selectedSettingIndex = listSize;
-        else selectedSettingIndex = std::max(selectedSettingIndex - 2, 1);
-        requestUpdate();
-    });
+// ---------------------------------------------------------------------------
+//  Screen Builders
+// ---------------------------------------------------------------------------
 
-    if (tabChanged) {
-        selectedSettingIndex = (selectedSettingIndex == 0) ? 0 : 1;
-        relFandomFilter_.clear();
-        rebuildDisplayItems();
+void Ao3TagMergeActivity::buildScreen(UiScreen& uiScreen) {
+    if (screen == Screen::SECONDARY) {
+        buildSecondaryScreen(uiScreen);
+    } else {
+        buildMainScreen(uiScreen);
+    }
+}
+
+void Ao3TagMergeActivity::buildMainScreen(UiScreen& uiScreen) {
+    buildTabBar(uiScreen);
+
+    if (displayItems.empty()) {
+        uiScreen.centeredText("No tags indexed yet.", uiScreen.theme().bodyText);
+        return;
+    }
+
+    fui::ListProps props;
+    syncTabListViewport(uiScreen, props, false);
+
+    int count = static_cast<int>(displayItems.size());
+    std::vector<fui::ListItem> items(count);
+    std::vector<std::string> values(count);
+
+    for (int i = 0; i < count; i++) {
+        items[i].label = displayItems[i].name.c_str();
+        if (displayItems[i].subCount > 0) {
+            values[i] = std::to_string(displayItems[i].subCount);
+            items[i].value = values[i].c_str(); 
         }
     }
 
-// ---------------------------------------------------------------------------
-//  render
-// ---------------------------------------------------------------------------
-
-void Ao3TagMergeActivity::render(RenderLock&&) {
-    if (screen == Screen::SECONDARY) { renderSecondary(); return; }
-    renderMain();
+    props.valueText = uiScreen.theme().smallText;
+    props.items = items.data();
+    props.count = count;
+    uiScreen.list(props);
 }
 
-void Ao3TagMergeActivity::renderMain() {
-    renderer.clearScreen();
-    const auto pageWidth  = renderer.getScreenWidth();
-    const auto pageHeight = renderer.getScreenHeight();
-    const auto& metrics   = UITheme::getInstance().getMetrics();
-
-    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},
-                   "Merge Similar Tags");
-
-    std::vector<TabInfo> tabs = {
-        {"Fandoms",       selectedTabIndex == 0},
-        {"Relationships", selectedTabIndex == 1}
-    };
-    GUI.drawTabBar(renderer,
-                   Rect{0, metrics.topPadding + metrics.headerHeight, pageWidth, metrics.tabBarHeight},
-                   tabs, selectedSettingIndex == 0);
-
-    const int listTop = metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + metrics.verticalSpacing;
-    const int listH   = pageHeight - listTop - metrics.buttonHintsHeight - metrics.verticalSpacing;
-    const int listCount = static_cast<int>(displayItems.size());
-    
-    if (listCount == 0) {
-        renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "No tags indexed yet.");
-    } else {
-        GUI.drawList(renderer, Rect{0, listTop, pageWidth, listH},
-                     listCount, selectedSettingIndex - 1,
-                     [this](int i) { return displayItems[i].name; },
-                     nullptr, nullptr,
-                     [this](int i) -> std::string {
-                         return displayItems[i].subCount > 0
-                             ? std::to_string(displayItems[i].subCount)
-                             : "";
-                     }, false);
+void Ao3TagMergeActivity::buildSecondaryScreen(UiScreen& uiScreen) {
+    if (pickerItems.empty()) {
+        uiScreen.centeredText("No available tags.", uiScreen.theme().bodyText);
+        return;
     }
 
-    // Confirm label cycles to the other tab name when on tab bar
-    const char* confirmLabel = (selectedSettingIndex == 0)
-        ? (selectedTabIndex == 0 ? "Ships" : "Fandoms")
-        : "Edit";
-    const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    fui::ListProps props;
+    syncListViewport(uiScreen, props, false);
 
-    renderer.displayBuffer();
-}
+    int count = static_cast<int>(pickerItems.size());
+    std::vector<fui::ListItem> items(count);
 
-void Ao3TagMergeActivity::renderSecondary() {
-    renderer.clearScreen();
-    const auto pageWidth  = renderer.getScreenWidth();
-    const auto pageHeight = renderer.getScreenHeight();
-    const auto& metrics   = UITheme::getInstance().getMetrics();
-
-    // Header shows which tag is the master
-    std::string headerTitle = "Add to: " + editingMaster;
-    if (headerTitle.length() > 30) headerTitle = headerTitle.substr(0, 28) + "..";
-    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},
-                   headerTitle.c_str());
-
-    const int listTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
-    const int listH   = pageHeight - listTop - metrics.buttonHintsHeight - metrics.verticalSpacing;
-    const int total   = static_cast<int>(pickerItems.size());
-
-    if (total == 0) {
-        renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "No available tags.");
-    } else {
-        GUI.drawList(renderer, Rect{0, listTop, pageWidth, listH},
-                     total, pickerSelectorIndex,
-                     [this](int i) { return pickerItems[i].name; },
-                     nullptr, nullptr,
-                     [this](int i) -> std::string { return pickerItems[i].selected ? "•" : ""; },
-                     false);
+    for (int i = 0; i < count; i++) {
+        items[i].label = pickerItems[i].name.c_str();
+        if (pickerItems[i].selected) {
+            items[i].value = "•";
+        }
     }
 
-    const auto labels = mappedInput.mapLabels("Save", "Toggle", tr(STR_DIR_UP), tr(STR_DIR_DOWN));
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-
-    renderer.displayBuffer();
+    props.valueText = uiScreen.theme().smallText;
+    props.items = items.data();
+    props.count = count;
+    uiScreen.list(props);
 }

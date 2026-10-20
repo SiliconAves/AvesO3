@@ -86,7 +86,7 @@ void KOReaderSyncActivity::saveProgressAndReturn(int spineIndex, int page) {
   if (remotePosition.hasVisibleTextOffset && remotePosition.spineIndex == spineIndex) {
     offset = remotePosition.visibleTextOffset;
   }
-  if (!EpubReaderUtils::saveProgress(*epub, spineIndex, page, 0, offset)) {
+  if (!EpubReaderUtils::saveProgress(*epub, spineIndex, page, 0, offset, BookStatus::READING)) {
     {
       RenderLock lock(*this);
       state = SYNC_FAILED;

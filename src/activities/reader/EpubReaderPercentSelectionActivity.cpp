@@ -129,23 +129,6 @@ void EpubReaderPercentSelectionActivity::loop() {
     return;
   }
 
-  if (mappedInput.wasScreenTapped(tx, ty) && tx >= barX - 20 && tx < barX + barWidth + 20 && ty >= barY - 24 &&
-      ty < barY + barHeight + 24) {
-    percent = std::clamp((tx - barX) * 100 / barWidth, 0, 100);
-    requestUpdate();
-    return;
-  }
-
-  const auto swipe = mappedInput.wasSwipe();
-  if (swipe == MappedInputManager::SwipeDir::Right) {
-    adjustPercent(kLargeStep);
-    return;
-  }
-  if (swipe == MappedInputManager::SwipeDir::Left) {
-    adjustPercent(-kLargeStep);
-    return;
-  }
-
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     confirm();
     return;

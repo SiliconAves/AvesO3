@@ -229,25 +229,6 @@ void EpubReaderBookmarksActivity::buildScreen(UiScreen& screen) {
   screen.list(props);
 }
 
-void EpubReaderBookmarksActivity::deleteSelectedBookmark() {
-  bookmarks.erase(bookmarks.begin() + selectorIndex);
-  if (!BookmarkFile::save(epubPath, bookmarks)) {
-    LOG_ERR("EPB", "Failed to save bookmarks after delete");
-  }
-
-  // Move selector up if we deleted the last item
-  if (selectorIndex >= bookmarks.size() && selectorIndex > 0) {
-    selectorIndex--;
-  }
-
-  if (bookmarks.empty()) {
-    ActivityResult result;
-    result.isCancelled = true;
-    setResult(std::move(result));
-    finish();
-  }
-}
-
 void EpubReaderBookmarksActivity::render(RenderLock&&) {
   renderer.clearScreen();
 

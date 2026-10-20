@@ -1,18 +1,15 @@
 #pragma once
 #include <string>
 #include <vector>
-#include "../Activity.h"
-#include "../../util/ButtonNavigator.h"
-#include "../../Ao3Librarian.h"
+#include "activities/UiListActivity.h"
+#include "Ao3Librarian.h"
 
 enum class FilterMode : uint8_t {
     AUTOMATIC   = 0,
     FOLDER_TREE = 1
 };
-class Ao3LibrarySettingsActivity final : public Activity {
-  int selectorIndex = 0;
-  ButtonNavigator buttonNavigator;
 
+class Ao3LibrarySettingsActivity final : public UiListActivity {
   std::string ao3Folder;
   std::vector<std::string> excludedFolders;
   int batchSize = 10;
@@ -20,6 +17,7 @@ class Ao3LibrarySettingsActivity final : public Activity {
   bool hideFinished = false;
   bool swapNavButtons = false;
   FilterMode filterMode = FilterMode::AUTOMATIC;
+  
   bool showingCleanupResult = false;
   bool cleaningUpIndex = false;
   bool showingCleanupConfirm = false;
@@ -33,9 +31,21 @@ class Ao3LibrarySettingsActivity final : public Activity {
 
  public:
   explicit Ao3LibrarySettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-      : Activity("Ao3LibrarySettings", renderer, mappedInput) {}
+      : UiListActivity("Ao3LibrarySettings", renderer, mappedInput) {}
 
   void onEnter() override;
-  void loop() override;
-  void render(RenderLock&& lock) override;
+
+ protected:
+  // --- UiListActivity Overrides ---
+  int listCount() const override;
+  void buildScreen(UiScreen& screen) override;
+  void activateIndex(int index) override;
+
+  bool handleCustomInput() override;
+  bool handleButtons() override;
+  void navigateButtons() override;
+
+  // --- Chrome & Footer Overrides ---
+  const char* headerTitle() const override { return "AO3 Library Settings"; }
+  void drawFooter() override;
 };

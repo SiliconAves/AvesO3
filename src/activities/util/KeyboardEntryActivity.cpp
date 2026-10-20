@@ -402,7 +402,6 @@ int KeyboardEntryActivity::lineBreakEnd(std::string& s, const int start, const i
       hi = mid - 1;
     }
   }
-}
 
   // The byte-index search can stop inside a character; snap back to a boundary,
   // keeping one whole character so the wrap loop always advances.
