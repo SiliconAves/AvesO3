@@ -17,7 +17,10 @@ class Ao3CoverAssignmentActivity final : public UiListActivity {
   int listCount() const override;
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
+  bool handleCustomInput() override; // Touch fallback route
+  void onRowAction(const freeink::ui::ActionEvent& event) override; // Native touch handling
   bool handleButtons() override;
+  void navigateButtons() override;
   freeink::ui::ListNav& activeNav() override;
   
   // --- Chrome & Footer Overrides ---

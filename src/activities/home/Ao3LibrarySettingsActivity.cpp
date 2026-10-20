@@ -10,6 +10,8 @@
 #include "components/UITheme.h"
 #include "fontIds.h"
 
+#include "components/UiAppHelpers.h"
+
 namespace fui = freeink::ui;
 
 void Ao3LibrarySettingsActivity::loadSettings() {
@@ -90,46 +92,13 @@ std::string Ao3LibrarySettingsActivity::formatExclusionsPill() const {
 
 void Ao3LibrarySettingsActivity::onEnter() {
   UiListActivity::onEnter();
+  // Map FONT_BODY to 10pt for the list items
+  uiTarget.setFont(freeink::ui::GfxRendererTarget::FONT_BODY, UI_10_FONT_ID);
   loadSettings();
   requestUpdate();
 }
-
 int Ao3LibrarySettingsActivity::listCount() const {
   return 10;
-}
-
-bool Ao3LibrarySettingsActivity::handleCustomInput() {
-  if (showingCleanupConfirm) {
-    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-      showingCleanupConfirm = false;
-      requestUpdate(true);
-      return true;
-    } else if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-      showingCleanupConfirm = false;
-      cleaningUpIndex = true;
-      requestUpdate(true);
-      
-      // Force an immediate render so the "Please Wait" screen appears during the blocking call
-      render(RenderLock(*this));
-      
-      cleanupRemovedCount = Ao3Librarian::sanitizeIndex();
-      cleaningUpIndex = false;
-      showingCleanupResult = true;
-      requestUpdate(true);
-      return true;
-    }
-    return true; // Input absorbed by popup state
-  }
-
-  if (showingCleanupResult) {
-    if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
-        mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-      showingCleanupResult = false;
-      requestUpdate(true);
-    }
-    return true; // Input absorbed by popup state
-  }
-  return false;
 }
 
 bool Ao3LibrarySettingsActivity::handleButtons() {
@@ -188,6 +157,47 @@ void Ao3LibrarySettingsActivity::navigateButtons() {
     nav.follow(10);
     requestUpdate();
   });
+}
+
+bool Ao3LibrarySettingsActivity::handleCustomInput() {
+  if (showingCleanupConfirm) {
+    // Route touch to allow the "Cancel" and "Start" button hints to be tapped
+    auto route = UiAppHost::routeTouch(mappedInput, false);
+    
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+      showingCleanupConfirm = false;
+      requestUpdate(true);
+      return true;
+    } else if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+      showingCleanupConfirm = false;
+      cleaningUpIndex = true;
+      requestUpdate(true);
+      
+      // Force an immediate render so the "Please Wait" screen appears during the blocking call
+      render(RenderLock(*this));
+      
+      cleanupRemovedCount = Ao3Librarian::sanitizeIndex();
+      cleaningUpIndex = false;
+      showingCleanupResult = true;
+      requestUpdate(true);
+      return true;
+    }
+    return true; // Input absorbed by popup state
+  }
+
+  if (showingCleanupResult) {
+    // Route touch so tapping anywhere on the screen dismisses the result popup
+    auto route = UiAppHost::routeTouch(mappedInput, false);
+    
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
+        mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
+        route.routed) {
+      showingCleanupResult = false;
+      requestUpdate(true);
+    }
+    return true; // Input absorbed by popup state
+  }
+  return false;
 }
 
 void Ao3LibrarySettingsActivity::activateIndex(int index) {
@@ -281,39 +291,56 @@ void Ao3LibrarySettingsActivity::drawFooter() {
 }
 
 void Ao3LibrarySettingsActivity::buildScreen(UiScreen& uiScreen) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  uiScreen.setContentMarginFromScreen(fui::Insets{
+      static_cast<int16_t>(metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing),
+      0,
+      static_cast<int16_t>(metrics.buttonHintsHeight),
+      0});
+
+  fui::TextStyle centerStyle = uiScreen.theme().bodyText;
+  centerStyle.align = fui::TextAlign::Center;
+
+  auto drawCenteredLines = [&](const std::vector<const char*>& lines) {
+    const int lh = uiTarget.lineHeight(centerStyle.font);
+    const int totalH = lines.size() * lh + (lines.size() - 1) * 5;
+    if (uiScreen.body().height > totalH) {
+      uiScreen.spacer((uiScreen.body().height - totalH) / 2);
+    }
+    for (const char* line : lines) {
+      uiScreen.target().text(uiScreen.takeTop(lh), line, centerStyle);
+      if (line != lines.back()) uiScreen.spacer(5);
+    }
+  };
+
   if (cleaningUpIndex) {
-    uiScreen.centeredText("Please Wait. Cleaning up library...", uiScreen.theme().bodyText);
+    drawCenteredLines({"Please Wait. Cleaning up library..."});
     return;
   }
 
   if (showingCleanupConfirm) {
-    uiScreen.spacer(60);
-    fui::TextStyle style = uiScreen.theme().bodyText;
-    uiScreen.centeredText("The cleanup process will remove", style);
-    uiScreen.spacer(5);
-    uiScreen.centeredText("ghost books from your AO3 Library.", style);
-    uiScreen.spacer(20);
-    uiScreen.centeredText("This process can take up to a few minutes ", style);
-    uiScreen.spacer(5);
-    uiScreen.centeredText("to complete.", style);
+    drawCenteredLines({
+      "The cleanup process will remove",
+      "ghost books from your AO3 Library.",
+      "",
+      "This process can take up to a few minutes",
+      "to complete."
+    });
     return;
   }
 
   if (showingCleanupResult) {
     if (cleanupRemovedCount < 0) {
-      uiScreen.centeredText("Index not found.", uiScreen.theme().bodyText);
+      drawCenteredLines({"Index not found."});
     } else if (cleanupRemovedCount == 0) {
-      uiScreen.centeredText("Nothing to clean up.", uiScreen.theme().bodyText);
+      drawCenteredLines({"Nothing to clean up."});
     } else {
       char buf[64];
       sprintf(buf, "%d ghost entr%s removed.", cleanupRemovedCount, cleanupRemovedCount == 1 ? "y" : "ies");
-      uiScreen.centeredText(buf, uiScreen.theme().bodyText);
+      drawCenteredLines({buf});
     }
     return;
   }
-
-  fui::ListProps props;
-  syncListViewport(uiScreen, props, false);
 
   std::vector<std::string> rows = {
     "Your AO3 Folder",
@@ -333,7 +360,6 @@ void Ao3LibrarySettingsActivity::buildScreen(UiScreen& uiScreen) {
 
   for (int i = 0; i < 10; i++) {
     items[i].label = rows[i].c_str();
-
     if (i == 0) values[i] = formatFolderPill();
     if (i == 1) values[i] = formatExclusionsPill();
     if (i == 2) values[i] = std::to_string(batchSize);
@@ -341,18 +367,36 @@ void Ao3LibrarySettingsActivity::buildScreen(UiScreen& uiScreen) {
     if (i == 4) values[i] = hideFinished ? "ON" : "OFF";
     if (i == 5) values[i] = (filterMode == FilterMode::FOLDER_TREE) ? "Folder Tree" : "Automatic";
     if (i == 7) values[i] = swapNavButtons ? "Scroll List" : "Open Panels";
-
-    // Standard list component formatting handles the black pill inherently
     if (!values[i].empty()) items[i].value = values[i].c_str();
-
-    // The 1.6 framework automatically dims the text when set to false
-    if (i == 6 && filterMode != FilterMode::AUTOMATIC) {
-      items[i].enabled = false;
-    }
+    if (i == 6 && filterMode != FilterMode::AUTOMATIC) items[i].enabled = false;
   }
 
+  // Capture body BEFORE list() consumes it
+  fui::Rect body = uiScreen.body();
+
+  const int rowH = mappedInput.hasTouch()
+      ? static_cast<int>(uiScreen.theme().rowHeight)
+      : UITheme::getInstance().getMetrics().listRowHeight;
+  const int rowGap = UITheme::getInstance().getMetrics().listRowGap;
+  const int stride = rowH + rowGap;
+
+  fui::ListProps props;
+  syncListViewport(uiScreen, props, false);
+  props.labelText = uiScreen.theme().bodyText;
   props.valueText = uiScreen.theme().smallText;
   props.items = items.data();
   props.count = 10;
   uiScreen.list(props);
+
+  // Dither mask over disabled "Merge Similar Tags" row (index 6)
+  if (filterMode != FilterMode::AUTOMATIC && 6 >= nav.top) {
+    const int visualRow = 6 - nav.top;
+    const int pyStart   = body.y + visualRow * stride;
+    if (pyStart < body.y + body.height) {
+      const int pyEnd = std::min(pyStart + rowH, body.y + body.height);
+      for (int py = pyStart; py < pyEnd; py++)
+        for (int px = body.x; px < body.x + body.width; px++)
+          if ((px + py) % 2 == 0) renderer.drawPixel(px, py, false);
+    }
+  }
 }

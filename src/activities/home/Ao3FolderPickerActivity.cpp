@@ -63,8 +63,71 @@ std::string Ao3FolderPickerActivity::getFullPath(int index) const {
 
 void Ao3FolderPickerActivity::onEnter() {
   UiListActivity::onEnter();
+  // Map FONT_BODY to 10pt for the list items globally
+  uiTarget.setFont(freeink::ui::GfxRendererTarget::FONT_BODY, UI_10_FONT_ID);
   loadDirectories();
   requestUpdate();
+}
+
+void Ao3FolderPickerActivity::onRowAction(const fui::ActionEvent& event) {
+  // Native FUI touch router calls this when a row hitbox is tapped or held
+  nav.selected = event.value;
+  if (event.longPress) {
+    onRowLongPress(event.value);
+  } else {
+    activateIndex(event.value);
+  }
+}
+
+bool Ao3FolderPickerActivity::handleButtons() {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    if (mode == PickerMode::SINGLE) {
+      if (currentPath != "/") {
+        // Go up one directory level
+        size_t lastSlash = currentPath.find_last_of('/');
+        if (lastSlash == 0) {
+          currentPath = "/";
+        } else {
+          currentPath = currentPath.substr(0, lastSlash);
+        }
+        loadDirectories();
+        nav.selected = 0;
+        requestUpdate();
+      } else {
+        // Cancelled
+        setResult(ActivityResult::cancel());
+        finish();
+      }
+    } else {
+      // MULTI mode Back -> confirms selections and exits
+      FolderPickerResult res;
+      res.multiPaths = selectedPaths;
+      res.isMulti = true;
+      setResult(ActivityResult(std::move(res)));
+      finish();
+    }
+    return true;
+  }
+
+  // Use the 1.6 native long press detector which automatically swallows the subsequent release
+  if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, 1000)) {
+    int index = nav.selected;
+    if (index >= 0 && index < listCount()) {
+      onRowLongPress(index);
+    }
+    return true;
+  }
+
+  // Standard short press
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    int index = nav.selected;
+    if (index >= 0 && index < listCount()) {
+      activateIndex(index);
+    }
+    return true;
+  }
+
+  return false;
 }
 
 void Ao3FolderPickerActivity::onExit() {
@@ -103,51 +166,6 @@ void Ao3FolderPickerActivity::onRowLongPress(int index) {
   requestUpdate();
 }
 
-bool Ao3FolderPickerActivity::handleButtons() {
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    if (mode == PickerMode::SINGLE) {
-      if (currentPath != "/") {
-        // Go up one directory level
-        size_t lastSlash = currentPath.find_last_of('/');
-        if (lastSlash == 0) {
-          currentPath = "/";
-        } else {
-          currentPath = currentPath.substr(0, lastSlash);
-        }
-        loadDirectories();
-        nav.selected = 0;
-        requestUpdate();
-      } else {
-        // Cancelled
-        setResult(ActivityResult::cancel());
-        finish();
-      }
-    } else {
-      // MULTI mode Back -> confirms selections and exits
-      FolderPickerResult res;
-      res.multiPaths = selectedPaths;
-      res.isMulti = true;
-      setResult(ActivityResult(std::move(res)));
-      finish();
-    }
-    return true;
-  }
-
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    int index = nav.selected;
-    if (index >= 0 && index < listCount()) {
-      if (mappedInput.getHeldTime() >= 1000) {
-        onRowLongPress(index);
-      } else {
-        activateIndex(index);
-      }
-    }
-    return true;
-  }
-
-  return false;
-}
-
 void Ao3FolderPickerActivity::drawChrome() {
   UiListActivity::drawChrome(); // Draws standard header
   
@@ -182,20 +200,23 @@ void Ao3FolderPickerActivity::drawFooter() {
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }
 
-void Ao3FolderPickerActivity::buildScreen(UiScreen& screen) {
-  // Push the list down slightly so it doesn't overlap our manually drawn path in drawChrome
-  screen.spacer(25);
-  // Reserve space for the helper text
-  screen.takeBottom(37);
+void Ao3FolderPickerActivity::buildScreen(UiScreen& uiScreen) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+
+  // Calculate strict screen margins to carve out space for the header, breadcrumbs, and footer text
+  uiScreen.setContentMarginFromScreen(fui::Insets{
+      static_cast<int16_t>(metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing + 25),
+      0,
+      static_cast<int16_t>(metrics.buttonHintsHeight + 35),
+      0});
 
   if (directories.empty()) {
-    // FIX 1: Use screen.theme().bodyText directly (it returns the correct fui::TextStyle)
-    screen.target().text(screen.takeTop(30), "No directories found.", screen.theme().bodyText);
+    uiScreen.centeredText("No directories found.", uiScreen.theme().bodyText);
     return;
   }
 
   fui::ListProps props;
-  syncListViewport(screen, props, false);
+  syncListViewport(uiScreen, props, false);
 
   std::vector<fui::ListItem> items(directories.size());
   for (size_t i = 0; i < directories.size(); i++) {
@@ -205,7 +226,7 @@ void Ao3FolderPickerActivity::buildScreen(UiScreen& screen) {
       items[i].label = directories[i].c_str();
     }
     
-    // FIX 2: Wrap the legacy UIIcon in listIconFor() to satisfy the 1.6 BitmapRef requirement
+    items[i].actionValue = i; // Assign value for FUI touch routing
     items[i].icon = listIconFor(UITheme::getFileIcon(directories[i] + "/"));
     
     if (mode == PickerMode::MULTI) {
@@ -215,7 +236,14 @@ void Ao3FolderPickerActivity::buildScreen(UiScreen& screen) {
     }
   }
 
+  // Bind FUI touch interactions natively to support both taps and long-presses
+  props.action = ACTION_ROW;
+  props.inputMask = fui::InputTouch | fui::InputLongPress;
+
+  props.labelText = uiScreen.theme().bodyText;
+  props.valueText = uiScreen.theme().smallText;
   props.items = items.data();
   props.count = static_cast<uint16_t>(items.size());
-  screen.list(props);
+  
+  uiScreen.list(props);
 }

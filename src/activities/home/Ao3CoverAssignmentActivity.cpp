@@ -11,6 +11,8 @@
 #include "components/UIThemeTokens.h"
 #include "components/UiAppHelpers.h"
 
+#include "components/UiAppHelpers.h"
+
 namespace fui = freeink::ui;
 
 namespace {
@@ -21,9 +23,26 @@ void Ao3CoverAssignmentActivity::onEnter() {
   fandomsNav.reset();
   filesNav.reset();
   UiListActivity::onEnter();
+  
+  // Set FONT_BODY to 10pt globally for this activity
+  uiTarget.setFont(fui::GfxRendererTarget::FONT_BODY, UI_10_FONT_ID);
+  
   screen = Screen::FANDOMS;
   loadFandoms();
   requestUpdate();
+}
+
+bool Ao3CoverAssignmentActivity::handleCustomInput() {
+  // If the list is empty or the user taps outside a row, this fallback ensures
+  // the Back/Confirm software button hints are still tappable.
+  auto route = UiAppHost::routeTouch(mappedInput, false);
+  return static_cast<bool>(route);
+}
+
+void Ao3CoverAssignmentActivity::onRowAction(const fui::ActionEvent& event) {
+  // Native FUI touch router calls this when a row hitbox is tapped
+  activeNav().selected = event.value;
+  activateIndex(event.value);
 }
 
 void Ao3CoverAssignmentActivity::onExit() {
@@ -101,6 +120,37 @@ bool Ao3CoverAssignmentActivity::handleButtons() {
   return false;
 }
 
+void Ao3CoverAssignmentActivity::navigateButtons() {
+  const int total = listCount();
+  if (total == 0) return;
+
+  // Standard short press (Release) -> Move 1 line
+  buttonNavigator.onNextRelease([this, total] {
+    activeNav().selected = ButtonNavigator::nextIndex(activeNav().selected, total);
+    activeNav().follow(total);
+    requestUpdate();
+  });
+
+  buttonNavigator.onPreviousRelease([this, total] {
+    activeNav().selected = ButtonNavigator::previousIndex(activeNav().selected, total);
+    activeNav().follow(total);
+    requestUpdate();
+  });
+
+  // Long press (Continuous hold) -> Skip 2 lines
+  buttonNavigator.onNextContinuous([this, total] {
+    activeNav().selected = (activeNav().selected + 2) % total;
+    activeNav().follow(total);
+    requestUpdate();
+  });
+
+  buttonNavigator.onPreviousContinuous([this, total] {
+    activeNav().selected = (activeNav().selected + total - 2) % total;
+    activeNav().follow(total);
+    requestUpdate();
+  });
+}
+
 void Ao3CoverAssignmentActivity::activateIndex(int index) {
   auto& store = Ao3FandomCoverStore::getInstance();
 
@@ -151,6 +201,13 @@ void Ao3CoverAssignmentActivity::buildScreen(UiScreen& uiScreen) {
 }
 
 void Ao3CoverAssignmentActivity::buildFandomsScreen(UiScreen& uiScreen) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  uiScreen.setContentMarginFromScreen(fui::Insets{
+      static_cast<int16_t>(metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing),
+      0,
+      static_cast<int16_t>(metrics.buttonHintsHeight),
+      0});
+
   if (fandoms.empty()) {
     uiScreen.centeredText("No fandoms indexed yet.", uiScreen.theme().bodyText);
     return;
@@ -164,37 +221,50 @@ void Ao3CoverAssignmentActivity::buildFandomsScreen(UiScreen& uiScreen) {
   
   for (size_t i = 0; i < fandoms.size(); i++) {
     items[i].label = fandoms[i].c_str();
+    items[i].actionValue = i; // Assign value for FUI touch routing
     
-    // The 1.6 framework natively applies the black pill format to item.value
     const auto* f = store.find(fandoms[i].c_str());
     if (f) {
       items[i].value = f->c_str(); 
     }
   }
 
-  // Ensure default small text styling is passed for standard 1.6 values
+  props.action = ACTION_ROW;
+  props.inputMask = fui::InputTouch;
+
+  props.labelText = uiScreen.theme().bodyText;
   props.valueText = uiScreen.theme().smallText;
-  
   props.items = items.data();
   props.count = static_cast<uint16_t>(items.size());
   uiScreen.list(props);
 }
 
 void Ao3CoverAssignmentActivity::buildFilesScreen(UiScreen& uiScreen) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  uiScreen.setContentMarginFromScreen(fui::Insets{
+      static_cast<int16_t>(metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing),
+      0,
+      static_cast<int16_t>(metrics.buttonHintsHeight),
+      0});
+
   fui::ListProps props;
   syncListViewport(uiScreen, props, false);
 
   std::vector<fui::ListItem> items(files.size());
   for (size_t i = 0; i < files.size(); i++) {
     items[i].label = files[i].c_str();
+    items[i].actionValue = i; // Assign value for FUI touch routing
   }
 
+  props.action = ACTION_ROW;
+  props.inputMask = fui::InputTouch;
+  
+  props.labelText = uiScreen.theme().bodyText;
   props.items = items.data();
   props.count = static_cast<uint16_t>(items.size());
   uiScreen.list(props);
 
   if (files.size() == 1) {
-    // Exact translation of your manual helper text into FreeInkUI spacing logic
     uiScreen.spacer(24);
     fui::TextStyle boldText = uiScreen.theme().smallText;
     boldText.font = uiScaleSpec().bodyFontId; 

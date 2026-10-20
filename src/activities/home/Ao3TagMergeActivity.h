@@ -27,6 +27,7 @@ protected:
     int listCount() const override;
     void buildScreen(UiScreen& screen) override;
     void activateIndex(int index) override;
+    void onRowAction(const freeink::ui::ActionEvent& event) override;
     freeink::ui::ListNav& activeNav() override;
 
     // --- Chrome & Footer Overrides ---

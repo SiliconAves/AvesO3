@@ -10,6 +10,8 @@
 #include "components/UITheme.h"
 #include "fontIds.h"
 
+#include "components/UiAppHelpers.h"
+
 namespace fui = freeink::ui;
 
 // ---------------------------------------------------------------------------
@@ -308,8 +310,14 @@ void Ao3TagMergeActivity::commitSecondaryPicker() {
 //  Activity Lifecycle & Overrides
 // ---------------------------------------------------------------------------
 
+// Add this helper include at the top of the file if not present
+#include "components/UiAppHelpers.h"
+
 void Ao3TagMergeActivity::onEnter() {
     UiTabListActivity::onEnter();
+    // Map FONT_BODY to 10pt for the list items globally
+    uiTarget.setFont(fui::GfxRendererTarget::FONT_BODY, UI_10_FONT_ID);
+    
     selectedTabIndex = 0;
     secondaryNav.reset();
     screen = Screen::MAIN;
@@ -317,6 +325,19 @@ void Ao3TagMergeActivity::onEnter() {
     loadMergeData();
     rebuildDisplayItems();
     requestUpdate();
+}
+
+// Implement touch routing for both screens
+void Ao3TagMergeActivity::onRowAction(const fui::ActionEvent& event) {
+    if (screen == Screen::SECONDARY) {
+        // Secondary screen uses a standard list, no tab bar offset
+        activeNav().selected = event.value;
+        activateIndex(event.value);
+    } else {
+        // Main screen uses UiTabListActivity layout, where row 0 is the tab bar
+        activeNav().selected = event.value + 1;
+        activateIndex(event.value);
+    }
 }
 
 void Ao3TagMergeActivity::onExit() {
@@ -514,12 +535,25 @@ void Ao3TagMergeActivity::buildScreen(UiScreen& uiScreen) {
 }
 
 void Ao3TagMergeActivity::buildMainScreen(UiScreen& uiScreen) {
+    // 1. Force the FUI Small Font slot to 10pt so the Tab Bar renders at the correct size
+    uiTarget.setFont(fui::GfxRendererTarget::FONT_SMALL, UI_10_FONT_ID);
+
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    uiScreen.setContentMarginFromScreen(fui::Insets{
+        static_cast<int16_t>(metrics.topPadding + metrics.headerHeight),
+        0,
+        static_cast<int16_t>(metrics.buttonHintsHeight),
+        0});
+        
     buildTabBar(uiScreen);
 
     if (displayItems.empty()) {
+        uiScreen.spacer(20);
         uiScreen.centeredText("No tags indexed yet.", uiScreen.theme().bodyText);
         return;
     }
+
+    uiScreen.insetContent(fui::Insets{-6, 0, 0, 0});
 
     fui::ListProps props;
     syncTabListViewport(uiScreen, props, false);
@@ -530,20 +564,40 @@ void Ao3TagMergeActivity::buildMainScreen(UiScreen& uiScreen) {
 
     for (int i = 0; i < count; i++) {
         items[i].label = displayItems[i].name.c_str();
+        items[i].actionValue = i; // Ensure FUI knows the row index for touches
         if (displayItems[i].subCount > 0) {
             values[i] = std::to_string(displayItems[i].subCount);
             items[i].value = values[i].c_str(); 
         }
     }
 
+    // Bind FUI touch interactions natively
+    props.action = ACTION_ROW;
+    props.inputMask = fui::InputTouch;
+
+    props.labelText = uiScreen.theme().bodyText;
     props.valueText = uiScreen.theme().smallText;
     props.items = items.data();
     props.count = count;
+
+    // 2. Switch the FUI Small Font slot back to 8pt right before drawing the list values
+    uiTarget.setFont(fui::GfxRendererTarget::FONT_SMALL, SMALL_FONT_ID);
+
     uiScreen.list(props);
 }
 
 void Ao3TagMergeActivity::buildSecondaryScreen(UiScreen& uiScreen) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    
+    // Secondary screen has no tabs, add verticalSpacing to clear the header cleanly
+    uiScreen.setContentMarginFromScreen(fui::Insets{
+        static_cast<int16_t>(metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing),
+        0,
+        static_cast<int16_t>(metrics.buttonHintsHeight),
+        0});
+
     if (pickerItems.empty()) {
+        uiScreen.spacer(20);
         uiScreen.centeredText("No available tags.", uiScreen.theme().bodyText);
         return;
     }
@@ -556,13 +610,23 @@ void Ao3TagMergeActivity::buildSecondaryScreen(UiScreen& uiScreen) {
 
     for (int i = 0; i < count; i++) {
         items[i].label = pickerItems[i].name.c_str();
+        items[i].actionValue = i; // Ensure FUI knows the row index for touches
         if (pickerItems[i].selected) {
             items[i].value = "•";
         }
     }
 
+    // Bind FUI touch interactions natively
+    props.action = ACTION_ROW;
+    props.inputMask = fui::InputTouch;
+
+    props.labelText = uiScreen.theme().bodyText;
     props.valueText = uiScreen.theme().smallText;
     props.items = items.data();
     props.count = count;
+    
+    // Ensure value bullet point uses the 8pt small font
+    uiTarget.setFont(fui::GfxRendererTarget::FONT_SMALL, SMALL_FONT_ID);
+
     uiScreen.list(props);
 }

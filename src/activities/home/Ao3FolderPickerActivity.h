@@ -41,6 +41,7 @@ class Ao3FolderPickerActivity final : public UiListActivity {
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
   void onRowLongPress(int index) override;
+  void onRowAction(const freeink::ui::ActionEvent& event) override;
   bool handleButtons() override;
   
   // --- Chrome & Footer Overrides ---
