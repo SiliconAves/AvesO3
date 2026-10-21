@@ -505,7 +505,7 @@ void FileBrowserActivity::buildScreen(UiScreen& screen) {
   props.labelText = label;
   props.valueText = label;                         // Ensure file extensions match the 10pt size
   props.balanceWrappedLabelWithValue = false;
-  props.partialTrailingRow = false;                // Fixed grid
+  props.partialTrailingRow = mappedInput.hasTouch(); // Fixed grid for button devices, partial row for touch devices
 
   syncListViewport(screen, props);                 // Needed for base touch support
   screen.list(props);
