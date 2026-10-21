@@ -46,12 +46,11 @@ class FileBrowserActivity final : public UiListActivity {
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
   void onRowLongPress(int index) override;
-  // Long-press BACK goes to root; short Back goes up a directory (home/cancel at
-  // root), and Confirm activates on RELEASE (a hold is "delete").
+  
   bool handleCustomInput() override;
   bool handleButtons() override;
-  // Header shows the current folder name (battery indicator via GUI.drawHeader);
-  // footer labels depend on path depth and picker mode.
+  void navigateButtons() override; // [ADDED] Override the base navigation loop
+
   void drawChrome() override;
   void drawFooter() override;
   // forceDelete routes the touch long-press to the delete branch; button

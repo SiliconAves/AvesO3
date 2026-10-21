@@ -131,6 +131,9 @@ void FileBrowserActivity::rebuildRowItems() {
 void FileBrowserActivity::onEnter() {
   UiListActivity::onEnter();
 
+  // Map FONT_BODY (Index 1) to 10pt for the list items, safely mirroring Ao3LibrarySettingsActivity
+  uiTarget.setFont(freeink::ui::GfxRendererTarget::FONT_BODY, UI_10_FONT_ID);
+
   fileNameBuffer = makeUniqueNoThrow<char[]>(NAME_BUFFER_SIZE);
   if (!fileNameBuffer) {
     LOG_ERR("FileBrowser", "malloc failed for name buffer");
@@ -344,6 +347,31 @@ bool FileBrowserActivity::handleCustomInput() {
   return false;
 }
 
+void FileBrowserActivity::navigateButtons() {
+  const int count = listCount();
+  if (count <= 0) return;
+
+  auto& n = activeNav();
+
+  // Helper to instantly snap the viewport to the page boundary of the new selection
+  auto stepAndPaginate = [&](const int newIndex) {
+    RenderLock lock(*this);
+    n.selected = newIndex;
+    if (n.pageRows() > 0) {
+      n.top = (n.selected / n.pageRows()) * n.pageRows();
+    }
+  };
+
+  buttonNavigator.onNextRelease([&] { stepAndPaginate(ButtonNavigator::nextIndex(n.selected, count)); requestUpdate(); });
+  buttonNavigator.onPreviousRelease([&] { stepAndPaginate(ButtonNavigator::previousIndex(n.selected, count)); requestUpdate(); });
+
+  buttonNavigator.onSideNextContinuous([&] { stepAndPaginate(ButtonNavigator::nextPageIndex(n.selected, count, n.pageRows())); requestUpdate(); });
+  buttonNavigator.onSidePreviousContinuous([&] { stepAndPaginate(ButtonNavigator::previousPageIndex(n.selected, count, n.pageRows())); requestUpdate(); });
+
+  buttonNavigator.onFrontNextContinuous([&] { stepAndPaginate(ButtonNavigator::nextFourIndex(n.selected, count)); requestUpdate(); });
+  buttonNavigator.onFrontPreviousContinuous([&] { stepAndPaginate(ButtonNavigator::previousFourIndex(n.selected, count)); requestUpdate(); });
+}
+
 bool FileBrowserActivity::handleButtons() {
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     activateSelected();
@@ -471,12 +499,15 @@ void FileBrowserActivity::buildScreen(UiScreen& screen) {
   props.inputMask = fui::InputTouch | fui::InputLongPress;
   props.valueInset = 8;  
   
-  fui::TextStyle label = screen.theme().smallText;
-  label.maxLines = 2;
+  // bodyText natively carries Index 1, defeating the textStyleUnset zero-check
+  fui::TextStyle label = screen.theme().bodyText; 
+  label.maxLines = 1;                              // Enforce truncation and consistent row height
   props.labelText = label;
+  props.valueText = label;                         // Ensure file extensions match the 10pt size
   props.balanceWrappedLabelWithValue = false;
-  props.partialTrailingRow = true;
-  syncListViewport(screen, props);
+  props.partialTrailingRow = false;                // Fixed grid
+
+  syncListViewport(screen, props);                 // Needed for base touch support
   screen.list(props);
 }
 
