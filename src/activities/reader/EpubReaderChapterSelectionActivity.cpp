@@ -104,6 +104,34 @@ void EpubReaderChapterSelectionActivity::activateIndex(const int index) {
   }
 }
 
+void EpubReaderChapterSelectionActivity::navigateButtons() {
+  const int count = listCount();
+  if (count <= 0) return;
+
+  auto& n = activeNav();
+
+  // Helper to instantly snap the viewport to the page boundary of the new selection
+  auto stepAndPaginate = [&](const int newIndex) {
+    RenderLock lock(*this);
+    n.selected = newIndex;
+    if (n.pageRows() > 0) {
+      n.top = (n.selected / n.pageRows()) * n.pageRows();
+    }
+  };
+
+  // Single press: move 1 line
+  buttonNavigator.onNextRelease([&] { stepAndPaginate(ButtonNavigator::nextIndex(n.selected, count)); requestUpdate(); });
+  buttonNavigator.onPreviousRelease([&] { stepAndPaginate(ButtonNavigator::previousIndex(n.selected, count)); requestUpdate(); });
+
+  // Side hold: flip full page
+  buttonNavigator.onSideNextContinuous([&] { stepAndPaginate(ButtonNavigator::nextPageIndex(n.selected, count, n.pageRows())); requestUpdate(); });
+  buttonNavigator.onSidePreviousContinuous([&] { stepAndPaginate(ButtonNavigator::previousPageIndex(n.selected, count, n.pageRows())); requestUpdate(); });
+
+  // Front hold: skip 4 lines
+  buttonNavigator.onFrontNextContinuous([&] { stepAndPaginate(ButtonNavigator::nextFourIndex(n.selected, count)); requestUpdate(); });
+  buttonNavigator.onFrontPreviousContinuous([&] { stepAndPaginate(ButtonNavigator::previousFourIndex(n.selected, count)); requestUpdate(); });
+}
+
 bool EpubReaderChapterSelectionActivity::handleButtons() {
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     ActivityResult result;
@@ -147,6 +175,10 @@ void EpubReaderChapterSelectionActivity::buildScreen(UiScreen& screen) {
   props.count = static_cast<uint16_t>(listCount());
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
+
+  // Touch devices get the partial row visual peek; button devices get the strict 1.5 pagination grid
+  props.partialTrailingRow = mappedInput.hasTouch();
+
   syncListViewport(screen, props);
   // Materialize the row window for the final viewport (syncListViewport just
   // applied follow/clamping to nav.top) and hand list() the window with its

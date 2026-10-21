@@ -34,6 +34,8 @@ class EpubReaderChapterSelectionActivity final : public UiListActivity {
   bool handleButtons() override;
   // Header is drawn inside the safe area (not full-width like the base).
   void drawChrome() override;
+  // Override base navigation for strict pagination and custom continuous holds
+  void navigateButtons() override;
 
  public:
   explicit EpubReaderChapterSelectionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
