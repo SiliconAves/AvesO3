@@ -497,16 +497,16 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
             }
           }
         } else {
-          screenState = ScreenState::FANDOM_PICKER;
-          pickerSelectedIndex = 0;
+          int targetIdx = 0;
           for (size_t i = 0; i < pickerItems.size(); i++) {
             if (filterMode == FilterMode::FOLDER_TREE
                     ? folderTreeFandom == pickerItems[i]
                     : strcmp(pendingState.fandom, pickerItems[i].c_str()) == 0) {
-              pickerSelectedIndex = i;
+              targetIdx = i;
               break;
             }
           }
+          launchPicker(ScreenState::FANDOM_PICKER, targetIdx);
         }
       } else if (overlayRowIndex == 1) {
         // Relationship row: always opens a list picker if fandom is active
@@ -523,19 +523,20 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
             pickerItems.reserve(pickerItems.size() + rels.size());
             for (auto& r : rels) pickerItems.push_back(std::move(r));
           }
-          pickerSelectedIndex = 0;
+          int targetIdx = 0;
           if (pendingState.relationshipNoneOnly) {
-            if (pickerHasNone) pickerSelectedIndex = 1;
+            if (pickerHasNone) targetIdx = 1;
           } else if (pendingState.relationship[0] != '\0') {
             for (size_t i = 0; i < pickerItems.size(); i++) {
               if (filterMode == FilterMode::FOLDER_TREE
                       ? folderTreeRelationship == pickerItems[i]
                       : strcmp(pendingState.relationship, pickerItems[i].c_str()) == 0) {
-                pickerSelectedIndex = i;
+                targetIdx = i;
                 break;
               }
             }
           }
+          launchPicker(ScreenState::RELATIONSHIP_PICKER, targetIdx);
         }
       } else if (overlayRowIndex == 2) {
         // Sort by cycle: Title -> Author -> Word Count -> Date Added -> Series -> Title
@@ -564,89 +565,75 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
 
   // --- STATE: PICKERS ---
   else if (screenState == ScreenState::FANDOM_PICKER || screenState == ScreenState::RELATIONSHIP_PICKER) {
+    // 1. Route touch tap via FreeInkApp
+    const auto route = routeTouch(mappedInput);
+    if (route.routed && app.invalidated()) {
+      requestUpdate(true);
+    }
+    if (route) {
+      return; // Handled and dispatched to onPickerRowActionTrampoline
+    }
+
+    // 2. Touch swipe gestures scroll the list without changing selection
+    const auto swipe = mappedInput.wasSwipe();
+    if (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down) {
+      bool moved = false;
+      {
+        RenderLock lock(*this);
+        const int delta = (swipe == MappedInputManager::SwipeDir::Up) ? pickerNav.pageRows() : -pickerNav.pageRows();
+        moved = pickerNav.scrollBy(delta, pickerItems.size());
+      }
+      if (moved) requestUpdate(true);
+      return;
+    }
+
+    // 3. Back button (also triggered by touch left-to-right edge swipe gesture)
     if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+      closeRouting();
+      pickerRowItems.clear();
       screenState = ScreenState::FILTER_PANEL;
       requestUpdate(true);
       return;
     }
 
-  const int total = static_cast<int>(pickerItems.size());
+    // 4. Physical button navigation using ButtonNavigator and ListNav
+    const int total = static_cast<int>(pickerItems.size());
     if (total > 0) {
-      // Tap: step one item
       buttonNavigator.onNextPress([this, total] {
-        pickerSelectedIndex = (pickerSelectedIndex + 1) % total;
+        pickerNav.selected = ButtonNavigator::nextIndex(pickerNav.selected, total);
+        pickerNav.follow(total);
         requestUpdate(true);
       });
       buttonNavigator.onPreviousPress([this, total] {
-        pickerSelectedIndex = (pickerSelectedIndex + total - 1) % total;
+        pickerNav.selected = ButtonNavigator::previousIndex(pickerNav.selected, total);
+        pickerNav.follow(total);
         requestUpdate(true);
       });
-      // Hold front buttons: skip 2 items continuously
       buttonNavigator.onFrontNextContinuous([this, total] {
-        pickerSelectedIndex = (pickerSelectedIndex + 2) % total;
+        pickerNav.selected = (pickerNav.selected + 2) % total;
+        pickerNav.follow(total);
         requestUpdate(true);
       });
       buttonNavigator.onFrontPreviousContinuous([this, total] {
-        pickerSelectedIndex = (pickerSelectedIndex + total - 2) % total;
+        pickerNav.selected = (pickerNav.selected + total - 2) % total;
+        pickerNav.follow(total);
         requestUpdate(true);
       });
-      // Hold side buttons: skip a full page (16 items) on multi-page lists,
-      // falling back to the 2-item skip (original behavior) on single-page lists
       buttonNavigator.onSideNextContinuous([this, total] {
-        pickerSelectedIndex = (total > 16)
-            ? ButtonNavigator::nextPageIndex(pickerSelectedIndex, total, 16)
-            : (pickerSelectedIndex + 2) % total;
+        pickerNav.selected = ButtonNavigator::nextPageIndex(pickerNav.selected, total, pickerNav.pageRows());
+        pickerNav.follow(total);
         requestUpdate(true);
       });
       buttonNavigator.onSidePreviousContinuous([this, total] {
-        pickerSelectedIndex = (total > 16)
-            ? ButtonNavigator::previousPageIndex(pickerSelectedIndex, total, 16)
-            : (pickerSelectedIndex + total - 2) % total;
+        pickerNav.selected = ButtonNavigator::previousPageIndex(pickerNav.selected, total, pickerNav.pageRows());
+        pickerNav.follow(total);
         requestUpdate(true);
       });
     }
 
+    // 5. Hardware Confirm button
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-      if (screenState == ScreenState::FANDOM_PICKER) {
-        if (pickerSelectedIndex == 0) {
-          pendingState.fandom[0] = '\0';
-          pendingState.relationship[0] = '\0';
-          pendingState.relationshipNoneOnly = false;
-          if (filterMode == FilterMode::FOLDER_TREE) {
-              folderTreeFandom.clear();
-              folderTreeRelationship.clear();
-          }
-        } else {
-          strncpy(pendingState.fandom, pickerItems[pickerSelectedIndex].c_str(), 31);
-          pendingState.fandom[31] = '\0';
-          pendingState.relationship[0] = '\0';
-          pendingState.relationshipNoneOnly = false;
-          if (filterMode == FilterMode::FOLDER_TREE) {
-              folderTreeFandom = pickerItems[pickerSelectedIndex];
-              folderTreeRelationship.clear();
-          }
-        }
-        overlayRowIndex = (pendingState.fandom[0] != '\0') ? 1 : 2;
-      } else {
-        if (pickerSelectedIndex == 0) {
-          pendingState.relationship[0] = '\0';
-          pendingState.relationshipNoneOnly = false;
-          if (filterMode == FilterMode::FOLDER_TREE) folderTreeRelationship.clear();
-        } else if (pickerSelectedIndex == 1 && pickerHasNone) {
-          pendingState.relationship[0] = '\0';
-          pendingState.relationshipNoneOnly = true;
-          if (filterMode == FilterMode::FOLDER_TREE) folderTreeRelationship.clear();
-        } else {
-          strncpy(pendingState.relationship, pickerItems[pickerSelectedIndex].c_str(), 31);
-          pendingState.relationship[31] = '\0';
-          pendingState.relationshipNoneOnly = false;
-          if (filterMode == FilterMode::FOLDER_TREE)
-              folderTreeRelationship = pickerItems[pickerSelectedIndex];
-        }
-        overlayRowIndex = 2;
-      }
-      screenState = ScreenState::FILTER_PANEL;
-      requestUpdate(true);
+      confirmPickerSelection(pickerNav.selected);
       return;
     }
   }
@@ -1064,51 +1051,27 @@ void Ao3LibraryActivity::renderFilterOverlay() {
 //  renderPicker — draws full screen pickers
 // ---------------------------------------------------------------------------
 
-void Ao3LibraryActivity::renderPicker() {
-  renderer.clearScreen();
+// ---------------------------------------------------------------------------
+//  renderPicker — draws full screen pickers
+// ---------------------------------------------------------------------------
 
+void Ao3LibraryActivity::renderPicker() {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const char* title = (screenState == ScreenState::FANDOM_PICKER) ? "Select Fandom" : "Select Relationship";
 
+  renderer.clearScreen();
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.headerHeight}, title);
+  renderUi();
 
-  // 1. Create a native FreeInkUI Rect using makeRect
-  freeink::ui::Rect fuiListRect = freeink::ui::makeRect(
-      0, 
-      metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing,
-      renderer.getScreenWidth(),
-      renderer.getScreenHeight() - metrics.headerHeight - metrics.buttonHintsHeight - metrics.verticalSpacing * 2
-  );
-
-  // 2. Set up the explicit manual frame API
-  freeink::ui::InputSnapshot input; 
-  freeink::ui::InteractionBuffer<32> interactions;
-  freeink::ui::GfxRendererTarget target(renderer);
-  freeink::ui::Frame<32> ui(target, target.deviceContext(), input, interactions);
-
-  // 3. Convert to FreeInkUI ListItems
-  std::vector<freeink::ui::ListItem> items;
-  items.reserve(pickerItems.size());
-  for (size_t i = 0; i < pickerItems.size(); ++i) {
-    items.push_back({.label = pickerItems[i].c_str(), .actionValue = static_cast<int16_t>(i)});
+  // Multi-pass layout convergence for virtualized list feedback
+  for (int pass = 0; pickerNav.consumeRebuildNeeded() && pass < 8; ++pass) {
+    renderer.clearScreen();
+    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.headerHeight}, title);
+    renderUi();
   }
-
-  // 4. Calculate virtualization using a hardcoded standard row height (44px)
-  const uint16_t rowHeight = 44;
-  const uint16_t visibleRows = freeink::ui::listVisibleRows(fuiListRect, rowHeight);
-  pickerTopIndex = freeink::ui::listTopIndexFor(pickerSelectedIndex, pickerTopIndex, visibleRows, items.size());
-
-  // 5. Draw the list using the FreeInkUI Rect
-  freeink::ui::ListProps props;
-  props.items = items.data();
-  props.count = items.size();
-  props.topIndex = pickerTopIndex;
-  props.selectedIndex = pickerSelectedIndex;
-  freeink::ui::list(ui, fuiListRect, props);
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_CONFIRM), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-
   renderer.displayBuffer();
 }
 
@@ -1759,4 +1722,116 @@ void Ao3LibraryActivity::buildRelationshipList(const char* fandom, std::vector<s
   }
   f.close();
   std::sort(out.begin(), out.end());
+}
+
+// ---------------------------------------------------------------------------
+//  FreeInkUI Picker Adaptations
+// ---------------------------------------------------------------------------
+
+void Ao3LibraryActivity::pickerScreenTrampoline(UiScreen& screen, void* user) {
+  static_cast<Ao3LibraryActivity*>(user)->buildPickerScreen(screen);
+}
+
+void Ao3LibraryActivity::onPickerRowActionTrampoline(const freeink::ui::ActionEvent& event, void* user) {
+  if (event.action == ACTION_PICKER_ROW) {
+    static_cast<Ao3LibraryActivity*>(user)->confirmPickerSelection(event.value);
+  }
+}
+
+void Ao3LibraryActivity::launchPicker(ScreenState newState, int targetSelectedIndex) {
+  pickerRowItems.clear();
+  pickerRowItems.resize(pickerItems.size());
+  for (size_t i = 0; i < pickerItems.size(); ++i) {
+    pickerRowItems[i].label = pickerItems[i].c_str();
+    pickerRowItems[i].actionValue = static_cast<int16_t>(i);
+  }
+  
+  pickerNav.reset();
+  pickerNav.selected = targetSelectedIndex;
+  pickerNav.follow(pickerItems.size());
+
+  resetUi();
+  app.on(ACTION_PICKER_ROW, &Ao3LibraryActivity::onPickerRowActionTrampoline, this);
+  app.setScreen(&Ao3LibraryActivity::pickerScreenTrampoline, this);
+
+  screenState = newState;
+}
+
+void Ao3LibraryActivity::confirmPickerSelection(int selectedIndex) {
+  if (screenState == ScreenState::FANDOM_PICKER) {
+    if (selectedIndex == 0) {
+      pendingState.fandom[0] = '\0';
+      pendingState.relationship[0] = '\0';
+      pendingState.relationshipNoneOnly = false;
+      if (filterMode == FilterMode::FOLDER_TREE) {
+        folderTreeFandom.clear();
+        folderTreeRelationship.clear();
+      }
+    } else {
+      strncpy(pendingState.fandom, pickerItems[selectedIndex].c_str(), 31);
+      pendingState.fandom[31] = '\0';
+      pendingState.relationship[0] = '\0';
+      pendingState.relationshipNoneOnly = false;
+      if (filterMode == FilterMode::FOLDER_TREE) {
+        folderTreeFandom = pickerItems[selectedIndex];
+        folderTreeRelationship.clear();
+      }
+    }
+    overlayRowIndex = (pendingState.fandom[0] != '\0') ? 1 : 2;
+  } else { // RELATIONSHIP_PICKER
+    if (selectedIndex == 0) {
+      pendingState.relationship[0] = '\0';
+      pendingState.relationshipNoneOnly = false;
+      if (filterMode == FilterMode::FOLDER_TREE) folderTreeRelationship.clear();
+    } else if (selectedIndex == 1 && pickerHasNone) {
+      pendingState.relationship[0] = '\0';
+      pendingState.relationshipNoneOnly = true;
+      if (filterMode == FilterMode::FOLDER_TREE) folderTreeRelationship.clear();
+    } else {
+      strncpy(pendingState.relationship, pickerItems[selectedIndex].c_str(), 31);
+      pendingState.relationship[31] = '\0';
+      pendingState.relationshipNoneOnly = false;
+      if (filterMode == FilterMode::FOLDER_TREE)
+        folderTreeRelationship = pickerItems[selectedIndex];
+    }
+    overlayRowIndex = 2;
+  }
+  closeRouting();
+  pickerRowItems.clear();
+  screenState = ScreenState::FILTER_PANEL;
+  requestUpdate(true);
+}
+
+void Ao3LibraryActivity::buildPickerScreen(UiScreen& screen) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  screen.setContentMarginFromScreen(freeink::ui::Insets{
+      static_cast<int16_t>(metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing),
+      0,
+      static_cast<int16_t>(metrics.buttonHintsHeight),
+      0});
+
+  freeink::ui::ListProps props;
+  int16_t rowHeight = screen.theme().rowHeight;
+  if (!mappedInput.hasTouch()) {
+    rowHeight = static_cast<int16_t>(metrics.listRowHeight);
+    props.rowHeight = rowHeight;
+  }
+
+  pickerNav.syncToProps(screen.body(), rowHeight, screen.theme().listRowGap, pickerItems.size(), props);
+
+  props.action = ACTION_PICKER_ROW;
+  props.inputMask = freeink::ui::InputTouch;
+  
+  props.labelText = screen.theme().bodyText;
+  
+  props.items = pickerRowItems.data();
+  props.count = static_cast<uint16_t>(pickerRowItems.size());
+  
+  freeink::ui::StyleSet rowStyles = freeink::ui::plainStyles(freeink::ui::Paint::solid(freeink::ui::Color::Black));
+  rowStyles.selected.background = freeink::ui::Paint::dither(freeink::ui::Color::LightGray);
+  rowStyles.selected.foreground = freeink::ui::Paint::solid(freeink::ui::Color::Black);
+  rowStyles.active = rowStyles.selected;
+  props.rowStyles = rowStyles;
+
+  screen.list(props);
 }

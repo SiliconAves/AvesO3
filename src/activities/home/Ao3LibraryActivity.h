@@ -11,6 +11,8 @@
 #include "../../util/ButtonNavigator.h"
 #include "Ao3LibrarySettingsActivity.h"
 
+#include "../../components/UiAppHost.h"
+
 struct FilterHashes {
     bool     fandomActive;
     uint32_t fandomHash;
@@ -29,11 +31,13 @@ inline FilterHashes computeFilterHashes(const SortFilterState& state) {
     return h;
 }
 
-class Ao3LibraryActivity final : public Activity {
+// Inherit private UiAppHost
+class Ao3LibraryActivity final : public Activity, private UiAppHost {
  public:
   explicit Ao3LibraryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                               size_t initialSelectorIndex = 0)
       : Activity("Ao3Library", renderer, mappedInput),
+        UiAppHost(renderer),
         initialSelectorIndex_(initialSelectorIndex) {}
 
   void onEnter() override;
@@ -58,7 +62,6 @@ class Ao3LibraryActivity final : public Activity {
     MANAGE_PANEL
   };
 
-
   std::vector<ViewEntry> viewEntries;
   size_t     selectorIndex = 0;
   IndexState indexState    = IndexState::UNKNOWN;
@@ -79,8 +82,6 @@ class Ao3LibraryActivity final : public Activity {
   SortFilterState pendingState;
   FilterMode filterMode = FilterMode::AUTOMATIC;
   std::string ao3Folder;
-  // Full folder names for path construction in FOLDER_TREE mode only.
-  // SortFilterState fields are capped at 31 chars; these hold the real names.
   std::string folderTreeFandom;
   std::string folderTreeRelationship;
   
@@ -88,19 +89,30 @@ class Ao3LibraryActivity final : public Activity {
   int overlayRowIndex = 0; // 0=Fandom, 1=Relationship, 2=Sort By, 3=Order, 4=Confirm
   int managePanelRowIndex = 0; // 0=Index New Books, 1=AO3 Library Settings
 
-
   // Pickers support
   std::vector<std::string> uniqueFandoms;
   std::vector<std::string> pickerItems;
-  size_t pickerTopIndex = 0;
-  size_t pickerSelectedIndex = 0;
   bool pickerHasNone = false;
 
+  // FreeInkUI Picker Adaptations
+  freeink::ui::ListNav pickerNav;
+  std::vector<freeink::ui::ListItem> pickerRowItems;
+  static constexpr freeink::ui::ActionId ACTION_PICKER_ROW = 1;
+
+  // Restored tracking variables
   size_t initialSelectorIndex_ = 0;
   bool skipNextBackRelease = false;
   bool autoIndexOnOpen_ = false;
   bool autoIndexLaunched_ = false;
 
+  // FUI Trampolines and Picker Methods
+  void launchPicker(ScreenState newState, int targetSelectedIndex);
+  void buildPickerScreen(UiScreen& screen);
+  void confirmPickerSelection(int selectedIndex);
+  static void pickerScreenTrampoline(UiScreen& screen, void* user);
+  static void onPickerRowActionTrampoline(const freeink::ui::ActionEvent& event, void* user);
+
+  // Original Helper Methods
   void loadViewEntries();
   void loadPageCache(int page);
   BookStatus getBookStatus(uint32_t cacheHash);
