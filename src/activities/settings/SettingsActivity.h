@@ -191,6 +191,7 @@ class SettingsActivity final : public UiTabListActivity {
   void stepTab(int direction) override;
   bool handleButtons() override;
   bool handleCustomInput() override;
+  void navigateButtons() override;
 
   static std::string settingValueText(const SettingInfo& setting);
   void selectCategory(int categoryIndex);

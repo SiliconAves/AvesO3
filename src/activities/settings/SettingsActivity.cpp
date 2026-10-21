@@ -217,6 +217,38 @@ bool SettingsActivity::handleCustomInput() {
   return optionPopup.handleInput(mappedInput, [this] { requestUpdate(); });
 }
 
+void SettingsActivity::navigateButtons() {
+  // 1. MUST BE FIRST: Catch the continuous front-button holds to skip 2 rows.
+  // Because ButtonNavigator consumes the timer on a successful trigger, 
+  // catching it here hides the input from the base class.
+  buttonNavigator.onSideNextContinuous([this] {
+    auto& n = activeNav();
+    if (n.selected == 0) {
+      n.selected = 2;  // enter list at second item
+    } else {
+      const int target = n.selected + 2;
+      n.selected = (target <= settingsCount) ? target : settingsCount;
+    }
+    requestUpdate();
+  });
+
+  buttonNavigator.onSidePreviousContinuous([this] {
+    auto& n = activeNav();
+    if (n.selected == 0) {
+      n.selected = settingsCount;  // enter list at last item
+    } else {
+      const int target = n.selected - 2;
+      n.selected = (target >= 1) ? target : 1;
+    }
+    requestUpdate();
+  });
+
+  // 2. NOW call the base class. It will handle the normal single-step releases 
+  // and the Up/Down buttons, but it will skip tab-swapping because our custom 
+  // code above already consumed the continuous hold timer.
+  UiTabListActivity::navigateButtons();
+}
+
 void SettingsActivity::stepTab(const int direction) {
   // Ring position 0 stays on the tab bar; a row selection collapses to the
   // new category's first row (per-tab memory is deliberately not kept here).
