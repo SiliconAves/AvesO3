@@ -81,15 +81,32 @@ void FileBrowserActivity::loadFiles() {
   rebuildRowItems();
 }
 
+void FileBrowserActivity::refreshStatusIcons(const int visibleCount) {
+  if (mode != Mode::Books || rowItems.empty()) return;
+
+  const int first = std::max(0, nav.top);
+  const int last = std::min(static_cast<int>(rowItems.size()), first + std::max(visibleCount + 2, 12));
+
+  std::string base = basepath;
+  if (base.back() != '/') base += "/";
+
+  for (int i = first; i < last; i++) {
+    if (files[i].back() == '/') continue;
+    auto it = visibleStatusCache.find(i);
+    if (it == visibleStatusCache.end()) {
+      it = visibleStatusCache.emplace(i, getBookStatus(base + files[i])).first;
+    }
+    // START keeps whatever rebuildRowItems() assigned (book/text/image/...).
+    if (it->second != BookStatus::START) rowItems[i].icon = bookStatusIconFor(it->second);
+  }
+}
+
 void FileBrowserActivity::rebuildRowItems() {
   rowsUseFileIcons = UITheme::getInstance().getTheme().showsFileIcons();
   rowNames.resize(files.size());
   rowExtensions.resize(files.size());
   rowItems.clear();
   rowItems.reserve(files.size());
-  
-  std::string cleanBasePath = basepath;
-  if (cleanBasePath.back() != '/') cleanBasePath += "/";
 
   for (size_t i = 0; i < files.size(); i++) {
     rowNames[i] = getFileName(files[i]);
@@ -97,20 +114,8 @@ void FileBrowserActivity::rebuildRowItems() {
     fui::ListItem item;
     item.label = rowNames[i].c_str();
     if (!rowExtensions[i].empty()) item.value = rowExtensions[i].c_str();
-    
-    const bool isDirectory = (files[i].back() == '/');
 
-    // === AO3 STATUS ICON HOOK ===
-    if (mode == Mode::Books && !isDirectory) {
-      if (!visibleStatusCache.count(i)) {
-         visibleStatusCache[i] = getBookStatus(cleanBasePath + files[i]);
-      }
-      // TODO: Replace listIconFor with your pre-baked icons based on visibleStatusCache[i]
-      item.icon = listIconFor(UITheme::getFileIcon(files[i])); 
-    } else {
-      item.icon = listIconFor(UITheme::getFileIcon(files[i]));
-    }
-
+    item.icon = listIconFor(UITheme::getFileIcon(files[i]));
     item.actionValue = static_cast<int16_t>(i);
     rowItems.push_back(item);
   }
@@ -300,8 +305,8 @@ void FileBrowserActivity::activateSelected(const bool forceDelete) {
               RenderLock lock(*this);
               loadFiles();
             } else {
-              visibleStatusCache[nav.selected] = actionRes->newStatus;
               RenderLock lock(*this);
+              visibleStatusCache[nav.selected] = actionRes->newStatus;
               rebuildRowItems();
             }
             requestUpdate(true);
@@ -508,6 +513,7 @@ void FileBrowserActivity::buildScreen(UiScreen& screen) {
   props.partialTrailingRow = mappedInput.hasTouch(); // Fixed grid for button devices, partial row for touch devices
 
   syncListViewport(screen, props);                 // Needed for base touch support
+  refreshStatusIcons(nav.pageRows());              // after top is final, before list() reads items
   screen.list(props);
 }
 

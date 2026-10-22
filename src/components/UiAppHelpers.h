@@ -13,6 +13,10 @@
 #include "components/icons/customListIcons.h"
 #include "components/icons/listIcons.h"
 
+#include "BookStatus.h"
+#include "components/icons/statusListIcons.h"
+#include "components/icons/statusListIcons32.h"
+
 // Shared glue for activities hosting a FreeInkApp: the font-bound render
 // target and the touch snapshot FreeInkApp routing consumes.
 
@@ -132,6 +136,49 @@ inline freeink::ui::BitmapRef listIconFor(const UIIcon icon, const int size = 24
       return freeink::ui::bitmapFromIcon(icon_send_to_aveso3_32);
     default:
       return {};
+  }
+}
+
+inline freeink::ui::BitmapRef bookStatusIconFor(const BookStatus status, const int size = 24) {
+  const uint8_t s = static_cast<uint8_t>(status);
+  const uint8_t mfl = static_cast<uint8_t>(BookStatus::MARKED_FOR_LATER);
+
+  if (size >= 32) {
+    // Values >= MARKED_FOR_LATER encode the queue position (0-based) as s - mfl.
+    if (s >= mfl) {
+      static const freeink::Icon* const kQueueIcons[10] = {
+          &icon_book_mfl_1_32, &icon_book_mfl_2_32, &icon_book_mfl_3_32, &icon_book_mfl_4_32, &icon_book_mfl_5_32,
+          &icon_book_mfl_6_32, &icon_book_mfl_7_32, &icon_book_mfl_8_32, &icon_book_mfl_9_32, &icon_book_mfl_10_32};
+      const int pos = s - mfl;
+      if (pos < 10) return freeink::ui::bitmapFromIcon(*kQueueIcons[pos]);
+      return listIconFor(UIIcon::Book, 32);
+    }
+    switch (status) {
+      case BookStatus::READING:
+        return freeink::ui::bitmapFromIcon(icon_book_reading_32);
+      case BookStatus::FINISHED:
+        return freeink::ui::bitmapFromIcon(icon_book_finished_32);
+      case BookStatus::WAITING_FOR_CHAPTER:
+        return freeink::ui::bitmapFromIcon(icon_book_wip_32);
+      case BookStatus::NEW_CHAPTER_AVAILABLE:
+        return freeink::ui::bitmapFromIcon(icon_book_new_chapter_32);
+      default:
+        return listIconFor(UIIcon::Book, 32);
+    }
+  }
+
+  // 24px: Marked for Later has a single un-numbered icon.
+  switch (status) {
+    case BookStatus::READING:
+      return freeink::ui::bitmapFromIcon(icon_book_reading_24);
+    case BookStatus::FINISHED:
+      return freeink::ui::bitmapFromIcon(icon_book_finished_24);
+    case BookStatus::WAITING_FOR_CHAPTER:
+      return freeink::ui::bitmapFromIcon(icon_book_wip_24);
+    case BookStatus::NEW_CHAPTER_AVAILABLE:
+      return freeink::ui::bitmapFromIcon(icon_book_new_chapter_24);
+    default:
+      return (s >= mfl) ? freeink::ui::bitmapFromIcon(icon_book_mfl_24) : listIconFor(UIIcon::Book);
   }
 }
 

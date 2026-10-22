@@ -57,6 +57,8 @@ class FileBrowserActivity final : public UiListActivity {
   // navigation leaves it false and relies on getHeldTime() instead.
   void activateSelected(bool forceDelete = false);
 
+  void refreshStatusIcons(int visibleCount);
+
   // Data loading
   BookStatus getBookStatus(const std::string& path);
   std::map<int, BookStatus> visibleStatusCache;

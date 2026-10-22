@@ -61,7 +61,9 @@ BookStatus RecentBooksActivity::getBookStatus(const std::string& path) {
 }
 
 fui::BitmapRef RecentBooksActivity::getStatusIcon(BookStatus status, const std::string& path) {
-    return listIconFor(UITheme::getFileIcon(path), 32);
+  // START keeps the normal per-file-type icon (book/text/image/...).
+  if (status != BookStatus::START) return bookStatusIconFor(status, 32);
+  return listIconFor(UITheme::getFileIcon(path), 32);
 }
 
 void RecentBooksActivity::rebuildRowItems() {
