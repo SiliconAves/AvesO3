@@ -265,16 +265,26 @@ void Ao3CoverAssignmentActivity::buildFilesScreen(UiScreen& uiScreen) {
   uiScreen.list(props);
 
   if (files.size() == 1) {
-    uiScreen.spacer(24);
+    // 1. Advance the cursor dynamically based on the font and row gap to safely skip the "None" row
+    uiScreen.spacer(uiScreen.target().lineHeight(uiScreen.theme().bodyText.font) * 2 + metrics.listRowGap + 30);
+    
+    // Calculate the exact side margin to perfectly match the list rows
+    const int16_t textMargin = metrics.listInset + metrics.listSidePadding;
+    
+    // 2. Format the warning text and ensure it is horizontally centered
     fui::TextStyle boldText = uiScreen.theme().smallText;
     boldText.font = uiScaleSpec().bodyFontId; 
+    boldText.align = fui::TextAlign::Center; 
     
-    uiScreen.centeredText("No .bmp files found in /.fandom_covers", boldText);
-    uiScreen.spacer(10);
-    uiScreen.centeredText("To add covers, create images with:", uiScreen.theme().smallText);
-    uiScreen.spacer(10);
+    // Use the dynamic margin for the header
+    fui::Rect noFilesBlock = uiScreen.takeTop(uiScreen.target().lineHeight(boldText.font) + 6);
+    uiScreen.target().text(noFilesBlock.inset(fui::Insets{0, textMargin, 0, textMargin}), "No .bmp files found in /.fandom_covers.", boldText);
     
+    uiScreen.spacer(20);
+    
+    // 3. Draw the specs 
     const char* specs[] = {
+      "To add covers, create images with:",
       "- Size: 80 x 80 px (or smaller)",
       "- Format: 1-bit monochrome .bmp",
       "- Colors: Black logo on white background",
@@ -284,9 +294,10 @@ void Ao3CoverAssignmentActivity::buildFilesScreen(UiScreen& uiScreen) {
     auto leftAlignStyle = uiScreen.theme().smallText;
     leftAlignStyle.align = fui::TextAlign::Left;
     
+    // Use the dynamic margin for the list of specs
     for (const char* line : specs) {
       fui::Rect block = uiScreen.takeTop(uiScreen.target().lineHeight(leftAlignStyle.font) + 6);
-      uiScreen.target().text(block.inset(fui::Insets{0, 40, 0, 0}), line, leftAlignStyle);
+      uiScreen.target().text(block.inset(fui::Insets{0, textMargin, 0, textMargin}), line, leftAlignStyle);
     }
   }
 }
