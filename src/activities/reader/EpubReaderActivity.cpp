@@ -29,6 +29,7 @@
 #include "Ao3ViewEntry.h"
 #include "Ao3EndOfBookSeriesActivity.h"
 #include "../home/Ao3LibraryActivity.h"
+#include "Ao3EndOfBookActivity.h"
 
 #include "CrossPointState.h"
 #include "DictionaryWordSelectActivity.h"
@@ -429,7 +430,8 @@ void EpubReaderActivity::loop() {
     return;
   }
 
-  const bool atEndOfBook = isAtEndOfBook();
+  // Calculate true EOB manually since we masked isAtEndOfBook() for AO3 books
+  const bool atEndOfBook = epub && currentSpineIndex >= epub->getSpineItemsCount();
   clearEndOfBookOptionsIfNeeded();
 
   if (atEndOfBook && !eobProcessed) {
@@ -442,6 +444,54 @@ void EpubReaderActivity::loop() {
                             !isInReadFolder(bookPath) && 
                             !epub->hasAo3Info();
     eobProcessed = true;
+
+    // 1. Commit the final page save for ALL books hitting EOB. 
+    // This correctly assigns the FINISHED status to non-AO3 books before they halt.
+    if (lastSavedSpineIndex != currentSpineIndex) {
+      saveProgress(currentSpineIndex, 0, 0);
+    }
+
+    // AO3 EOB Transition
+    if (epub->hasAo3Info()) {
+      
+      // 2. Fetch required info for the AO3 End of Book Activity.
+      std::string sName = "";
+      int sPart = 0;
+      if (!ao3SeriesInfoLoaded) {
+        ao3SeriesInfoLoaded = true;
+        Ao3LibraryMetadata seriesMeta;
+        if (Ao3Librarian::getLibraryInfo(*epub, seriesMeta) &&
+            seriesMeta.seriesPart > 0 && seriesMeta.seriesName[0] != '\0') {
+          ao3HasSeries   = true;
+          ao3SeriesPart  = seriesMeta.seriesPart;
+          strncpy(ao3SeriesName, seriesMeta.seriesName, sizeof(ao3SeriesName) - 1);
+          ao3SeriesName[sizeof(ao3SeriesName) - 1] = '\0';
+        }
+      }
+      if (ao3HasSeries) {
+        sName = ao3SeriesName;
+        sPart = ao3SeriesPart;
+      }
+
+      const int spineCount = epub->getSpineItemsCount();
+      const bool hadAfterword = Ao3Librarian::sniffNativeAo3Preface(*epub);
+
+      // 3. Launch the AO3 End of Book Activity. It will pause this loop automatically.
+      startActivityForResult(
+          std::make_unique<Ao3EndOfBookActivity>(
+              renderer, mappedInput, bookPath, epub->isAo3Completed(), 
+              sName, sPart, epub->getAo3WorkId(), epub->getAo3UpdateDate(), 
+              spineCount, hadAfterword, ao3LibraryReturnIndex_
+          ),
+          [this](const ActivityResult& result) {
+              // The only way it returns here is if the user pressed Previous Page or Back
+              onReturnFromEndOfBook();
+              requestUpdate();
+          }
+      );
+      return; 
+    }
+
   } else if (!atEndOfBook && eobProcessed) {
     if (SETTINGS.removeReadBooksFromRecents && recentsEntryRemoved) {
         RECENT_BOOKS.addBook(bookPath, epub->getTitle(), epub->getAuthor(), epub->getThumbBmpPath());
@@ -498,48 +548,9 @@ void EpubReaderActivity::loop() {
     }
   }
 
-  // EOB AO3 Network Sync
+  // Hide AO3 books from upstream's end of book menu handling
   if (atEndOfBook && epub->hasAo3Info()) {
-    if (!epub->isAo3Completed() && mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-      const int spineCountBeforeDownload = epub->getSpineItemsCount();
-      const bool hadAfterword = Ao3Librarian::sniffNativeAo3Preface(*epub);
-      startActivityForResult(std::make_unique<AO3SyncActivity>(renderer, mappedInput, epub->getAo3WorkId(), epub->getAo3UpdateDate(), bookPath),
-          [this, spineCountBeforeDownload, hadAfterword](const ActivityResult& res) {
-          epub = std::make_unique<Epub>(bookPath, "/.crosspoint");
-
-          if (!res.isCancelled && std::holds_alternative<AO3Result>(res.data)) {
-            const auto& ao3Res = std::get<AO3Result>(res.data);
-            if (ao3Res.downloaded) {
-              epub->saveAo3Info(epub->getAo3WorkId(), ao3Res.scrapedDate, ao3Res.isCompleted);
-              std::string cachePath = epub->getCachePath();
-              Storage.remove((cachePath + "/book.bin").c_str());
-              Storage.removeDir((cachePath + "/sections").c_str());
-              Storage.removeDir((cachePath + "/html").c_str());
-
-              currentStatus = BookStatus::NEW_CHAPTER_AVAILABLE;
-              MARKED_FOR_LATER_STORE.loadFromFile();
-              MARKED_FOR_LATER_STORE.removeByPath(bookPath);
-              MARKED_FOR_LATER_STORE.clearEntries();
-
-              int firstNewChapter = currentSpineIndex;
-              if (hadAfterword && currentSpineIndex > 0) {
-                  firstNewChapter -= 1;
-              }
-              saveProgress(firstNewChapter, 0, spineCountBeforeDownload);
-            } else {
-              if (ao3Res.updateFound) currentStatus = BookStatus::NEW_CHAPTER_AVAILABLE;
-              saveProgress(currentSpineIndex, nextPageNumber, spineCountBeforeDownload);
-            }
-          } else {
-            saveProgress(currentSpineIndex, nextPageNumber, spineCountBeforeDownload);
-          }
-          onGoHome();
-        });
-      
-      saveProgress(currentSpineIndex, nextPageNumber, epub->getSpineItemsCount());
-      epub.reset();
-      return;
-    }
+    return; 
   } else if (handleEndOfBookMenu()) {
     return;
   }
@@ -622,13 +633,8 @@ void EpubReaderActivity::loop() {
   const bool backReleased = mappedInput.wasReleased(MappedInputManager::Button::Back);
   const unsigned long backHeldTime = mappedInput.getHeldTime();
 
-  if (atEndOfBook && ao3HasSeries && backReleased && backHeldTime < ReaderUtils::GO_BACK_OR_HOME_MS) {
-    launchAo3SeriesActivity();
-    return;
-  }
-
   if (backPressed && backHeldTime >= ReaderUtils::GO_HOME_MS) {
-    if (SETTINGS.backShortToFileBrowser && !(atEndOfBook && ao3HasSeries)) onGoHome();
+    if (SETTINGS.backShortToFileBrowser) onGoHome();
     else returnToLibraryOrBrowser();
     return;
   }
@@ -1154,7 +1160,12 @@ bool EpubReaderActivity::skipPages(int amount) {
   return false;
 }
 
-bool EpubReaderActivity::isAtEndOfBook() const { return epub && currentSpineIndex >= epub->getSpineItemsCount(); }
+bool EpubReaderActivity::isAtEndOfBook() const { 
+  // Mask AO3 books from the base class so the FreeRTOS render task doesn't 
+  // draw upstream's generic EOB list before our sandbox takes over.
+  if (epub && epub->hasAo3Info()) return false;
+  return epub && currentSpineIndex >= epub->getSpineItemsCount(); 
+}
 
 void EpubReaderActivity::onReturnFromEndOfBook() {
   if (epub && epub->getSpineItemsCount() > 0) {
@@ -1492,56 +1503,6 @@ void EpubReaderActivity::onEndOfBookRendered() {
   if (pendingSyncSaveError) {
     pendingSyncSaveError = false;
     GUI.drawPopup(renderer, tr(STR_SAVE_PROGRESS_FAILED));
-  }
-  
-  if (!epub || !epub->hasAo3Info()) return;
-
-  if (!ao3SeriesInfoLoaded) {
-    ao3SeriesInfoLoaded = true;
-    Ao3LibraryMetadata seriesMeta;
-    if (Ao3Librarian::getLibraryInfo(*epub, seriesMeta) &&
-        seriesMeta.seriesPart > 0 && seriesMeta.seriesName[0] != '\0') {
-      ao3HasSeries   = true;
-      ao3SeriesPart  = seriesMeta.seriesPart;
-      strncpy(ao3SeriesName, seriesMeta.seriesName, sizeof(ao3SeriesName) - 1);
-      ao3SeriesName[sizeof(ao3SeriesName) - 1] = '\0';
-    }
-  }
-
-  const int lh12 = renderer.getLineHeight(UI_12_FONT_ID);
-  const int lh10 = renderer.getLineHeight(UI_10_FONT_ID);
-
-  if (!epub->isAo3Completed()) {
-    const int mainY = 280;
-    renderer.drawCenteredText(UI_12_FONT_ID, mainY,      tr(STR_AO3_END_REACHED),      true, EpdFontFamily::BOLD);
-    renderer.drawCenteredText(UI_12_FONT_ID, mainY + 40, tr(STR_AO3_LOOK_FOR_UPDATES), true, EpdFontFamily::BOLD);
-    if (ao3HasSeries) {
-      char seriesBuf[160];
-      snprintf(seriesBuf, sizeof(seriesBuf), "Book %d of %s", ao3SeriesPart, ao3SeriesName);
-      int seriesY = mainY + 40 + lh12 + lh10;
-      for (const auto& line : renderer.wrappedText(UI_10_FONT_ID, seriesBuf, renderer.getScreenWidth() - 40, 2)) {
-        renderer.drawCenteredText(UI_10_FONT_ID, seriesY, line.c_str());
-        seriesY += lh10;
-      }
-    }
-    const auto labels = mappedInput.mapLabels(
-        ao3HasSeries ? tr(STR_EOB_SERIES_BUTTON) : "", tr(STR_AO3_SEARCH), "", "");
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-
-  } else {
-    const int mainY = 300;
-    renderer.drawCenteredText(UI_12_FONT_ID, mainY, tr(STR_END_OF_BOOK), true, EpdFontFamily::BOLD);
-    if (ao3HasSeries) {
-      char seriesBuf[160];
-      snprintf(seriesBuf, sizeof(seriesBuf), "Book %d of %s", ao3SeriesPart, ao3SeriesName);
-      int seriesY = mainY + lh12 + lh10;
-      for (const auto& line : renderer.wrappedText(UI_10_FONT_ID, seriesBuf, renderer.getScreenWidth() - 40, 2)) {
-        renderer.drawCenteredText(UI_10_FONT_ID, seriesY, line.c_str());
-        seriesY += lh10;
-      }
-      const auto labels = mappedInput.mapLabels(tr(STR_EOB_SERIES_BUTTON), "", "", "");
-      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-    }
   }
 }
 
@@ -2636,25 +2597,6 @@ CrossPointPosition EpubReaderActivity::getCurrentPosition() const {
     localPos.hasParagraphIndex = true;
   }
   return localPos;
-}
-
-void EpubReaderActivity::launchAo3SeriesActivity() {
-  if (!epub) { onGoHome(); return; }
-
-  const std::string originPath = bookPath;
-  const uint32_t originHash = static_cast<uint32_t>(std::hash<std::string>{}(originPath));
-
-  char truncatedName[32];
-  strncpy(truncatedName, ao3SeriesName, 31);
-  truncatedName[31] = '\0';
-  const uint32_t seriesHash = fnv1a(truncatedName);
-
-  activityManager.replaceActivity(std::make_unique<Ao3EndOfBookSeriesActivity>(
-      renderer, mappedInput,
-      std::string(ao3SeriesName), 
-      seriesHash,
-      originHash,
-      originPath));
 }
 
 void EpubReaderActivity::returnToLibraryOrBrowser() {
