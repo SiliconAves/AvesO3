@@ -1,9 +1,10 @@
 #pragma once
 
-#include "activities/Activity.h"
+#include "activities/UiListActivity.h"
 #include <string>
+#include <vector>
 
-class Ao3EndOfBookActivity : public Activity {
+class Ao3EndOfBookActivity final : public UiListActivity {
  public:
   Ao3EndOfBookActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                        std::string bookPath, bool isCompleted,
@@ -13,11 +14,23 @@ class Ao3EndOfBookActivity : public Activity {
                        int ao3LibraryReturnIndex);
 
   void onEnter() override;
-  void loop() override;
-  void render(RenderLock&& lock) override;
+
+ protected:
+  // --- UiListActivity Overrides ---
+  int listCount() const override;
+  void buildScreen(UiScreen& uiScreen) override;
+  void activateIndex(int index) override;
+  bool handleButtons() override;
+  void navigateButtons() override;
+
+  // --- Chrome & Footer Overrides ---
+  const char* headerTitle() const override { return nullptr; }  // nullptr = no header band
+  void drawFooter() override;
 
  private:
   std::string bookPath;
+  std::string bookTitle;
+  std::string bookAuthor;
   bool isCompleted;
   std::string seriesName;
   int seriesPart;
@@ -26,7 +39,20 @@ class Ao3EndOfBookActivity : public Activity {
   int spineCountBeforeDownload;
   bool hadAfterword;
   int ao3LibraryReturnIndex;
+  bool backHoldHandled = false;  // Back-hold already fired; ignore its release
 
+  enum ActionRow {
+    ROW_GO_HOME = 0,
+    ROW_AO3_PAGE,
+    ROW_SERIES,
+    ROW_UPDATE,
+    ROW_ARCHIVE
+  };
+  std::vector<ActionRow> activeRows;
+
+  void loadBookInfo();
+  void stepSelection(int delta);
+  void buildActiveRows();
   void launchSeriesActivity();
   void returnToLibraryOrBrowser();
 };
