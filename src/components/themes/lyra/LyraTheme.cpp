@@ -22,6 +22,7 @@
 #include "components/icons/cover.h"
 #include "components/icons/coverao3.h"
 #include "components/icons/folder.h"
+#include "components/icons/globe.h"
 #include "components/icons/hotspot.h"
 #include "components/icons/library.h"
 #include "components/icons/recent.h"
@@ -55,6 +56,7 @@ const uint8_t* iconForName(UIIcon icon) {
     case UIIcon::Bookmark: return BookmarkIcon;
     case UIIcon::Ao3Library: return Ao3libraryIcon;
     case UIIcon::SendToAvesO3: return Sendtoaveso3Icon;
+    case UIIcon::OpdsBrowser: return GlobeIcon;
     default: return nullptr;
   }
 }

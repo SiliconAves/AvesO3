@@ -523,7 +523,7 @@ void HomeActivity::render(RenderLock&&) {
     }
     if (hasOpdsServers) {
       menuItems.push_back("OPDS Browser");
-      menuIcons.push_back(Library); // swap for dedicated icon later
+      menuIcons.push_back(OpdsBrowser);
     }
     // future page-1 entries go here
   }

@@ -138,7 +138,8 @@ enum UIIcon {
   Bookmark,
   Usb,
   Ao3Library,
-  SendToAvesO3
+  SendToAvesO3,
+  OpdsBrowser
 };
 
 // Default theme implementation (Classic Theme)
