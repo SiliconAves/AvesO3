@@ -3,6 +3,7 @@
 #include <vector>
 #include <algorithm>
 #include "../Activity.h"
+#include "../../components/UiAppHost.h"
 #include "../../Ao3CompactIndexRecord.h"
 #include "../../Ao3Librarian.h"
 #include "../../util/ButtonNavigator.h"
@@ -12,7 +13,7 @@ enum class Ao3IndexMode {
   DIRECTORY
 };
 
-class Ao3IndexActivity final : public Activity {
+class Ao3IndexActivity final : public Activity, private UiAppHost {
  public:
   enum class State {
     HEAP_CHECK,
@@ -83,10 +84,24 @@ class Ao3IndexActivity final : public Activity {
   void buildIndexedHashes();
   bool isExcluded(const std::string& path) const;
 
+  // --- FreeInkUI & Actions ---
+  static constexpr freeink::ui::ActionId ACTION_BACK = 1;
+  static constexpr freeink::ui::ActionId ACTION_CONFIRM = 2;
+
+  static void buildScreenTrampoline(UiScreen& screen, void* user);
+  void buildScreen(UiScreen& screen);
+
+  static void onActionTrampoline(const freeink::ui::ActionEvent& event, void* user);
+  void onAction(const freeink::ui::ActionEvent& event);
+
+  bool handleBack();
+  bool handleConfirm();
+
  public:
   Ao3IndexActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, Ao3IndexMode mode,
                    std::string targetPath = "", bool autoFinishIfEmpty = false, bool headless = false)
       : Activity("Ao3Index", renderer, mappedInput),
+        UiAppHost(renderer),
         mode(mode),
         targetPath(std::move(targetPath)),
         autoFinishIfEmpty_(autoFinishIfEmpty),

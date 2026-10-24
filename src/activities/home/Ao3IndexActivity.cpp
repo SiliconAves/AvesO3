@@ -38,10 +38,130 @@ bool isLibraryFull() {
 
 void Ao3IndexActivity::onEnter() {
   Activity::onEnter();
+
+  // Initialize FreeInkUI
+  resetUi();
+  app.on(ACTION_BACK, onActionTrampoline, this);
+  app.on(ACTION_CONFIRM, onActionTrampoline, this);
+  app.setScreen(buildScreenTrampoline, this);
+
   state = State::HEAP_CHECK;
   initialized = false;
   requestUpdate(true);
 }
+
+// ---------------------------------------------------------------------------
+//  Action Handlers (Centralized logic for Touch & Buttons)
+// ---------------------------------------------------------------------------
+
+bool Ao3IndexActivity::handleBack() {
+  if (state == State::ERROR || state == State::DIR_DISCOVERY_CONFIRM || state == State::DIR_BATCH_COMPLETE) {
+    app.clearTapFlash();
+    finish();
+    return true;
+  }
+  if (state == State::SINGLE_COMPLETE) {
+    app.clearTapFlash();
+    Ao3IndexResult res;
+    res.indexingCompleted = true;
+    res.successfullyIndexed = true;
+    setResult(ActivityResult(std::move(res)));
+    finish();
+    return true;
+  }
+  return false; // Not a state that processes a Back action
+}
+
+bool Ao3IndexActivity::handleConfirm() {
+  if (state == State::ERROR) {
+    app.clearTapFlash();
+    if (errorMessage == "Not enough memory. Please restart the device.") silentRestart();
+    else finish();
+    return true;
+  }
+  if (state == State::DIR_COMPLETE) {
+    app.clearTapFlash();
+    if (!failedBooks.empty()) {
+      state = State::DIR_FAILED_LIST;
+      requestUpdate(true);
+    } else {
+      finish();
+    }
+    return true;
+  }
+  if (state == State::DIR_FAILED_LIST) {
+    app.clearTapFlash();
+    finish();
+    return true;
+  }
+  if (state == State::SINGLE_COMPLETE) {
+    app.clearTapFlash();
+    Ao3IndexResult res;
+    res.indexingCompleted = true;
+    res.successfullyIndexed = true;
+    setResult(ActivityResult(std::move(res)));
+    finish();
+    return true;
+  }
+  if (state == State::DIR_DISCOVERY_CONFIRM || state == State::DIR_BATCH_COMPLETE) {
+    app.clearTapFlash();
+    if (state == State::DIR_DISCOVERY_CONFIRM) {
+      successCount = 0;
+      failureCount = 0;
+      failedBooks.clear();
+    }
+    startDirIndexing();
+    return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+//  FreeInkUI Screen Builder & Callbacks
+// ---------------------------------------------------------------------------
+
+void Ao3IndexActivity::buildScreenTrampoline(UiScreen& screen, void* user) {
+  static_cast<Ao3IndexActivity*>(user)->buildScreen(screen);
+}
+
+void Ao3IndexActivity::buildScreen(UiScreen& screen) {
+  if (!mappedInput.hasTouch()) return; // Hardware buttons use GUI.drawButtonHints below
+
+  freeink::ui::FooterAction footerActions[2];
+  int count = 0;
+
+  if (state == State::ERROR) {
+    footerActions[count++] = {"Back", ACTION_BACK};
+    if (errorMessage == "Not enough memory. Please restart the device.") {
+      footerActions[count++] = {"Reboot", ACTION_CONFIRM};
+    }
+  } else if (state == State::SINGLE_COMPLETE || state == State::DIR_FAILED_LIST || state == State::DIR_COMPLETE) {
+    footerActions[count++] = {"Done", ACTION_CONFIRM};
+  } else if (state == State::DIR_DISCOVERY_CONFIRM) {
+    footerActions[count++] = {"Cancel", ACTION_BACK};
+    footerActions[count++] = {"Index", ACTION_CONFIRM};
+  } else if (state == State::DIR_BATCH_COMPLETE) {
+    footerActions[count++] = {"Cancel", ACTION_BACK};
+    footerActions[count++] = {"Continue", ACTION_CONFIRM};
+  }
+
+  if (count > 0) {
+    screen.footer(footerActions, count);
+  }
+}
+
+void Ao3IndexActivity::onActionTrampoline(const freeink::ui::ActionEvent& event, void* user) {
+  static_cast<Ao3IndexActivity*>(user)->onAction(event);
+}
+
+void Ao3IndexActivity::onAction(const freeink::ui::ActionEvent& event) {
+  if (event.action == ACTION_BACK) handleBack();
+  if (event.action == ACTION_CONFIRM) handleConfirm();
+}
+
+// ---------------------------------------------------------------------------
+//  Tick Logic & Loop
+// ---------------------------------------------------------------------------
 
 void Ao3IndexActivity::runHeapCheck() {
   if (ESP.getMaxAllocHeap() < 48 * 1024) {
@@ -127,52 +247,26 @@ bool Ao3IndexActivity::isExcluded(const std::string& path) const {
 }
 
 void Ao3IndexActivity::loop() {
-  // Common error or completion back/confirm navigation
-  if (state == State::ERROR) {
-    if (headless_) {
-      finish(); // Exit silently on background discovery error
-      return;
-    }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-      if (errorMessage == "Not enough memory. Please restart the device.") {
-        silentRestart(); 
-        return;
-      }
-      finish();
-    } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-      finish();
-    }
-    return;
-  }
-  if (state == State::DIR_COMPLETE) {
-    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-      if (!failedBooks.empty()) {
-        state = State::DIR_FAILED_LIST;
-        requestUpdate(true);
-      } else {
-        finish();
-      }
-    }
-    return;
-  }
-  if (state == State::DIR_FAILED_LIST) {
-    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-      finish();
-    }
-    return;
-  }
-  if (state == State::SINGLE_COMPLETE) {
-    if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
-        mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-      Ao3IndexResult res;
-      res.indexingCompleted = true;
-      res.successfullyIndexed = true;
-      setResult(ActivityResult(std::move(res)));
-      finish();
-    }
+  // 1. Let FUI handle touch routing
+  if (routeTouch(mappedInput)) {
     return;
   }
 
+  // 2. Handle background error completion early out
+  if (state == State::ERROR && headless_) {
+    finish(); // Exit silently on background discovery error
+    return;
+  }
+
+  // 3. Physical button triggers
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back) && handleBack()) {
+    return;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) && handleConfirm()) {
+    return;
+  }
+
+  // 4. Tick state machines
   switch (state) {
     case State::HEAP_CHECK:
       runHeapCheck();
@@ -204,27 +298,8 @@ void Ao3IndexActivity::loop() {
       tickDirDiscovery();
       break;
 
-    case State::DIR_DISCOVERY_CONFIRM:
-      if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-        successCount = 0;
-        failureCount = 0;
-        failedBooks.clear();
-        startDirIndexing();
-      } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-        finish(); // user declined; return to library
-      }
-      break;
-
     case State::DIR_INDEXING:
       tickDirIndexing();
-      break;
-
-    case State::DIR_BATCH_COMPLETE:
-      if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-        startDirIndexing();
-      } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-        finish(); // user stopped early; still triggers result handler
-      }
       break;
 
     default:
@@ -423,7 +498,7 @@ void Ao3IndexActivity::startDirIndexing() {
       if ((int)pendingBooks.size() >= batchSize) break;
     }
     root.close();
-    yield(); // give the watchdog a breath between directories
+    yield();
   }
 
   if (pendingBooks.empty()) {
@@ -489,6 +564,10 @@ void Ao3IndexActivity::tickDirIndexing() {
   requestUpdate(true);
 }
 
+// ---------------------------------------------------------------------------
+//  Rendering
+// ---------------------------------------------------------------------------
+
 void Ao3IndexActivity::render(RenderLock&& lock) {
   if (headless_) {
     return; // Keep the library's "Loading..." screen visible during background check
@@ -501,8 +580,6 @@ void Ao3IndexActivity::render(RenderLock&& lock) {
   std::string titleStr = (mode == Ao3IndexMode::SINGLE) ? "Index Book" : "Index AO3 Library";
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, titleStr.c_str());
 
-  int contentTop = metrics.topPadding + metrics.headerHeight + 40;
-
   if (state == State::HEAP_CHECK) {
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "Checking AO3 Folder...");
   }
@@ -510,12 +587,14 @@ void Ao3IndexActivity::render(RenderLock&& lock) {
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, "Error");
     renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 10, errorMessage.c_str());
     
-    if (errorMessage == "Not enough memory. Please restart the device.") {
-      const auto labels = mappedInput.mapLabels("Back", "Reboot", "", "");
-      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-    } else {
-      const auto labels = mappedInput.mapLabels("Back", "", "", "");
-      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    if (!mappedInput.hasTouch()) {
+      if (errorMessage == "Not enough memory. Please restart the device.") {
+        const auto labels = mappedInput.mapLabels("Back", "Reboot", "", "");
+        GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+      } else {
+        const auto labels = mappedInput.mapLabels("Back", "", "", "");
+        GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+      }
     }
   }
   else if (state == State::SINGLE_SNIFFING) {
@@ -526,15 +605,19 @@ void Ao3IndexActivity::render(RenderLock&& lock) {
   }
   else if (state == State::SINGLE_COMPLETE) {
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, "Indexing complete!");
-    const auto labels = mappedInput.mapLabels("", "Done", "", "");
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    if (!mappedInput.hasTouch()) {
+      const auto labels = mappedInput.mapLabels("", "Done", "", "");
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    }
   }
   else if (state == State::DIR_DISCOVERY_CONFIRM) {
     char buf[128];
     sprintf(buf, "%zu unindexed book/s found. Index now?", unindexedCount);
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, buf);
-    const auto labels = mappedInput.mapLabels("Cancel", "Index", "", "");
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    if (!mappedInput.hasTouch()) {
+      const auto labels = mappedInput.mapLabels("Cancel", "Index", "", "");
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    }
   }
   else if (state == State::DIR_INDEXING) {
     int usableAreaTop = metrics.topPadding + metrics.headerHeight;
@@ -568,8 +651,10 @@ void Ao3IndexActivity::render(RenderLock&& lock) {
     sprintf(buf, "%zu succeeded, %zu failed", successCount, failureCount);
     renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 10, buf);
 
-    const auto labels = mappedInput.mapLabels("Cancel", "Continue", "", "");
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    if (!mappedInput.hasTouch()) {
+      const auto labels = mappedInput.mapLabels("Cancel", "Continue", "", "");
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    }
   }
   else if (state == State::DIR_COMPLETE) {
     if (!errorMessage.empty()) {
@@ -584,8 +669,10 @@ void Ao3IndexActivity::render(RenderLock&& lock) {
     sprintf(buf, "%zu book/s processed (%zu succeeded, %zu failed).", successCount + failureCount, successCount, failureCount);
     renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 10, buf);
 
-    const auto labels = mappedInput.mapLabels("", "Done", "", "");
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    if (!mappedInput.hasTouch()) {
+      const auto labels = mappedInput.mapLabels("", "Done", "", "");
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    }
   }
   else if (state == State::DIR_FAILED_LIST) {
     GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, "Failed Books");
@@ -615,9 +702,13 @@ void Ao3IndexActivity::render(RenderLock&& lock) {
         renderer.drawText(SMALL_FONT_ID,  15, y + 18, displayPath.c_str());
     }
 
-    const auto labels = mappedInput.mapLabels("", "Done", "", "");
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    if (!mappedInput.hasTouch()) {
+      const auto labels = mappedInput.mapLabels("", "Done", "", "");
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    }
   }
 
+  // Draw the touch footer if on a touch device
+  renderUi();
   renderer.displayBuffer();
 }

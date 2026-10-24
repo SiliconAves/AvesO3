@@ -1,13 +1,15 @@
 #pragma once
 #include <string>
 #include "activities/Activity.h"
+#include "components/UiAppHost.h"
 
-class Ao3PageQrActivity final : public Activity {
+class Ao3PageQrActivity final : public Activity, private UiAppHost {
 public:
     explicit Ao3PageQrActivity(GfxRenderer& renderer,
                                MappedInputManager& mappedInput,
                                std::string filePath)
         : Activity("Ao3PageQr", renderer, mappedInput),
+          UiAppHost(renderer),
           filePath(std::move(filePath)) {}
 
     void onEnter() override;
@@ -30,4 +32,19 @@ private:
     bool        metaLoaded = false;
 
     void loadMetadata();
+
+    // --- FreeInkUI & Action Handlers ---
+    static constexpr freeink::ui::ActionId ACTION_BACK = 1;
+    static constexpr freeink::ui::ActionId ACTION_OPEN = 2;
+    static constexpr freeink::ui::ActionId ACTION_UPDATE = 3;
+
+    static void buildScreenTrampoline(UiScreen& screen, void* user);
+    void buildScreen(UiScreen& screen);
+
+    static void onActionTrampoline(const freeink::ui::ActionEvent& event, void* user);
+    void onAction(const freeink::ui::ActionEvent& event);
+
+    void doBack();
+    void doOpen();
+    void doUpdate();
 };

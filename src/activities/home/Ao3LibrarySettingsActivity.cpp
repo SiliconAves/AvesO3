@@ -94,9 +94,50 @@ void Ao3LibrarySettingsActivity::onEnter() {
   UiListActivity::onEnter();
   // Map FONT_BODY to 10pt for the list items
   uiTarget.setFont(freeink::ui::GfxRendererTarget::FONT_BODY, UI_10_FONT_ID);
+  
+  // Register custom FUI actions for the popup states after base class initialization
+  app.on(ACTION_CLEANUP_CANCEL, onActionTrampoline, this);
+  app.on(ACTION_CLEANUP_START, onActionTrampoline, this);
+  app.on(ACTION_CLEANUP_DONE, onActionTrampoline, this);
+
   loadSettings();
   requestUpdate();
 }
+
+void Ao3LibrarySettingsActivity::onActionTrampoline(const freeink::ui::ActionEvent& event, void* user) {
+  static_cast<Ao3LibrarySettingsActivity*>(user)->onAction(event);
+}
+
+void Ao3LibrarySettingsActivity::onAction(const freeink::ui::ActionEvent& event) {
+  if (event.action == ACTION_CLEANUP_CANCEL) doCleanupCancel();
+  else if (event.action == ACTION_CLEANUP_START) doCleanupStart();
+  else if (event.action == ACTION_CLEANUP_DONE) doCleanupDone();
+}
+
+void Ao3LibrarySettingsActivity::doCleanupCancel() {
+  showingCleanupConfirm = false;
+  requestUpdate(true);
+}
+
+void Ao3LibrarySettingsActivity::doCleanupStart() {
+  showingCleanupConfirm = false;
+  cleaningUpIndex = true;
+  requestUpdate(true);
+  
+  // Force an immediate render so the "Please Wait" screen appears during the blocking call
+  render(RenderLock(*this));
+  
+  cleanupRemovedCount = Ao3Librarian::sanitizeIndex();
+  cleaningUpIndex = false;
+  showingCleanupResult = true;
+  requestUpdate(true);
+}
+
+void Ao3LibrarySettingsActivity::doCleanupDone() {
+  showingCleanupResult = false;
+  requestUpdate(true);
+}
+
 int Ao3LibrarySettingsActivity::listCount() const {
   return 10;
 }
@@ -164,43 +205,35 @@ bool Ao3LibrarySettingsActivity::handleCustomInput() {
   if (optionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) {
     return true;
   }
+  
   if (showingCleanupConfirm) {
-    // Route touch to allow the "Cancel" and "Start" button hints to be tapped
+    // Route touch to allow the FUI footer to be tapped
     auto route = UiAppHost::routeTouch(mappedInput, false);
     
+    // Also handle physical buttons for legacy devices
     if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-      showingCleanupConfirm = false;
-      requestUpdate(true);
+      doCleanupCancel();
       return true;
     } else if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-      showingCleanupConfirm = false;
-      cleaningUpIndex = true;
-      requestUpdate(true);
-      
-      // Force an immediate render so the "Please Wait" screen appears during the blocking call
-      render(RenderLock(*this));
-      
-      cleanupRemovedCount = Ao3Librarian::sanitizeIndex();
-      cleaningUpIndex = false;
-      showingCleanupResult = true;
-      requestUpdate(true);
+      doCleanupStart();
       return true;
     }
     return true; // Input absorbed by popup state
   }
 
   if (showingCleanupResult) {
-    // Route touch so tapping anywhere on the screen dismisses the result popup
+    // Route touch so tapping anywhere on the screen (or the footer) dismisses the result popup
     auto route = UiAppHost::routeTouch(mappedInput, false);
     
+    // Handle physical buttons for legacy devices
     if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
         mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
         route.routed) {
-      showingCleanupResult = false;
-      requestUpdate(true);
+      doCleanupDone();
     }
     return true; // Input absorbed by popup state
   }
+  
   return false;
 }
 
@@ -281,6 +314,11 @@ void Ao3LibrarySettingsActivity::activateIndex(int index) {
 }
 
 void Ao3LibrarySettingsActivity::drawFooter() {
+  // Suppress legacy button hints entirely on touch devices
+  if (mappedInput.hasTouch()) {
+    return;
+  }
+
   if (cleaningUpIndex) return;
 
   if (showingCleanupConfirm) {
@@ -335,6 +373,15 @@ void Ao3LibrarySettingsActivity::buildScreen(UiScreen& uiScreen) {
       "This process can take up to a few minutes",
       "to complete."
     });
+    
+    // Touch footer for confirmation state
+    if (mappedInput.hasTouch()) {
+      freeink::ui::FooterAction actions[] = {
+        {"Cancel", ACTION_CLEANUP_CANCEL},
+        {"Start",  ACTION_CLEANUP_START}
+      };
+      uiScreen.footer(actions, 2);
+    }
     return;
   }
 
@@ -347,6 +394,12 @@ void Ao3LibrarySettingsActivity::buildScreen(UiScreen& uiScreen) {
       char buf[64];
       sprintf(buf, "%d ghost entr%s removed.", cleanupRemovedCount, cleanupRemovedCount == 1 ? "y" : "ies");
       drawCenteredLines({buf});
+    }
+    
+    // Touch footer for result state
+    if (mappedInput.hasTouch()) {
+      freeink::ui::FooterAction actions[] = { {"Done", ACTION_CLEANUP_DONE} };
+      uiScreen.footer(actions, 1);
     }
     return;
   }

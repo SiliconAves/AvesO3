@@ -31,6 +31,18 @@ class Ao3LibrarySettingsActivity final : public UiListActivity {
   std::string formatFolderPill() const;
   std::string formatExclusionsPill() const;
 
+  // --- FreeInkUI Custom Actions for Cleanup States ---
+  static constexpr freeink::ui::ActionId ACTION_CLEANUP_CANCEL = 10;
+  static constexpr freeink::ui::ActionId ACTION_CLEANUP_START  = 11;
+  static constexpr freeink::ui::ActionId ACTION_CLEANUP_DONE   = 12;
+
+  static void onActionTrampoline(const freeink::ui::ActionEvent& event, void* user);
+  void onAction(const freeink::ui::ActionEvent& event);
+
+  void doCleanupCancel();
+  void doCleanupStart();
+  void doCleanupDone();
+
  public:
   explicit Ao3LibrarySettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
       : UiListActivity("Ao3LibrarySettings", renderer, mappedInput) {}

@@ -59,29 +59,38 @@ void Ao3PageQrActivity::loadMetadata() {
 }
 
 // ---------------------------------------------------------------------------
-//  Lifecycle
+//  Lifecycle & Actions
 // ---------------------------------------------------------------------------
 
 void Ao3PageQrActivity::onEnter() {
     Activity::onEnter();
     loadMetadata();
+
+    // Initialize FUI
+    resetUi();
+    app.on(ACTION_BACK, onActionTrampoline, this);
+    app.on(ACTION_OPEN, onActionTrampoline, this);
+    app.on(ACTION_UPDATE, onActionTrampoline, this);
+    app.setScreen(buildScreenTrampoline, this);
+
     requestUpdate();
 }
 
-void Ao3PageQrActivity::loop() {
-    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-        finish();
-        return;
-    }
+void Ao3PageQrActivity::doBack() {
+    app.clearTapFlash();
+    finish();
+}
 
-    // Open the fic in the reader on Confirm
-    if (!filePath.empty() && mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+void Ao3PageQrActivity::doOpen() {
+    if (!filePath.empty()) {
+        app.clearTapFlash();
         activityManager.goToReader(filePath);
-        return;
     }
+}
 
-    // Left button: Update — only when workId is known
-    if (!workId.empty() && mappedInput.wasReleased(MappedInputManager::Button::Left)) {
+void Ao3PageQrActivity::doUpdate() {
+    if (!workId.empty()) {
+        app.clearTapFlash();
         startActivityForResult(
             std::make_unique<Ao3ReceiveActivity>(
                 renderer, mappedInput,
@@ -90,7 +99,69 @@ void Ao3PageQrActivity::loop() {
                 storyUrl,
                 std::string(title)),
             [this](const ActivityResult&) { requestUpdate(true); });
+    }
+}
+
+void Ao3PageQrActivity::loop() {
+    // 1. Let FUI handle touch interactions for the footer
+    if (routeTouch(mappedInput)) {
         return;
+    }
+
+    // 2. Handle physical buttons (and global back swipe, which maps to Button::Back naturally)
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+        doBack();
+        return;
+    }
+    if (!filePath.empty() && mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+        doOpen();
+        return;
+    }
+    if (!workId.empty() && mappedInput.wasReleased(MappedInputManager::Button::Left)) {
+        doUpdate();
+        return;
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  FreeInkUI Screen Builder & Callbacks
+// ---------------------------------------------------------------------------
+
+void Ao3PageQrActivity::buildScreenTrampoline(UiScreen& screen, void* user) {
+    static_cast<Ao3PageQrActivity*>(user)->buildScreen(screen);
+}
+
+void Ao3PageQrActivity::buildScreen(UiScreen& screen) {
+    // Skip building the touch footer on button-only devices
+    if (!mappedInput.hasTouch()) {
+        return; 
+    }
+
+    freeink::ui::FooterAction footerActions[3];
+    int count = 0;
+
+    footerActions[count++] = {tr(STR_BACK), ACTION_BACK};
+    
+    if (!filePath.empty()) {
+        footerActions[count++] = {tr(STR_OPEN), ACTION_OPEN};
+    }
+    
+    if (!workId.empty()) {
+        footerActions[count++] = {"Update", ACTION_UPDATE};
+    }
+
+    screen.footer(footerActions, count);
+}
+
+void Ao3PageQrActivity::onActionTrampoline(const freeink::ui::ActionEvent& event, void* user) {
+    static_cast<Ao3PageQrActivity*>(user)->onAction(event);
+}
+
+void Ao3PageQrActivity::onAction(const freeink::ui::ActionEvent& event) {
+    switch (event.action) {
+        case ACTION_BACK:   doBack();   break;
+        case ACTION_OPEN:   doOpen();   break;
+        case ACTION_UPDATE: doUpdate(); break;
     }
 }
 
@@ -236,11 +307,18 @@ void Ao3PageQrActivity::render(RenderLock&&) {
         renderer.drawCenteredText(SMALL_FONT_ID, curY, "Scan with your phone to open the AO3 page");
     }
 
-    // --- Button hints ---
-    const char* updateLabel = workId.empty() ? "" : "Update";
-    const char* confirmLabel = filePath.empty() ? "" : tr(STR_OPEN);
-    const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, updateLabel, "");
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    // --- 7. Overlay Bottom Hints or Touch Footer ---
+    
+    // For non-touch devices, restore the hardware-aligned 4-button legends
+    if (!mappedInput.hasTouch()) {
+        const char* updateLabel = workId.empty() ? "" : "Update";
+        const char* confirmLabel = filePath.empty() ? "" : tr(STR_OPEN);
+        const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, updateLabel, "");
+        GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    }
+
+    // For touch devices, renderUi() will draw the FUI footer (and will do nothing on button devices)
+    renderUi();
 
     renderer.displayBuffer();
 }
