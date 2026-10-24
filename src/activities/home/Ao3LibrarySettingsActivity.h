@@ -25,6 +25,14 @@ class Ao3LibrarySettingsActivity final : public UiListActivity {
   bool showingCleanupConfirm = false;
   int cleanupRemovedCount = 0;
 
+  // Row storage reused by every buildScreen() pass. Building the rows into
+  // member storage (instead of local std::vectors) avoids allocator churn on
+  // every repaint. Labels are constant (see kRowLabels in the .cpp); only the
+  // value strings change between passes.
+  static constexpr int ROW_COUNT = 10;
+  freeink::ui::ListItem rowItems[ROW_COUNT];
+  std::string rowValues[ROW_COUNT];  // backing storage for rowItems[i].value
+
   void loadSettings();
   void saveSettings();
   std::string getFolderLastComponent(const std::string& path) const;

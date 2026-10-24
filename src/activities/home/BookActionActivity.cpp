@@ -5,6 +5,7 @@
 #include <HalStorage.h>
 #include <I18n.h>
 #include <FsHelpers.h>
+#include <algorithm>
 
 #include "components/UITheme.h"
 #include "activities/util/ConfirmationActivity.h"
@@ -144,39 +145,40 @@ void BookActionActivity::buildScreen(UiScreen& uiScreen) {
 
   fui::ListProps props;
 
-  int count = listCount();
-  std::vector<fui::ListItem> items(count);
-  std::vector<std::string> titles(count);
-  std::vector<std::string> values(count);
+  const int count = std::min(listCount(), MAX_ROWS);
 
   for (int i = 0; i < count; ++i) {
+    rowItems[i] = fui::ListItem{};  // reset state left over from the previous pass
+    rowTitles[i].clear();           // clear() keeps capacity, so no reallocation
+    rowValues[i].clear();
+
     switch (logicalRow(i)) {
-      case 0: titles[i] = std::string("Book Status: ") + getStatusLabel(currentStatus); break;
-      case 1: titles[i] = isMarkedForLater ? "Remove from Later List" : "Mark for Later"; break;
-      case 2: titles[i] = hasAo3LibraryInfo ? "Reindex Book" : "Index Book"; break;
-      case 3: titles[i] = isAlreadyArchived ? "Restore to AO3 Library" : "Move to Read Folder"; break;
-      case 4: titles[i] = std::string(tr(STR_DELETE)); break;
-      case 5: titles[i] = "Remove from List"; break;
-      case 6: titles[i] = "Show AO3 Page QR"; break;
+      case 0: rowTitles[i] = "Book Status: "; rowTitles[i] += getStatusLabel(currentStatus); break;
+      case 1: rowTitles[i] = isMarkedForLater ? "Remove from Later List" : "Mark for Later"; break;
+      case 2: rowTitles[i] = hasAo3LibraryInfo ? "Reindex Book" : "Index Book"; break;
+      case 3: rowTitles[i] = isAlreadyArchived ? "Restore to AO3 Library" : "Move to Read Folder"; break;
+      case 4: rowTitles[i] = tr(STR_DELETE); break;
+      case 5: rowTitles[i] = "Remove from List"; break;
+      case 6: rowTitles[i] = "Show AO3 Page QR"; break;
     }
 
     if (logicalRow(i) == 1) {
-      values[i] = std::to_string(MARKED_FOR_LATER_STORE.getCount()) + "/10";
+      rowValues[i] = std::to_string(MARKED_FOR_LATER_STORE.getCount()) + "/10";
     }
 
-    items[i].label = titles[i].c_str();
-    items[i].actionValue = i;
-    if (!values[i].empty()) items[i].value = values[i].c_str();
+    rowItems[i].label = rowTitles[i].c_str();
+    rowItems[i].actionValue = i;
+    if (!rowValues[i].empty()) rowItems[i].value = rowValues[i].c_str();
 
     // Disable interactions for Book Status when Marked for Later
     if (logicalRow(i) == 0 && currentStatus == BookStatus::MARKED_FOR_LATER) {
-      items[i].enabled = false;
+      rowItems[i].enabled = false;
     }
   }
 
     props.labelText = uiScreen.theme().bodyText;
   props.valueText = uiScreen.theme().smallText;
-  props.items = items.data();
+  props.items = rowItems;
   props.count = count;
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;

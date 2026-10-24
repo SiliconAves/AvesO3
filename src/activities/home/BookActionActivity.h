@@ -24,6 +24,14 @@ class BookActionActivity final : public UiListActivity {
   BookActionMode mode;
   OptionPopup optionPopup;
 
+  // Row storage reused by every buildScreen() pass. Building the rows into
+  // member storage (instead of local std::vectors) avoids allocator churn on
+  // every repaint. FULL mode shows at most 6 rows, so 8 leaves headroom.
+  static constexpr int MAX_ROWS = 8;
+  freeink::ui::ListItem rowItems[MAX_ROWS];
+  std::string rowTitles[MAX_ROWS];  // backing storage for rowItems[i].label
+  std::string rowValues[MAX_ROWS];  // backing storage for rowItems[i].value
+
   public:
   BookActionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                      std::string filePath, std::string fileName,

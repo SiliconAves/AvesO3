@@ -5,6 +5,8 @@
 #include <ArduinoJson.h>
 #include <Logging.h>
 #include <I18n.h>
+#include <algorithm>
+#include <initializer_list>
 #include "Ao3FolderPickerActivity.h"
 #include "Ao3CoverAssignmentActivity.h"
 #include "components/UITheme.h"
@@ -13,6 +15,23 @@
 #include "components/UiAppHelpers.h"
 
 namespace fui = freeink::ui;
+
+namespace {
+// Row labels never change, so they live in flash instead of being rebuilt into
+// a std::vector<std::string> on every buildScreen() pass.
+constexpr const char* kRowLabels[] = {
+  "Your AO3 Folder",
+  "Never Index",
+  "Index Batch Size",
+  "Auto-Index on Library Open",
+  "Hide Finished Fics",
+  "Filter Mode",
+  "Merge Similar Tags",
+  "Side Button Layout",
+  "Customize Fandom Covers",
+  "Library Cleanup"
+};
+}  // namespace
 
 void Ao3LibrarySettingsActivity::loadSettings() {
   ao3Folder = "";
@@ -348,7 +367,9 @@ void Ao3LibrarySettingsActivity::buildScreen(UiScreen& uiScreen) {
   fui::TextStyle centerStyle = uiScreen.theme().bodyText;
   centerStyle.align = fui::TextAlign::Center;
 
-  auto drawCenteredLines = [&](const std::vector<const char*>& lines) {
+  // std::initializer_list avoids the heap allocation the old std::vector<const char*>
+  // parameter made on every call.
+  auto drawCenteredLines = [&](std::initializer_list<const char*> lines) {
     const int lh = uiTarget.lineHeight(centerStyle.font);
     const int totalH = lines.size() * lh + (lines.size() - 1) * 5;
     if (uiScreen.body().height > totalH) {
@@ -356,7 +377,7 @@ void Ao3LibrarySettingsActivity::buildScreen(UiScreen& uiScreen) {
     }
     for (const char* line : lines) {
       uiScreen.target().text(uiScreen.takeTop(lh), line, centerStyle);
-      if (line != lines.back()) uiScreen.spacer(5);
+      if (line != *(lines.end() - 1)) uiScreen.spacer(5);
     }
   };
 
@@ -404,34 +425,23 @@ void Ao3LibrarySettingsActivity::buildScreen(UiScreen& uiScreen) {
     return;
   }
 
-  std::vector<std::string> rows = {
-    "Your AO3 Folder",
-    "Never Index",
-    "Index Batch Size",
-    "Auto-Index on Library Open",
-    "Hide Finished Fics",
-    "Filter Mode",
-    "Merge Similar Tags",
-    "Side Button Layout",
-    "Customize Fandom Covers",
-    "Library Cleanup"
-  };
+  static_assert(sizeof(kRowLabels) / sizeof(kRowLabels[0]) == ROW_COUNT,
+                "kRowLabels must have exactly ROW_COUNT entries");
 
-  std::vector<fui::ListItem> items(10);
-  std::vector<std::string> values(10);
-
-  for (int i = 0; i < 10; i++) {
-    items[i].label = rows[i].c_str();
-    items[i].actionValue = i;
-    if (i == 0) values[i] = formatFolderPill();
-    if (i == 1) values[i] = formatExclusionsPill();
-    if (i == 2) values[i] = std::to_string(batchSize);
-    if (i == 3) values[i] = autoIndexOnOpen ? "ON" : "OFF";
-    if (i == 4) values[i] = hideFinished ? "ON" : "OFF";
-    if (i == 5) values[i] = (filterMode == FilterMode::FOLDER_TREE) ? "Folder Tree" : "Automatic";
-    if (i == 7) values[i] = swapNavButtons ? "Scroll List" : "Open Panels";
-    if (!values[i].empty()) items[i].value = values[i].c_str();
-    if (i == 6 && filterMode != FilterMode::AUTOMATIC) items[i].enabled = false;
+  for (int i = 0; i < ROW_COUNT; i++) {
+    rowItems[i] = fui::ListItem{};  // reset state left over from the previous pass
+    rowItems[i].label = kRowLabels[i];
+    rowItems[i].actionValue = i;
+    rowValues[i].clear();           // clear() keeps capacity, so no reallocation
+    if (i == 0) rowValues[i] = formatFolderPill();
+    if (i == 1) rowValues[i] = formatExclusionsPill();
+    if (i == 2) rowValues[i] = std::to_string(batchSize);
+    if (i == 3) rowValues[i] = autoIndexOnOpen ? "ON" : "OFF";
+    if (i == 4) rowValues[i] = hideFinished ? "ON" : "OFF";
+    if (i == 5) rowValues[i] = (filterMode == FilterMode::FOLDER_TREE) ? "Folder Tree" : "Automatic";
+    if (i == 7) rowValues[i] = swapNavButtons ? "Scroll List" : "Open Panels";
+    if (!rowValues[i].empty()) rowItems[i].value = rowValues[i].c_str();
+    if (i == 6 && filterMode != FilterMode::AUTOMATIC) rowItems[i].enabled = false;
   }
 
   // Capture body BEFORE list() consumes it
@@ -447,8 +457,8 @@ void Ao3LibrarySettingsActivity::buildScreen(UiScreen& uiScreen) {
   syncListViewport(uiScreen, props, false);
   props.labelText = uiScreen.theme().bodyText;
   props.valueText = uiScreen.theme().smallText;
-  props.items = items.data();
-  props.count = 10;
+  props.items = rowItems;
+  props.count = ROW_COUNT;
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;
   uiScreen.list(props);
