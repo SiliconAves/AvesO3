@@ -369,6 +369,7 @@ void Ao3LibrarySettingsActivity::buildScreen(UiScreen& uiScreen) {
 
   for (int i = 0; i < 10; i++) {
     items[i].label = rows[i].c_str();
+    items[i].actionValue = i;
     if (i == 0) values[i] = formatFolderPill();
     if (i == 1) values[i] = formatExclusionsPill();
     if (i == 2) values[i] = std::to_string(batchSize);

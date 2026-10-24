@@ -143,7 +143,6 @@ void BookActionActivity::buildScreen(UiScreen& uiScreen) {
       0});
 
   fui::ListProps props;
-  syncListViewport(uiScreen, props, false);
 
   int count = listCount();
   std::vector<fui::ListItem> items(count);
@@ -166,6 +165,7 @@ void BookActionActivity::buildScreen(UiScreen& uiScreen) {
     }
 
     items[i].label = titles[i].c_str();
+    items[i].actionValue = i;
     if (!values[i].empty()) items[i].value = values[i].c_str();
 
     // Disable interactions for Book Status when Marked for Later
@@ -174,34 +174,29 @@ void BookActionActivity::buildScreen(UiScreen& uiScreen) {
     }
   }
 
-  props.labelText = uiScreen.theme().bodyText;
+    props.labelText = uiScreen.theme().bodyText;
   props.valueText = uiScreen.theme().smallText;
   props.items = items.data();
   props.count = count;
-
-  // 1. Route touch input to the row action handler
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;
 
-  // 2. Sync the viewport after props.count is populated
-  syncListViewport(uiScreen, props, false);
+  // Capture body BEFORE list() consumes it
+  const fui::Rect body = uiScreen.body();
 
-  // Draw the list to the framebuffer
+  const int rowH = mappedInput.hasTouch()
+      ? static_cast<int>(uiScreen.theme().rowHeight)
+      : UITheme::getInstance().getMetrics().listRowHeight;
+
+  syncListViewport(uiScreen, props, false);
   uiScreen.list(props);
 
-  // FIX 2: Restore the 1.5 manual checkerboard pixel mask over the disabled row
-  if (currentStatus == BookStatus::MARKED_FOR_LATER) {
-    fui::Rect body = uiScreen.body();
-    // Calculate the physical height of one list row
-    const int rowHeight = uiTarget.lineHeight(fui::GfxRendererTarget::FONT_BODY) + uiScreen.theme().listRowGap + 12; 
-    
-    for (int py = body.y; py < body.y + rowHeight; py++) {
-      for (int px = body.x; px < body.x + body.width; px++) {
-        if ((px + py) % 2 == 0) {
-          renderer.drawPixel(px, py, false); // Draw white to punch holes in the black ink
-        }
-      }
-    }
+  // Dither mask over the disabled Status row (always visual row 0)
+  if (currentStatus == BookStatus::MARKED_FOR_LATER && nav.top == 0) {
+    const int pyEnd = std::min(body.y + rowH, body.y + body.height);
+    for (int py = body.y; py < pyEnd; py++)
+      for (int px = body.x; px < body.x + body.width; px++)
+        if ((px + py) % 2 == 0) renderer.drawPixel(px, py, false);
   }
 }
 
