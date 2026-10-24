@@ -289,6 +289,7 @@ void EpubReaderActivity::openReaderMenu() {
                              }
                              currentStatus = menu.status;
                              statusManuallySet = true;
+                             persistManualStatus();
 
                              if (menu.status == BookStatus::NEW_CHAPTER_AVAILABLE) {
                                NEW_CHAPTERS_STORE.loadFromFile();
@@ -1609,6 +1610,15 @@ bool EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageC
 
   // Call the new 1.6.0 utility directly with your AO3 status
   return EpubReaderUtils::saveProgress(*epub, spineIndex, currentPage, pageCount, offset, currentStatus);
+}
+
+void EpubReaderActivity::persistManualStatus() {
+  if (!section) return;
+  // Same position and page count render() would pass. statusManuallySet is true and the
+  // position matches lastSaved*, so saveProgress skips the natural-status block and just
+  // writes currentStatus to byte 10.
+  RenderLock lock(*this);
+  saveProgress(currentSpineIndex, section->currentPage, section->estimatedTotalPages());
 }
 
 void EpubReaderActivity::rememberCurrentContentOffset() {

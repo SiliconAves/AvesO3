@@ -3,6 +3,7 @@
 #include <vector>
 #include "activities/UiListActivity.h"
 #include "Ao3Librarian.h"
+#include "components/OptionPopup.h"
 
 enum class FilterMode : uint8_t {
     AUTOMATIC   = 0,
@@ -17,6 +18,7 @@ class Ao3LibrarySettingsActivity final : public UiListActivity {
   bool hideFinished = false;
   bool swapNavButtons = false;
   FilterMode filterMode = FilterMode::AUTOMATIC;
+  OptionPopup optionPopup;
   
   bool showingCleanupResult = false;
   bool cleaningUpIndex = false;
@@ -40,6 +42,7 @@ class Ao3LibrarySettingsActivity final : public UiListActivity {
   int listCount() const override;
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
+  void render(RenderLock&&) override;
 
   bool handleCustomInput() override;
   bool handleButtons() override;

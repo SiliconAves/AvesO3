@@ -127,6 +127,8 @@ class EpubReaderActivity final : public ReaderActivity {
   void clearDeferredReposition();
   void rememberCurrentContentOffset();
   bool saveProgress(int spineIndex, int currentPage, int pageCount);
+  // Writes the current (manually chosen) status to progress.bin without moving the position.
+  void persistManualStatus();
   void jumpToPercent(int percent);
   void onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction action);
   void openReaderMenu();

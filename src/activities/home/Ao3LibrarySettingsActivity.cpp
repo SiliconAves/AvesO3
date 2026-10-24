@@ -160,6 +160,10 @@ void Ao3LibrarySettingsActivity::navigateButtons() {
 }
 
 bool Ao3LibrarySettingsActivity::handleCustomInput() {
+  // Route input to the popup if it's active
+  if (optionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) {
+    return true;
+  }
   if (showingCleanupConfirm) {
     // Route touch to allow the "Cancel" and "Start" button hints to be tapped
     auto route = UiAppHost::routeTouch(mappedInput, false);
@@ -201,6 +205,8 @@ bool Ao3LibrarySettingsActivity::handleCustomInput() {
 }
 
 void Ao3LibrarySettingsActivity::activateIndex(int index) {
+  if (optionPopup.isActive()) return;
+
   if (index == 0) {
     auto handler = [this](const ActivityResult& res) {
       if (!res.isCancelled) {
@@ -230,13 +236,16 @@ void Ao3LibrarySettingsActivity::activateIndex(int index) {
     std::string startPath = ao3Folder.empty() ? "/" : ao3Folder;
     startActivityForResult(std::make_unique<Ao3FolderPickerActivity>(renderer, mappedInput, "Select Folders to Exclude", PickerMode::MULTI, excludedFolders, startPath), handler);
   } else if (index == 2) {
-    const int sizes[] = {10, 25, 50};
-    int current = 0;
-    for (int i = 0; i < 3; i++) {
-      if (sizes[i] == batchSize) { current = i; break; }
-    }
-    batchSize = sizes[(current + 1) % 3];
-    saveSettings();
+    app.clearTapFlash();
+    
+    static const char* options[] = {"10", "25", "50"};
+    int current = (batchSize == 50) ? 2 : ((batchSize == 25) ? 1 : 0);
+    
+    optionPopup.show("Index Batch Size", options, 3, current, [this](int selected) {
+      batchSize = (selected == 2) ? 50 : ((selected == 1) ? 25 : 10);
+      saveSettings();
+      requestUpdate();
+    });
     requestUpdate();
   } else if (index == 3) {
     autoIndexOnOpen = !autoIndexOnOpen;
@@ -386,6 +395,8 @@ void Ao3LibrarySettingsActivity::buildScreen(UiScreen& uiScreen) {
   props.valueText = uiScreen.theme().smallText;
   props.items = items.data();
   props.count = 10;
+  props.action = ACTION_ROW;
+  props.inputMask = fui::InputTouch;
   uiScreen.list(props);
 
   // Dither mask over disabled "Merge Similar Tags" row (index 6)
@@ -399,4 +410,9 @@ void Ao3LibrarySettingsActivity::buildScreen(UiScreen& uiScreen) {
           if ((px + py) % 2 == 0) renderer.drawPixel(px, py, false);
     }
   }
+}
+
+void Ao3LibrarySettingsActivity::render(RenderLock&& lock) {
+  if (optionPopup.processRender(renderer, mappedInput)) return;
+  UiListActivity::render(std::move(lock));
 }
