@@ -409,6 +409,7 @@ bool Ao3EndOfBookActivity::handleButtons() {
 
 void Ao3EndOfBookActivity::activateIndex(int index) {
   if (index < 0 || index >= static_cast<int>(activeRows.size())) return;
+  app.clearTapFlash();
 
   switch (activeRows[index]) {
     case ROW_AO3_PAGE:
