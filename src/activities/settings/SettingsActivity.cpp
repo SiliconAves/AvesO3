@@ -218,16 +218,25 @@ bool SettingsActivity::handleCustomInput() {
 }
 
 void SettingsActivity::navigateButtons() {
-  // 1. MUST BE FIRST: Catch the continuous front-button holds to skip 2 rows.
-  // Because ButtonNavigator consumes the timer on a successful trigger, 
-  // catching it here hides the input from the base class.
+  if (settingsCount == 0) {
+    UiTabListActivity::navigateButtons();
+    return;
+  }
+
+  // 1. MUST BE FIRST: Catch the continuous side-button holds to skip 2 rows.
+  // Using onSide restricts this to Up/Down so Left/Right (Front buttons) 
+  // safely fall through to the base class for tab switching.
   buttonNavigator.onSideNextContinuous([this] {
     auto& n = activeNav();
     if (n.selected == 0) {
-      n.selected = 2;  // enter list at second item
+      n.selected = (settingsCount >= 2) ? 2 : 1;
     } else {
-      const int target = n.selected + 2;
-      n.selected = (target <= settingsCount) ? target : settingsCount;
+      int target = n.selected + 2;
+      // Safely wrap around the list, skipping index 0 (the tab bar)
+      while (target > settingsCount) {
+        target -= settingsCount;
+      }
+      n.selected = target;
     }
     requestUpdate();
   });
@@ -235,17 +244,20 @@ void SettingsActivity::navigateButtons() {
   buttonNavigator.onSidePreviousContinuous([this] {
     auto& n = activeNav();
     if (n.selected == 0) {
-      n.selected = settingsCount;  // enter list at last item
+      n.selected = settingsCount;
     } else {
-      const int target = n.selected - 2;
-      n.selected = (target >= 1) ? target : 1;
+      int target = n.selected - 2;
+      // Safely wrap backward around the list, skipping index 0
+      while (target <= 0) {
+        target += settingsCount;
+      }
+      n.selected = target;
     }
     requestUpdate();
   });
 
-  // 2. NOW call the base class. It will handle the normal single-step releases 
-  // and the Up/Down buttons, but it will skip tab-swapping because our custom 
-  // code above already consumed the continuous hold timer.
+  // 2. NOW call the base class. It will handle the normal single-step releases,
+  // Up/Down single presses, and the Front button holds for tab-swapping.
   UiTabListActivity::navigateButtons();
 }
 
