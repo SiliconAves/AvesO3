@@ -2334,7 +2334,9 @@ void EpubReaderActivity::buildMoreActions() {
   EpubReaderMenuActivity::buildMenuItems(moreItems, !currentPageFootnotes.empty(), !cachedBookmarks.empty());
   moreItems.erase(std::remove_if(moreItems.begin(), moreItems.end(),
                                  [](const auto& item) {
-                                   return item.action == MA::SELECT_CHAPTER || item.action == MA::TEXT_SETTINGS;
+                                   return item.action == MA::SELECT_CHAPTER ||
+                                          item.action == MA::TEXT_SETTINGS ||
+                                          item.action == MA::CYCLE_STATUS;   // not wired up in the toolbar yet
                                  }),
                   moreItems.end());
 }
