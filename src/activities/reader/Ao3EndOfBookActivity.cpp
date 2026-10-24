@@ -22,6 +22,9 @@
 #include "activities/Ao3ArchiveHelper.h"
 #include "activities/util/ConfirmationActivity.h"
 
+#include <FreeInkUIIcon.h>
+#include "components/icons/ao3EndOfBookIcons32.h"
+
 namespace fui = freeink::ui;
 
 namespace {
@@ -112,7 +115,7 @@ Ao3EndOfBookActivity::Ao3EndOfBookActivity(GfxRenderer& renderer, MappedInputMan
   // Slots: TITLE = 12pt, BODY = 10pt, SMALL = 8pt. Weight is a TextStyle flag.
   uiTarget.setFont(fui::GfxRendererTarget::FONT_TITLE, UI_12_FONT_ID);
   uiTarget.setFont(fui::GfxRendererTarget::FONT_BODY, UI_10_FONT_ID);
-  uiTarget.setFont(fui::GfxRendererTarget::FONT_SMALL, SMALL_FONT_ID);  // TODO: confirm the 8pt ID in fontIds.h
+  uiTarget.setFont(fui::GfxRendererTarget::FONT_SMALL, SMALL_FONT_ID);
   
   buildActiveRows();
 }
@@ -195,6 +198,17 @@ void Ao3EndOfBookActivity::buildScreen(UiScreen& uiScreen) {
   fui::TextStyle bannerStyle = theme.smallText;  // 8pt regular, left aligned
   bannerStyle.align = fui::TextAlign::Left;
   bannerStyle.maxLines = 3;
+
+  auto iconFor = [this](int i) -> fui::BitmapRef {
+    switch (activeRows[i]) {
+      case ROW_GO_HOME:  return fui::bitmapFromIcon(icon_go_home_32);
+      case ROW_AO3_PAGE: return fui::bitmapFromIcon(icon_ao3_page_32);
+      case ROW_SERIES:   return fui::bitmapFromIcon(icon_series_fic_32);
+      case ROW_UPDATE:   return fui::bitmapFromIcon(icon_update_fic_32);
+      case ROW_ARCHIVE:  return fui::bitmapFromIcon(icon_archive_fic_32);
+    }
+    return {};
+  };
 
   fui::TextStyle buttonText = theme.bodyText;  // 10pt regular, left aligned
   buttonText.align = fui::TextAlign::Left;
@@ -325,7 +339,7 @@ void Ao3EndOfBookActivity::buildScreen(UiScreen& uiScreen) {
     const fui::Rect iconRect{static_cast<int16_t>(btnRect.x + BUTTON_ICON_PAD),
                              static_cast<int16_t>(btnRect.y + (BUTTON_HEIGHT - BUTTON_ICON_SIZE) / 2),
                              BUTTON_ICON_SIZE, BUTTON_ICON_SIZE};
-    target.bitmap(iconRect, fui::lucideGlobeIcon32(), fui::BitmapMode::Center);
+    target.bitmap(iconRect, iconFor(i), fui::BitmapMode::Center);
 
     const fui::Rect textRect{static_cast<int16_t>(btnRect.x + textOffset), btnRect.y,
                              static_cast<int16_t>(btnRect.width - textOffset - 4), btnRect.height};
