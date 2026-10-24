@@ -28,3 +28,19 @@ inline const char* getStatusLabel(BookStatus status) {
       return "Unknown";
   }
 }
+
+// Statuses the user can pick manually in the status popup.
+// MARKED_FOR_LATER is intentionally excluded: it is managed only by the
+// Mark for Later toggle. Popup index == enum value for these five.
+inline constexpr BookStatus kSelectableStatuses[] = {BookStatus::START, BookStatus::READING, BookStatus::FINISHED,
+                                                     BookStatus::WAITING_FOR_CHAPTER,
+                                                     BookStatus::NEW_CHAPTER_AVAILABLE};
+inline constexpr int kSelectableStatusCount = sizeof(kSelectableStatuses) / sizeof(kSelectableStatuses[0]);
+
+// Index of `status` in kSelectableStatuses, or 0 if it isn't selectable.
+inline int selectableStatusIndex(BookStatus status) {
+  for (int i = 0; i < kSelectableStatusCount; i++) {
+    if (kSelectableStatuses[i] == status) return i;
+  }
+  return 0;
+}

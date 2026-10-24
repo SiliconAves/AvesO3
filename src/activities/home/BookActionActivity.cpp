@@ -179,6 +179,13 @@ void BookActionActivity::buildScreen(UiScreen& uiScreen) {
   props.items = items.data();
   props.count = count;
 
+  // 1. Route touch input to the row action handler
+  props.action = ACTION_ROW;
+  props.inputMask = fui::InputTouch;
+
+  // 2. Sync the viewport after props.count is populated
+  syncListViewport(uiScreen, props, false);
+
   // Draw the list to the framebuffer
   uiScreen.list(props);
 
@@ -254,15 +261,41 @@ void BookActionActivity::navigateButtons() {
 }
 
 // ---------------------------------------------------------------------------
+//  Option popup (Book Status)
+// ---------------------------------------------------------------------------
+
+// The popup draws over the existing framebuffer (no clear), so it must run first.
+void BookActionActivity::render(RenderLock&& lock) {
+  if (optionPopup.processRender(renderer, mappedInput)) return;
+  UiListActivity::render(std::move(lock));
+}
+
+// First hook in loop(): while the popup is active it consumes all input,
+// so Back closes the popup instead of the activity.
+bool BookActionActivity::handleCustomInput() {
+  return optionPopup.handleInput(mappedInput, [this] { requestUpdate(true); });
+}
+
+void BookActionActivity::openStatusPopup() {
+  const char* labels[kSelectableStatusCount];  // show() copies these immediately
+  for (int i = 0; i < kSelectableStatusCount; i++) {
+    labels[i] = getStatusLabel(kSelectableStatuses[i]);
+  }
+  optionPopup.show(tr(STR_BOOK_STATUS), labels, kSelectableStatusCount, selectableStatusIndex(currentStatus),
+                   [this](int idx) { currentStatus = kSelectableStatuses[idx]; });
+}
+
+// ---------------------------------------------------------------------------
 //  Row Activation Logic
 // ---------------------------------------------------------------------------
 
 void BookActionActivity::activateIndex(int index) {
+  if (optionPopup.isActive()) return;
   switch (logicalRow(index)) {
     case 0: {
       if (currentStatus == BookStatus::MARKED_FOR_LATER) break;
-      uint8_t s = (static_cast<uint8_t>(currentStatus) + 1) % 5;
-      currentStatus = static_cast<BookStatus>(s);
+      app.clearTapFlash();
+      openStatusPopup();
       requestUpdate(true);
       break;
     }

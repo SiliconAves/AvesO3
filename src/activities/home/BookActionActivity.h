@@ -4,6 +4,7 @@
 #include "BookStatus.h"
 #include "activities/UiListActivity.h"
 #include "../Ao3ArchiveHelper.h"
+#include "components/OptionPopup.h"
 
 enum class BookActionMode {
   FULL,      // AO3 Library / file browser long-press
@@ -21,13 +22,15 @@ class BookActionActivity final : public UiListActivity {
   bool isXtc                   = false;
   bool isAlreadyArchived       = false;
   BookActionMode mode;
+  OptionPopup optionPopup;
 
- public:
+  public:
   BookActionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                      std::string filePath, std::string fileName,
                      BookActionMode mode = BookActionMode::FULL);
 
   void onEnter() override;
+  void render(RenderLock&&) override;
 
  protected:
   // --- UiListActivity Overrides ---
@@ -35,6 +38,7 @@ class BookActionActivity final : public UiListActivity {
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
 
+  bool handleCustomInput() override;
   bool handleButtons() override;
   void navigateButtons() override;
 
@@ -42,8 +46,9 @@ class BookActionActivity final : public UiListActivity {
   const char* headerTitle() const override { return fileName.c_str(); }
   void drawFooter() override;
 
- private:
+  private:
   void saveStatus();
   void saveStatusIfModified();
+  void openStatusPopup();
   int  logicalRow(int visualIndex) const;
 };

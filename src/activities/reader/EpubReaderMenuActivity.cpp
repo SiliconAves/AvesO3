@@ -127,11 +127,17 @@ void EpubReaderMenuActivity::activateIndex(const int index) {
     return;
   }
 
-  // Your custom cycle feature seamlessly adapted to 1.6.0
   if (selectedAction == MenuAction::CYCLE_STATUS) {
-    uint8_t s = static_cast<uint8_t>(currentStatus);
-    s = (s + 1) % 5;
-    currentStatus = static_cast<BookStatus>(s);
+    // Status is locked while Marked for Later (same rule as BookActionActivity).
+    if (currentStatus == BookStatus::MARKED_FOR_LATER) return;
+
+    const char* labels[kSelectableStatusCount];  // show() copies these immediately
+    for (int i = 0; i < kSelectableStatusCount; i++) {
+      labels[i] = getStatusLabel(kSelectableStatuses[i]);
+    }
+    optionPopup.show(I18N.get(StrId::STR_BOOK_STATUS), labels, kSelectableStatusCount,
+                     selectableStatusIndex(currentStatus),
+                     [this](int idx) { currentStatus = kSelectableStatuses[idx]; });
     requestUpdate();
     return;
   }
