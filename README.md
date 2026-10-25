@@ -13,6 +13,7 @@
 - [x] **Dashboard Menu**: Marked for Later, New Chapter Fics, WIPs List, Recents
 - [x] **AO3 story page QR code** from context menu
 - [x] **Series continous reading**: find books in the same AO3 series when at End of Book
+- [x] Ability to decorate **blank fic covers** with **customisable fandom logos**, automatically applied per-fandom
 - [x] **Auto index ao3 stories** in chunks
 - [x] **Track the status** of each fic directly from the File Browser (introduces 5 statuses, with a corresponding icon: Unread, Reading, Waiting for Chapter, New Chapter Available, Finished)
 - [x] **Pin your longfics** to the homescreen, so they aren't pushed off by your oneshots
@@ -20,12 +21,13 @@
 - [x] Support for **line breaks**
 
 What's Next in AvesO3:
-- [ ] Bookmark fics with notes
-- [ ] End of Book rework
-- [ ] AO3 Metadata on Homepage
+- [ ] Bookmarked fics menu
+- [ ] AO3 Library search function
+- [ ] Extra filters (if feasible)
+- [ ] Custom tags (if feasible)
 - [ ] Separate AO3 font and book font
 
-# v.1.3.0 Features
+# Ao3 Library Features
 **1. Automatic Sort and Filter**
 <img src="docs/images/AvesO3/sortFilter.jpg" width="300" align="left" style="margin-right: 30px; border: 1px solid black;"/>
 <br><br>Automatically Filter by:
