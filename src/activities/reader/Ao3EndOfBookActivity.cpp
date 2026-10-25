@@ -100,9 +100,12 @@ Ao3EndOfBookActivity::Ao3EndOfBookActivity(GfxRenderer& renderer, MappedInputMan
                                            std::string seriesName, int seriesPart,
                                            std::string ao3WorkId, std::string ao3UpdateDate,
                                            int spineCountBeforeDownload, bool hadAfterword,
-                                           int ao3LibraryReturnIndex)
+                                           int ao3LibraryReturnIndex,
+                                           std::string bookTitle, std::string bookAuthor)
     : UiListActivity("Ao3EndOfBook", renderer, mappedInput, false),
-      bookPath(std::move(bookPath)),
+            bookPath(std::move(bookPath)),
+      bookTitle(std::move(bookTitle)),
+      bookAuthor(std::move(bookAuthor)),
       isCompleted(isCompleted),
       seriesName(std::move(seriesName)),
       seriesPart(seriesPart),
@@ -136,7 +139,8 @@ void Ao3EndOfBookActivity::buildActiveRows() {
 }
 
 void Ao3EndOfBookActivity::loadBookInfo() {
-  // Metadata comes from the book's cache, so no caller needs to pass it in.
+  // The reader normally passes these in; only open the epub if it didn't.
+  if (!bookTitle.empty()) return;
   auto epub = std::make_unique<Epub>(bookPath, "/.crosspoint");
   if (epub->load(false, true)) {
     bookTitle = epub->getTitle();
@@ -145,6 +149,7 @@ void Ao3EndOfBookActivity::loadBookInfo() {
 }
 
 void Ao3EndOfBookActivity::onEnter() {
+  enterMs = millis();
   loadBookInfo();
   UiListActivity::onEnter();
   requestUpdate(true);
@@ -364,11 +369,12 @@ void Ao3EndOfBookActivity::stepSelection(int delta) {
 }
 
 void Ao3EndOfBookActivity::navigateButtons() {
-  buttonNavigator.onNext([this] { stepSelection(1); });
-  buttonNavigator.onPrevious([this] { stepSelection(-1); });
+  buttonNavigator.onNext([this] { if (millis() - enterMs > 300) stepSelection(1); });
+  buttonNavigator.onPrevious([this] { if (millis() - enterMs > 300) stepSelection(-1); });
 }
 
 bool Ao3EndOfBookActivity::handleButtons() {
+  if (millis() - enterMs < 300) return true;
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     activateIndex(nav.selected);
     return true;

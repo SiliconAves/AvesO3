@@ -480,10 +480,11 @@ void EpubReaderActivity::loop() {
 
       // 3. Launch the AO3 End of Book Activity. It will pause this loop automatically.
       startActivityForResult(
-          std::make_unique<Ao3EndOfBookActivity>(
+                    std::make_unique<Ao3EndOfBookActivity>(
               renderer, mappedInput, bookPath, epub->isAo3Completed(), 
               sName, sPart, epub->getAo3WorkId(), epub->getAo3UpdateDate(), 
-              spineCount, hadAfterword, ao3LibraryReturnIndex_
+              spineCount, hadAfterword, ao3LibraryReturnIndex_,
+              epub->getTitle(), epub->getAuthor()
           ),
           [this](const ActivityResult& result) {
               // The only way it returns here is if the user pressed Previous Page or Back

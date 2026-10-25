@@ -6,12 +6,13 @@
 
 class Ao3EndOfBookActivity final : public UiListActivity {
  public:
-  Ao3EndOfBookActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+    Ao3EndOfBookActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                        std::string bookPath, bool isCompleted,
                        std::string seriesName, int seriesPart,
                        std::string ao3WorkId, std::string ao3UpdateDate,
                        int spineCountBeforeDownload, bool hadAfterword,
-                       int ao3LibraryReturnIndex);
+                       int ao3LibraryReturnIndex,
+                       std::string bookTitle = "", std::string bookAuthor = "");
 
   void onEnter() override;
 
@@ -40,6 +41,7 @@ class Ao3EndOfBookActivity final : public UiListActivity {
   bool hadAfterword;
   int ao3LibraryReturnIndex;
   bool backHoldHandled = false;  // Back-hold already fired; ignore its release
+  unsigned long enterMs = 0;   // input is ignored briefly after entry (leftover page-turn input)
 
   enum ActionRow {
     ROW_GO_HOME = 0,
