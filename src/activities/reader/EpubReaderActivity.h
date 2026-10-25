@@ -53,6 +53,7 @@ class EpubReaderActivity final : public ReaderActivity {
 
   bool ao3SeriesInfoLoaded = false;
   bool ao3HasSeries = false;
+   bool isAo3Book = false;
   uint16_t ao3SeriesPart = 0;
   char ao3SeriesName[128] = {};
 

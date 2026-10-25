@@ -202,6 +202,7 @@ bool EpubReaderActivity::loadBook() {
   });
 
   epub->setupCacheDir();
+  isAo3Book = epub->hasAo3Info();
 
   HalFile f;
   if (Storage.openFileForRead("ERS", epub->getCachePath() + "/progress.bin", f)) {
@@ -1164,11 +1165,11 @@ bool EpubReaderActivity::skipPages(int amount) {
   return false;
 }
 
-bool EpubReaderActivity::isAtEndOfBook() const { 
-  // Mask AO3 books from the base class so the FreeRTOS render task doesn't 
+bool EpubReaderActivity::isAtEndOfBook() const {
+  // Mask AO3 books from the base class so the FreeRTOS render task doesn't
   // draw upstream's generic EOB list before our sandbox takes over.
-  if (epub && epub->hasAo3Info()) return false;
-  return epub && currentSpineIndex >= epub->getSpineItemsCount(); 
+  if (isAo3Book) return false;
+  return epub && currentSpineIndex >= epub->getSpineItemsCount();
 }
 
 void EpubReaderActivity::onReturnFromEndOfBook() {
