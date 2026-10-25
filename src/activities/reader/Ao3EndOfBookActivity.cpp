@@ -375,11 +375,7 @@ bool Ao3EndOfBookActivity::handleButtons() {
   }
 
   // Back: holding it fires the AO3 library / file browser jump as soon as the
-  // hold time is reached, without waiting for the release. A tap (released
-  // before that) returns to the reader.
-  // wasLongPressed() fires once per hold and marks that hold's release as
-  // suppressed in MappedInputManager, so the release can't leak into the screen
-  // we jump to.
+  // hold time is reached...
   if (mappedInput.wasLongPressed(MappedInputManager::Button::Back, BACK_LONG_PRESS_MS)) {
     backHoldHandled = true;
     returnToLibraryOrBrowser();
@@ -394,16 +390,10 @@ bool Ao3EndOfBookActivity::handleButtons() {
     return true;
   }
 
-  // Page-turn keys scroll the button list instead of flipping pages. Tilt is
-  // ignored so a tilt can't move the selection by accident.
-  auto [prevTrig, nextTrig, fromTilt] = ReaderUtils::detectPageTurn(mappedInput);
-  if (!fromTilt && (prevTrig || nextTrig)) {
-    stepSelection(nextTrig ? 1 : -1);
-    return true;
-  }
+  // REMOVED: The redundant ReaderUtils::detectPageTurn check here, 
+  // as buttonNavigator / UiListActivity already handles list movement.
 
-  // Touch is not handled here: the base loop routes taps to the hit areas
-  // registered in buildScreen(), so edge taps no longer flip pages.
+  // Touch is not handled here: the base loop routes taps to the hit areas...
   return false;
 }
 
