@@ -91,8 +91,8 @@ F + Black: Finished reading<br><br>
 
 **2. Update Chapters On-Device**
 <img src="docs/images/AvesO3/newEndOfBook.jpg" width="300" align="left" style="margin-right: 15px; border: 1px solid black;"/>
-<br><br>**New End of Book screen:** when the story is marked as in-progress, a new End of Book screen appears. While connected to wi-fi, pressing **Search** will start a story update check. If it's successfull, you can choose to download the updated story directly from AO3. <br><br>
-**Warning:** locked fics are currently unsupported.<br><br>
+<br><br>**New End of Book screen:** when the story is marked as in-progress, a new End of Book screen appears. While connected to wi-fi, pressing **Update** will start a story update check (Alternatively, click AO3 Page). If it's successfull, you can choose to download the updated story directly from AO3. <br><br>
+**Locked fics are supported through the Send to AvesO3 Extension: https://addons.mozilla.org/en-US/firefox/addon/send-to-aveso3/<br><br>
 **Your local file will be overwritten with the one you downloaded from AO3.**
 <br clear="left"/>
 
