@@ -5,12 +5,14 @@
 #include "./FileBrowserActivity.h"
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
+#include "components/OptionPopup.h"
 
 struct RecentBook;
 struct Rect;
 
 class HomeActivity final : public Activity {
   ButtonNavigator buttonNavigator;
+  OptionPopup optionPopup;  // Pin/Unpin popup (touch long-press on a cover)
   int selectorIndex = 0;
   bool recentsLoading = false;
   bool recentsLoaded = false;

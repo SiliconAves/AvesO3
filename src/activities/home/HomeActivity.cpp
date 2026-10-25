@@ -23,6 +23,12 @@
 #include "fontIds.h"
 #include "../../Ao3Librarian.h"
 
+namespace {
+// Distance from the bottom of the content area (above the button-hint band)
+// to the top of the touch-only page dots. Shared by render() and loop().
+constexpr int kPageDotsFromBottom = 38;
+}  // namespace
+
 int HomeActivity::getMenuItemCount() const {
   const auto& metrics = UITheme::getInstance().getMetrics();
   int menuItems = 0;
@@ -220,6 +226,9 @@ void HomeActivity::freeCoverBuffer() {
 }
 
 void HomeActivity::loop() {
+  // Pin/Unpin popup (touch long-press on a cover) swallows all input while open.
+  if (optionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
+
   const int menuCount = getMenuItemCount();
   const auto& metrics = UITheme::getInstance().getMetrics();
 
@@ -378,6 +387,32 @@ void HomeActivity::loop() {
     return;
   }
 
+  // Touch menu paging. Additive: the Back handler below is unchanged, so the
+  // physical buttons behave exactly as before. Swipe left -> page 2, swipe
+  // right -> page 1. Horizontal swipes are always consumed here so that a
+  // left-edge swipe (which the input manager folds into Button::Back) cannot
+  // fall through and pin a book or switch the page a second time.
+  auto switchPage = [this, &metrics](const int target) {
+    if (target == menuPage || (target == 1 && getPage1ItemCount() == 0)) return;
+    menuPage = target;
+    selectorIndex = (metrics.homeContinueReadingInMenu && !recentBooks.empty())
+                        ? 0
+                        : static_cast<int>(recentBooks.size());
+    requestUpdate();
+  };
+  if (swipe == MappedInputManager::SwipeDir::Left || swipe == MappedInputManager::SwipeDir::Right) {
+    switchPage(swipe == MappedInputManager::SwipeDir::Left ? 1 : 0);
+    return;
+  }
+  // Tapping the page dots toggles the page.
+  if (mappedInput.hasTouch() && getPage1ItemCount() > 0 &&
+      mappedInput.wasTapInRect(
+          0, renderer.getScreenHeight() - metrics.buttonHintsHeight - kPageDotsFromBottom - 14,
+          renderer.getScreenWidth(), 40)) {
+    switchPage(1 - menuPage);
+    return;
+  }
+
 if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     backPressSeen = true;
   }
@@ -423,6 +458,35 @@ if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
   const int coverColumnCount = std::max(1, metrics.homeRecentBooksCount);
   const int recentCount = std::min(static_cast<int>(recentBooks.size()), coverColumnCount);
   const int coverColumnWidth = (renderer.getScreenWidth() - 2 * metrics.contentSidePadding) / coverColumnCount;
+  // Long-press on a cover opens a Pin/Unpin popup (touch only). The live
+  // position is checked first because wasScreenLongPress() suppresses the whole
+  // contact as soon as it is consumed, wherever the finger is.
+  int lpX = 0;
+  int lpY = 0;
+  if (mappedInput.hasTouch() && !recentBooks.empty() && mappedInput.isScreenTouchHeld(lpX, lpY) &&
+      lpY >= metrics.homeTopPadding && lpY < metrics.homeTopPadding + metrics.homeCoverTileHeight &&
+      mappedInput.wasScreenLongPress(lpX, lpY)) {
+    int pressedBook = (lpX - metrics.contentSidePadding) / coverColumnWidth;
+    if (pressedBook < 0 || pressedBook >= recentCount) pressedBook = 0;
+    const RecentBook& book = recentBooks[pressedBook];
+    // Same limit guard as the Back-button pin toggle.
+    if (book.pinned || RECENT_BOOKS.getPinnedCount() < metrics.homeRecentBooksCount) {
+      const char* label = I18N.get(book.pinned ? StrId::STR_UNPIN : StrId::STR_PIN);
+      optionPopup.show("Pin/Unpin to Home", &label, 1, 0, [this, path = book.path](int) {
+        const int maxPinned = UITheme::getInstance().getMetrics().homeRecentBooksCount;
+        RECENT_BOOKS.togglePinned(path);
+        loadRecentBooks(maxPinned);
+        for (int i = 0; i < static_cast<int>(recentBooks.size()); ++i) {
+          if (recentBooks[i].path == path) { selectorIndex = i; break; }
+        }
+        freeCoverBuffer();
+        coverRendered = false;
+      });
+      requestUpdate();
+    }
+    return;
+  }
+
   int touchedBook = -1;
   const auto coverTouch = mappedInput.colTouch(touchedBook, metrics.contentSidePadding, coverColumnWidth, recentCount,
                                                metrics.homeTopPadding,
@@ -479,6 +543,9 @@ if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
 }
 
 void HomeActivity::render(RenderLock&&) {
+  // Pin/Unpin popup draws over the last frame without clearing it.
+  if (optionPopup.processRender(renderer, mappedInput)) return;
+
   const auto& metrics = UITheme::getInstance().getMetrics();
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
@@ -537,6 +604,22 @@ void HomeActivity::render(RenderLock&&) {
       metrics.homeContinueReadingInMenu ? selectorIndex : selectorIndex - static_cast<int>(recentBooks.size()),
       [&menuItems](int index) { return std::string(menuItems[index]); },
       [&menuIcons](int index) { return menuIcons[index]; });
+
+  // Page indicator (touch builds only): filled dot = the current menu page.
+  if (mappedInput.hasTouch() && getPage1ItemCount() > 0) {
+    constexpr int kDot = 12;
+    constexpr int kGap = 16;
+    const int dotsX = (pageWidth - (2 * kDot + kGap)) / 2;
+    const int dotsY = pageHeight - metrics.buttonHintsHeight - kPageDotsFromBottom;
+    for (int i = 0; i < 2; ++i) {
+      const int x = dotsX + i * (kDot + kGap);
+      if (i == menuPage) {
+        renderer.fillRoundedRect(x, dotsY, kDot, kDot, kDot / 2, Black);
+      } else {
+        renderer.drawRoundedRect(x, dotsY, kDot, kDot, 1, kDot / 2, true);
+      }
+    }
+  }
 
 const char* backLabel = "";
   if (selectorIndex < static_cast<int>(recentBooks.size())) {
