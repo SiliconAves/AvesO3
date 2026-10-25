@@ -76,6 +76,10 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
   std::vector<std::string> wrappedSummary[3];
   int  cachedPage  = -1;
   bool buttonsSetup = false;
+  // Geometry of the visible entries, recorded by renderLibrary() so the touch
+  // hit-test in loop() always matches what was drawn.
+  int  entrySlotPx_    = 0;
+  int  contentStartPx_ = 0;
 
   // Filter & Sort State
   SortFilterState activeState;

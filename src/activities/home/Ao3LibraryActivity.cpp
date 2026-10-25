@@ -23,6 +23,18 @@
 #include "Ao3MarkedForLaterStore.h"
 
 #include <FreeInkUIGfxRenderer.h>
+
+namespace {
+// Distance above the screen bottom for the bottom-right arrow when there is no
+// button-hint bar (touch builds report buttonHintsHeight == 0).
+constexpr int kBottomArrowRaise = 28;
+
+// Baseline the bottom arrow is positioned from: the hint-bar top when a bar
+// exists, otherwise raised so the arrow stays on screen.
+inline int bottomArrowBaseY(const int screenHeight, const int hintsHeight) {
+  return screenHeight - hintsHeight - (hintsHeight > 0 ? 0 : kBottomArrowRaise);
+}
+}  // namespace
 // ---------------------------------------------------------------------------
 //  onEnter
 // ---------------------------------------------------------------------------
@@ -354,7 +366,76 @@ void Ao3LibraryActivity::loop() {
       return;
     }
 
-    if (!viewEntries.empty() && mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    // --- Touch (additive; the button handling around it is untouched) ---
+    // touchOpen = tap on an entry's title+author band, touchHold = long-press on
+    // one. Both feed the existing Confirm / Confirm-hold path below, so opening
+    // the reader and the BookAction menu stay implemented in a single place.
+    bool touchOpen = false;
+    bool touchHold = false;
+    if (mappedInput.hasTouch()) {
+      const int sw = renderer.getScreenWidth();
+      const int hintsH = UITheme::getInstance().getMetrics().buttonHintsHeight;
+      const int arrowY = bottomArrowBaseY(renderer.getScreenHeight(), hintsH) + hintsH / 2;
+      int tx = 0;
+      int ty = 0;
+
+      // Page flip: swipe up = next page, swipe down = previous, wrapping at the ends.
+      const auto swipe = mappedInput.wasSwipe();
+      if ((swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down) &&
+          viewEntries.size() > 3) {
+        const int pages = (static_cast<int>(viewEntries.size()) + 2) / 3;
+        const int cur = static_cast<int>(selectorIndex) / 3;
+        const int next = (swipe == MappedInputManager::SwipeDir::Up) ? (cur + 1) % pages : (cur + pages - 1) % pages;
+        selectorIndex = static_cast<size_t>(next) * 3;
+        requestUpdate();
+        return;
+      }
+
+      // Title+author band of each visible entry (the dithered selection area), or -1.
+      // Horizontal span mirrors renderEntry: textX - 8 .. screenWidth - 15, where
+      // textX = 20 + 56 + 15; band height = selectionHeight (56) + 6.
+      auto entryAt = [&](const int x, const int y) -> int {
+        const int bandTop = contentStartPx_ - 3;
+        if (entrySlotPx_ <= 0 || x < 20 + 56 + 15 - 8 || x >= sw - 15 || y < bandTop) return -1;
+        const int row = (y - bandTop) / entrySlotPx_;
+        if (row > 2 || (y - bandTop) % entrySlotPx_ >= 56 + 6) return -1;
+        const int idx = (static_cast<int>(selectorIndex) / 3) * 3 + row;
+        return idx < static_cast<int>(viewEntries.size()) ? idx : -1;
+      };
+
+      if (mappedInput.wasScreenTapped(tx, ty)) {
+        // Tapping anywhere in the 48px Top Header band opens the filter panel
+        if (ty < 48) {
+          screenState = ScreenState::FILTER_PANEL;
+          pendingState = activeState;
+          overlayRowIndex = 0;
+          requestUpdate(true);
+          return;
+        }
+        
+        // Tapping anywhere in the bottom 56px band opens the manage panel
+        if (ty >= renderer.getScreenHeight() - 56) {
+          screenState = ScreenState::MANAGE_PANEL;
+          managePanelRowIndex = 0;
+          requestUpdate(true);
+          return;
+        }
+        
+        const int hit = entryAt(tx, ty);
+        if (hit >= 0) {
+          selectorIndex = static_cast<size_t>(hit);
+          touchOpen = true;
+        }
+      } else if (mappedInput.isScreenTouchHeld(tx, ty) && entryAt(tx, ty) >= 0 &&
+                 mappedInput.wasScreenLongPress(tx, ty)) {
+        // Checked against the live position first: wasScreenLongPress() suppresses
+        // the whole contact as soon as it is consumed, wherever the finger is.
+        selectorIndex = static_cast<size_t>(entryAt(tx, ty));
+        touchHold = true;
+      }
+    }
+
+    if (!viewEntries.empty() && (mappedInput.wasReleased(MappedInputManager::Button::Confirm) || touchOpen || touchHold)) {
       // Ensure the page cache is fresh for the current selector position
       const int selPage = static_cast<int>(selectorIndex) / 3;
       if (selPage != cachedPage) loadPageCache(selPage);
@@ -366,7 +447,7 @@ void Ao3LibraryActivity::loop() {
           pageCache[slot].title[0] ? pageCache[slot].title : viewEntries[selectorIndex].title);
       const uint32_t hash = viewEntries[selectorIndex].cacheHash;
 
-      if (mappedInput.getHeldTime() >= 1000 && !epubPath.empty()) {
+      if ((touchHold || (!touchOpen && mappedInput.getHeldTime() >= 1000)) && !epubPath.empty()) {
         // Long-press → BookAction menu
         auto handler = [this, epubPath, hash](const ActivityResult& res) {
           if (const auto* actionRes = std::get_if<BookActionResult>(&res.data)) {
@@ -456,7 +537,39 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
       return;
     }
 
-if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    bool executeFilterAction = mappedInput.wasReleased(MappedInputManager::Button::Confirm);
+    int tx = 0, ty = 0;
+    
+    if (mappedInput.wasScreenTapped(tx, ty)) {
+      // Tap outside (above or below the 320px tall panel starting at Y=48): close panel
+      if (ty < 48 || ty > 368) {
+        screenState = ScreenState::LIBRARY;
+        requestUpdate(true);
+        return;
+      } else {
+        // Map tap Y-coordinates to the 5 rows based on renderFilterOverlay() geometry
+        if (ty >= 95 && ty < 145) {
+          overlayRowIndex = 0;
+          executeFilterAction = true;
+        } else if (ty >= 145 && ty < 195) {
+          overlayRowIndex = 1;
+          executeFilterAction = true; // The execution block safely ignores this if disabled
+        } else if (ty >= 195 && ty < 240) {
+          overlayRowIndex = 2;
+          executeFilterAction = true;
+        } else if (ty >= 240 && ty < 285) {
+          overlayRowIndex = 3;
+          executeFilterAction = true;
+        } else if (ty >= 285 && ty <= 350) {
+          overlayRowIndex = 4;
+          // Force a synchronous render pass so the user sees the button invert
+          render(RenderLock(*this));
+          executeFilterAction = true;
+        }
+      }
+    }
+
+    if (executeFilterAction) {
       if (overlayRowIndex == 0) {
         // Fandom row: cycle if <= 4 fandoms, open full picker if > 4
         pickerItems.clear();
@@ -667,7 +780,32 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       return;
     }
 
-    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    bool executeManagePanel = mappedInput.wasReleased(MappedInputManager::Button::Confirm);
+    
+    int tx = 0, ty = 0;
+    if (mappedInput.wasScreenTapped(tx, ty)) {
+      const auto& metrics = UITheme::getInstance().getMetrics();
+      const int panelH = 216;
+      const int panelY = renderer.getScreenHeight() - panelH - metrics.buttonHintsHeight;
+      
+      if (ty < panelY) {
+        // Tap outside: close panel
+        screenState = ScreenState::LIBRARY;
+        requestUpdate(true);
+        return;
+      } else {
+        const int firstRowY = panelY + 62;
+        if (ty >= firstRowY && ty <= firstRowY + 52) {
+          managePanelRowIndex = 0;
+          executeManagePanel = true;
+        } else if (ty >= firstRowY + 60 && ty <= firstRowY + 60 + 52) {
+          managePanelRowIndex = 1;
+          executeManagePanel = true;
+        }
+      }
+    }
+
+    if (executeManagePanel) {
       if (managePanelRowIndex == 0) {
         // "Index New Books" — check if ao3 folder is configured first
         const char* settingsPath = "/.crosspoint/ao3_settings.json";
@@ -821,6 +959,8 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
     const int contentEnd   = renderer.getScreenHeight() - metrics.buttonHintsHeight;
     const int entrySlot    = (contentEnd - (42 + topPad)) / 3;
     const int contentStart = 48 + topPad;
+    entrySlotPx_    = entrySlot;     // recorded for touch hit-testing in loop()
+    contentStartPx_ = contentStart;
 
     const int currentPage = static_cast<int>(selectorIndex) / 3;
     if (currentPage != cachedPage) {
@@ -861,7 +1001,7 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
 
       const auto& metrics = UITheme::getInstance().getMetrics();
       const int tx = renderer.getScreenWidth() - 26;
-      const int hintsY = renderer.getScreenHeight() - metrics.buttonHintsHeight;
+      const int hintsY = bottomArrowBaseY(renderer.getScreenHeight(), metrics.buttonHintsHeight);
       const int ty = hintsY + metrics.buttonHintsHeight / 2;
 
       // ▲ pointing up
@@ -926,7 +1066,7 @@ void Ao3LibraryActivity::renderManagePanel() {
   // Manage panel triangle indicator — in button hints bar, same X as header triangle
   {
     const int tx = renderer.getScreenWidth() - 26;
-    const int hintsY = renderer.getScreenHeight() - metrics.buttonHintsHeight;
+    const int hintsY = bottomArrowBaseY(renderer.getScreenHeight(), metrics.buttonHintsHeight);
     const int ty = hintsY + metrics.buttonHintsHeight / 2;
     if (screenState == ScreenState::MANAGE_PANEL) {
 
@@ -1046,10 +1186,6 @@ void Ao3LibraryActivity::renderFilterOverlay() {
     renderer.drawCenteredText(UI_12_FONT_ID, btnY + 2, "Confirm", true, EpdFontFamily::BOLD);
   }
 }
-
-// ---------------------------------------------------------------------------
-//  renderPicker — draws full screen pickers
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 //  renderPicker — draws full screen pickers
