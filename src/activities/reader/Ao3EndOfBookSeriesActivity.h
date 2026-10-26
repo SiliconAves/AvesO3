@@ -37,6 +37,9 @@ class Ao3EndOfBookSeriesActivity final : public Activity {
   BookStatus               pageCacheStatus[3] = {BookStatus::START, BookStatus::START, BookStatus::START};
   std::vector<std::string> wrappedSummary[3];
   int cachedPage = -1;
+  // Geometry of the visible entries, recorded by render() for touch hit-testing
+  int entrySlotPx_ = 0;
+  int contentStartPx_ = 0;
 
   ButtonNavigator buttonNavigator;
 

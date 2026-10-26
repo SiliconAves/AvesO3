@@ -155,8 +155,47 @@ void Ao3EndOfBookSeriesActivity::loop() {
     return;
   }
 
-  // Confirm → open the selected book
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+  // --- Touch and Confirm Handling ---
+  bool touchOpen = false;
+  
+  if (mappedInput.hasTouch()) {
+    const int sw = renderer.getScreenWidth();
+    int tx = 0;
+    int ty = 0;
+
+    // Page flip: swipe up = next page, swipe down = previous, wrapping at the ends.
+    const auto swipe = mappedInput.wasSwipe();
+    if ((swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down) &&
+        viewEntries.size() > 3) {
+      const int pages = (static_cast<int>(viewEntries.size()) + 2) / 3;
+      const int cur = static_cast<int>(selectorIndex) / 3;
+      const int next = (swipe == MappedInputManager::SwipeDir::Up) ? (cur + 1) % pages : (cur + pages - 1) % pages;
+      selectorIndex = static_cast<size_t>(next) * 3;
+      requestUpdate();
+      return;
+    }
+
+    // Title+author band of each visible entry (the dithered selection area), or -1.
+    auto entryAt = [&](const int x, const int y) -> int {
+      const int bandTop = contentStartPx_ - 3;
+      if (entrySlotPx_ <= 0 || x < 20 + 56 + 15 - 8 || x >= sw - 15 || y < bandTop) return -1;
+      const int row = (y - bandTop) / entrySlotPx_;
+      if (row > 2 || (y - bandTop) % entrySlotPx_ >= 56 + 6) return -1;
+      const int idx = (static_cast<int>(selectorIndex) / 3) * 3 + row;
+      return idx < static_cast<int>(viewEntries.size()) ? idx : -1;
+    };
+
+    if (mappedInput.wasScreenTapped(tx, ty)) {
+      const int hit = entryAt(tx, ty);
+      if (hit >= 0) {
+        selectorIndex = static_cast<size_t>(hit);
+        touchOpen = true;
+      }
+    }
+  }
+
+  // Confirm or Tap → open the selected book
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) || touchOpen) {
     if (!viewEntries.empty()) {
       const int selPage = static_cast<int>(selectorIndex) / 3;
       if (selPage != cachedPage) loadPageCache(selPage);
@@ -235,6 +274,10 @@ void Ao3EndOfBookSeriesActivity::render(RenderLock&& lock) {
     const int contentEnd   = renderer.getScreenHeight() - metrics.buttonHintsHeight;
     const int entrySlot    = (contentEnd - (42 + topPad)) / 3;
     const int contentStart = 48 + topPad;
+
+    // Save geometry for touch hit-testing
+    entrySlotPx_    = entrySlot;
+    contentStartPx_ = contentStart;
 
     const int currentPage = static_cast<int>(selectorIndex) / 3;
     if (currentPage != cachedPage) {
