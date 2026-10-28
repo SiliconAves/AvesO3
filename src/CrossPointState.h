@@ -29,6 +29,12 @@ class CrossPointState : public PersistableStore<CrossPointState> {
   // -1 means the reader was not opened from the AO3 library.
   int ao3LibraryReturnIndex = -1;
 
+  // Transient (never persisted to disk). Set by RecentBooksActivity (Dashboard) just before
+  // goToReader(); consumed and cleared by EpubReaderActivity::onEnter().
+  // -1 means the reader was not opened from the Dashboard.
+  int dashboardReturnTab = -1;
+  int dashboardReturnIndex = -1;
+
   static const char* getFilePath() { return "/.crosspoint/state.json"; }
   void toJson(JsonDocument& doc) const;
   bool fromJson(JsonVariantConst doc);

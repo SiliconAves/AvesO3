@@ -20,6 +20,9 @@ class RecentBooksActivity final : public UiTabListActivity {
   static constexpr int TAB_RECENT_BOOKS     = 3;
 
   int selectedTabIndex = TAB_RECENT_BOOKS;
+  int initialTab_ = -1;
+  int initialIndex_ = -1;
+  std::string initialPath_;
   bool isLoading = false;
 
   std::vector<Ao3MarkedForLaterEntry> markedForLater;
@@ -56,7 +59,8 @@ class RecentBooksActivity final : public UiTabListActivity {
   freeink::ui::BitmapRef getStatusIcon(BookStatus status, const std::string& path);
 
  public:
-  explicit RecentBooksActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
+  explicit RecentBooksActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                               int initialTab = -1, int initialIndex = -1, std::string initialPath = {});
   void onEnter() override;
   void onExit() override;
   void loop() override; 

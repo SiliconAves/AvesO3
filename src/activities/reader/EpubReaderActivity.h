@@ -50,6 +50,8 @@ class EpubReaderActivity final : public ReaderActivity {
   bool ao3FinishedRecordWritten = false;
 
   int ao3LibraryReturnIndex_ = -1;
+  int dashboardReturnTab_ = -1;
+  int dashboardReturnIndex_ = -1;
 
   bool ao3SeriesInfoLoaded = false;
   bool ao3HasSeries = false;

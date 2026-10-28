@@ -101,7 +101,8 @@ Ao3EndOfBookActivity::Ao3EndOfBookActivity(GfxRenderer& renderer, MappedInputMan
                                            std::string ao3WorkId, std::string ao3UpdateDate,
                                            int spineCountBeforeDownload, bool hadAfterword,
                                            int ao3LibraryReturnIndex,
-                                           std::string bookTitle, std::string bookAuthor)
+                                           std::string bookTitle, std::string bookAuthor,
+                                           int dashboardReturnTab, int dashboardReturnIndex)
     : UiListActivity("Ao3EndOfBook", renderer, mappedInput, false),
             bookPath(std::move(bookPath)),
       bookTitle(std::move(bookTitle)),
@@ -113,7 +114,9 @@ Ao3EndOfBookActivity::Ao3EndOfBookActivity(GfxRenderer& renderer, MappedInputMan
       ao3UpdateDate(std::move(ao3UpdateDate)),
       spineCountBeforeDownload(spineCountBeforeDownload),
       hadAfterword(hadAfterword),
-      ao3LibraryReturnIndex(ao3LibraryReturnIndex) {
+      ao3LibraryReturnIndex(ao3LibraryReturnIndex),
+      dashboardReturnTab(dashboardReturnTab),
+      dashboardReturnIndex(dashboardReturnIndex) {
           
   // Slots: TITLE = 12pt, BODY = 10pt, SMALL = 8pt. Weight is a TextStyle flag.
   uiTarget.setFont(fui::GfxRendererTarget::FONT_TITLE, UI_12_FONT_ID);
@@ -506,7 +509,9 @@ void Ao3EndOfBookActivity::launchSeriesActivity() {
 }
 
 void Ao3EndOfBookActivity::returnToLibraryOrBrowser() {
-  if (ao3LibraryReturnIndex >= 0) {
+  if (dashboardReturnTab >= 0) {
+    activityManager.goToRecentBooks(dashboardReturnTab, dashboardReturnIndex, bookPath);
+  } else if (ao3LibraryReturnIndex >= 0) {
     activityManager.goToAo3Library(static_cast<size_t>(ao3LibraryReturnIndex));
   } else {
     activityManager.goToFileBrowser(bookPath);

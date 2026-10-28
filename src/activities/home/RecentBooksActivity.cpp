@@ -14,6 +14,7 @@
 #include "../../Ao3LibraryMetadata.h"
 #include "BookActionActivity.h"
 
+#include "CrossPointState.h"
 #include "MappedInputManager.h"
 #include "RecentBooksStore.h"
 #include "activities/util/ConfirmationActivity.h"
@@ -39,8 +40,12 @@ constexpr const char* EMPTY_MESSAGES[4] = {
 };
 }  // namespace
 
-RecentBooksActivity::RecentBooksActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-    : UiTabListActivity("RecentBooks", renderer, mappedInput) {
+RecentBooksActivity::RecentBooksActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                                         int initialTab, int initialIndex, std::string initialPath)
+    : UiTabListActivity("RecentBooks", renderer, mappedInput),
+      initialTab_(initialTab),
+      initialIndex_(initialIndex),
+      initialPath_(std::move(initialPath)) {
   // Map fonts precisely for 10pt Titles and 8pt Authors
   uiTarget.setFont(fui::GfxRendererTarget::FONT_BODY, UI_10_FONT_ID);
 }
@@ -141,7 +146,8 @@ void RecentBooksActivity::onEnter() {
   if (RECENT_BOOKS.pruneMissing()) RECENT_BOOKS.saveToFile();
   recentBooks = RECENT_BOOKS.getBooks();
 
-  if (!markedForLater.empty()) selectedTabIndex = TAB_MARKED_FOR_LATER;
+  if (initialTab_ >= 0 && initialTab_ < TAB_COUNT) selectedTabIndex = initialTab_;
+  else if (!markedForLater.empty()) selectedTabIndex = TAB_MARKED_FOR_LATER;
   else if (!newChapters.empty()) selectedTabIndex = TAB_NEW_CHAPTERS;
   else if (!wipsEntries.empty()) selectedTabIndex = TAB_WIPS;
   else selectedTabIndex = TAB_RECENT_BOOKS;
@@ -187,6 +193,37 @@ void RecentBooksActivity::loop() {
 
     isLoading = false;
     rebuildRowItems();
+
+    if (!rowItems.empty() && (initialIndex_ >= 0 || !initialPath_.empty())) {
+      int targetIndex = initialIndex_;
+      if (!initialPath_.empty()) {
+        if (selectedTabIndex == TAB_MARKED_FOR_LATER) {
+          for (size_t i = 0; i < markedForLater.size(); ++i) {
+            if (markedForLater[i].path == initialPath_) { targetIndex = static_cast<int>(i); break; }
+          }
+        } else if (selectedTabIndex == TAB_NEW_CHAPTERS) {
+          for (size_t i = 0; i < newChapters.size(); ++i) {
+            if (newChapters[i].path == initialPath_) { targetIndex = static_cast<int>(i); break; }
+          }
+        } else if (selectedTabIndex == TAB_WIPS) {
+          for (size_t i = 0; i < wipsEntries.size(); ++i) {
+            if (wipsEntries[i].path == initialPath_) { targetIndex = static_cast<int>(i); break; }
+          }
+        } else if (selectedTabIndex == TAB_RECENT_BOOKS) {
+          for (size_t i = 0; i < recentBooks.size(); ++i) {
+            if (recentBooks[i].path == initialPath_) { targetIndex = static_cast<int>(i); break; }
+          }
+        }
+      }
+      if (targetIndex >= 0) {
+        targetIndex = std::min(targetIndex, static_cast<int>(rowItems.size()) - 1);
+        activeNav().selected = targetIndex + 1;
+        activeNav().followOnBuild = true;
+      }
+      initialIndex_ = -1;
+      initialPath_.clear();
+    }
+
     requestUpdate(true);
     return;
   }
@@ -228,7 +265,12 @@ void RecentBooksActivity::activateIndex(int index) {
   else if (selectedTabIndex == TAB_WIPS) path = wipsEntries[index].path;
   else if (selectedTabIndex == TAB_RECENT_BOOKS) path = recentBooks[index].path;
   
-  if (!path.empty()) onSelectBook(path);
+  if (!path.empty()) {
+    APP_STATE.ao3LibraryReturnIndex = -1;
+    APP_STATE.dashboardReturnTab = selectedTabIndex;
+    APP_STATE.dashboardReturnIndex = index;
+    onSelectBook(path);
+  }
 }
 
 void RecentBooksActivity::onRowLongPress(int index) {

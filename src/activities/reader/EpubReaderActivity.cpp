@@ -168,10 +168,14 @@ EpubReaderActivity::~EpubReaderActivity() {
 }
 
 bool EpubReaderActivity::loadBook() {
-  // Consume the AO3 library return context. Must happen before any early return
-  // so APP_STATE.ao3LibraryReturnIndex is always cleared on entry.
+  // Consume the AO3 library and dashboard return context. Must happen before any early return
+  // so APP_STATE fields are always cleared on entry.
   ao3LibraryReturnIndex_ = APP_STATE.ao3LibraryReturnIndex;
   APP_STATE.ao3LibraryReturnIndex = -1;
+  dashboardReturnTab_ = APP_STATE.dashboardReturnTab;
+  dashboardReturnIndex_ = APP_STATE.dashboardReturnIndex;
+  APP_STATE.dashboardReturnTab = -1;
+  APP_STATE.dashboardReturnIndex = -1;
   auto loadedEpub = makeUniqueNoThrow<Epub>(bookPath, "/.crosspoint");
   if (!loadedEpub) {
     LOG_ERR("ERS", "Failed to allocate EPUB object");
@@ -484,7 +488,8 @@ void EpubReaderActivity::loop() {
               renderer, mappedInput, bookPath, epub->isAo3Completed(), 
               sName, sPart, epub->getAo3WorkId(), epub->getAo3UpdateDate(), 
               spineCount, hadAfterword, ao3LibraryReturnIndex_,
-              epub->getTitle(), epub->getAuthor()
+              epub->getTitle(), epub->getAuthor(),
+              dashboardReturnTab_, dashboardReturnIndex_
           ),
           [this](const ActivityResult& result) {
               // The only way it returns here is if the user pressed Previous Page or Back
@@ -2617,7 +2622,9 @@ CrossPointPosition EpubReaderActivity::getCurrentPosition() const {
 }
 
 void EpubReaderActivity::returnToLibraryOrBrowser() {
-  if (ao3LibraryReturnIndex_ >= 0) {
+  if (dashboardReturnTab_ >= 0) {
+    activityManager.goToRecentBooks(dashboardReturnTab_, dashboardReturnIndex_, bookPath);
+  } else if (ao3LibraryReturnIndex_ >= 0) {
     activityManager.goToAo3Library(static_cast<size_t>(ao3LibraryReturnIndex_));
   } else {
     activityManager.goToFileBrowser(bookPath);

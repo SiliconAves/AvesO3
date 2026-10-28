@@ -488,6 +488,8 @@ void Ao3LibraryActivity::loop() {
             handler);
       } else if (!epubPath.empty()) {
         APP_STATE.ao3LibraryReturnIndex = static_cast<int>(selectorIndex);
+        APP_STATE.dashboardReturnTab = -1;
+        APP_STATE.dashboardReturnIndex = -1;
         activityManager.goToReader(epubPath);
       }
       return;

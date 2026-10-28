@@ -85,7 +85,7 @@ class ActivityManager {
   void goToUsbDrive();
   void goToSettings();
   void goToFileBrowser(std::string path = {});
-  void goToRecentBooks();
+  void goToRecentBooks(int initialTab = -1, int initialIndex = -1, std::string initialPath = {});
   void goToBrowser();
   void goToReader(std::string path, bool allowFastInitialRefresh = false);
   void goToAo3Library(size_t selectorIndex = 0);
