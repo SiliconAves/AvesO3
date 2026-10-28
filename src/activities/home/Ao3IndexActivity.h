@@ -63,6 +63,8 @@ class Ao3IndexActivity final : public Activity, private UiAppHost {
   size_t failureCount = 0;
   size_t unindexedCount = 0;
   std::vector<std::string> failedBooks;
+  std::vector<uint32_t> failedHashes;  // exclusion only, uncapped
+  uint32_t gateBlockKb_ = 0;           // largest block (KB) when the gate tripped
   std::string currentBookTitle;
 
   int batchSize = 10;
