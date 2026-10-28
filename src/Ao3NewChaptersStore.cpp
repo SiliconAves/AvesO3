@@ -10,7 +10,6 @@
 
 namespace {
 constexpr char NEW_CHAPTERS_FILE[] = "/.crosspoint/new_chapters.json";
-constexpr int  MAX_NEW_CHAPTERS    = 10;
 }  // namespace
 
 Ao3NewChaptersStore Ao3NewChaptersStore::instance;
@@ -29,12 +28,6 @@ void Ao3NewChaptersStore::addBook(const std::string& path,
     it->author = author;
     std::rotate(entries.begin(), it, it + 1);
     saveToFile();
-    return;
-  }
-
-  // List full → do not add.
-  if (static_cast<int>(entries.size()) >= MAX_NEW_CHAPTERS) {
-    LOG_DBG("NCS", "New Chapters list full (%d); not adding: %s", MAX_NEW_CHAPTERS, path.c_str());
     return;
   }
 
@@ -105,7 +98,6 @@ bool Ao3NewChaptersStore::loadFromFile() {
   entries.clear();
   JsonArray arr = doc["books"].as<JsonArray>();
   for (JsonObject obj : arr) {
-    if (static_cast<int>(entries.size()) >= MAX_NEW_CHAPTERS) break;
     Ao3NewChaptersEntry e;
     e.path   = obj["path"]   | std::string("");
     e.title  = obj["title"]  | std::string("");
