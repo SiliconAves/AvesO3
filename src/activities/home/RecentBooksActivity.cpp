@@ -129,6 +129,7 @@ void RecentBooksActivity::rebuildRowItems() {
 }
 
 void RecentBooksActivity::onEnter() {
+  skipNextBackRelease = mappedInput.isPressed(MappedInputManager::Button::Back);
   UiTabListActivity::onEnter();
 
   MARKED_FOR_LATER_STORE.loadFromFile();
@@ -287,6 +288,22 @@ void RecentBooksActivity::onRowLongPress(int index) {
 }
 
 bool RecentBooksActivity::handleButtons() {
+
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    if (skipNextBackRelease) {
+      skipNextBackRelease = false;
+      return true; // Consume the event
+    }
+
+    if (ringPos() > 0) {
+      moveRingTo(0); 
+      requestUpdate(true);
+    } else {
+      onGoHome(); 
+    }
+    return true;
+  }
+
   if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, 1000)) {
     if (ringPos() > 0) {
       onRowLongPress(ringPos() - 1); 

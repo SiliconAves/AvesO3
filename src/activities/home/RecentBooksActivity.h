@@ -24,6 +24,7 @@ class RecentBooksActivity final : public UiTabListActivity {
   int initialIndex_ = -1;
   std::string initialPath_;
   bool isLoading = false;
+  bool skipNextBackRelease = false;
 
   std::vector<Ao3MarkedForLaterEntry> markedForLater;
   std::vector<Ao3NewChaptersEntry> newChapters;
