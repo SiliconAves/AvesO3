@@ -59,4 +59,6 @@ class BookActionActivity final : public UiListActivity {
   void saveStatusIfModified();
   void openStatusPopup();
   int  logicalRow(int visualIndex) const;
+  bool isInSeries = false;
+  std::string bookSeriesName;
 };

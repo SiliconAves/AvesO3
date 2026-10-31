@@ -15,6 +15,8 @@
 #include "Ao3NewChaptersStore.h"
 #include "Ao3WipsStore.h"
 #include "Ao3MarkedForLaterStore.h"
+#include "Ao3LibraryMetadata.h"
+#include "../reader/Ao3EndOfBookSeriesActivity.h"
 
 #include "fontIds.h"
 
@@ -45,6 +47,7 @@ BookActionActivity::BookActionActivity(GfxRenderer& renderer, MappedInputManager
 //   3 = Delete                  (FULL only)
 //   5 = Remove from List        (DASHBOARD only)
 //   6 = Show AO3 Page QR        (AO3 only)
+//   7 = Open AO3 Series         (AO3 only, if in series)
 // ---------------------------------------------------------------------------
 
 int BookActionActivity::logicalRow(int visual) const {
@@ -53,8 +56,12 @@ int BookActionActivity::logicalRow(int visual) const {
     if (visual == idx) return 0;  // Status cycle
     idx++;
     if (hasAo3LibraryInfo) {
-      if (visual == idx) return 6;  // Show AO3 Page QR (below Status cycle)
+      if (visual == idx) return 6;  // Show AO3 Page QR
       idx++;
+      if (isInSeries) {
+        if (visual == idx) return 7; // Open AO3 Series
+        idx++;
+      }
     }
     if (visual == idx) return 5;  // Remove from List
     return -1;
@@ -65,6 +72,7 @@ int BookActionActivity::logicalRow(int visual) const {
   if (isEpub || isXtc)   { if (visual == idx) return 0; idx++; } // Status cycle
   if (hasAo3LibraryInfo) { if (visual == idx) return 1; idx++; } // Mark for Later
   if (hasAo3LibraryInfo) { if (visual == idx) return 6; idx++; } // Show AO3 Page QR
+  if (hasAo3LibraryInfo && isInSeries) { if (visual == idx) return 7; idx++; } // Open AO3 Series
   if (isEpub && !isAlreadyArchived) { if (visual == idx) return 2; idx++; } // Index Book
   if (hasAo3LibraryInfo) { if (visual == idx) return 3; idx++; } // Move to Read Folder / Restore
   if (visual == idx)     return 4;                               // Delete
@@ -75,6 +83,7 @@ int BookActionActivity::listCount() const {
   if (mode == BookActionMode::DASHBOARD) {
     int n = 2; // Status cycle + Remove from List
     if (hasAo3LibraryInfo) n++; // Show AO3 Page QR
+    if (hasAo3LibraryInfo && isInSeries) n++; // Open AO3 Series
     return n;
   }
 
@@ -82,6 +91,7 @@ int BookActionActivity::listCount() const {
   if (isEpub || isXtc)      n++;  // Status
   if (hasAo3LibraryInfo)    n++;  // Mark for Later
   if (hasAo3LibraryInfo)    n++;  // Show AO3 Page QR
+  if (hasAo3LibraryInfo && isInSeries) n++; // Open AO3 Series
   if (isEpub && !isAlreadyArchived) n++;  // Index Book
   if (hasAo3LibraryInfo)    n++;  // Move to Read Folder / Restore
   return n;
@@ -105,6 +115,19 @@ void BookActionActivity::onEnter() {
   }
 
   hasAo3LibraryInfo = Storage.exists((cachePath + "/ao3_library_info").c_str());
+  if (hasAo3LibraryInfo) {
+    HalFile infoFile;
+    if (Storage.openFileForRead("BROWSER", cachePath + "/ao3_library_info", infoFile)) {
+      Ao3LibraryMetadata meta;
+      if (infoFile.read((uint8_t*)&meta, sizeof(meta)) == sizeof(meta)) {
+        if (meta.seriesName[0] != '\0') {
+          isInSeries = true;
+          bookSeriesName = meta.seriesName;
+        }
+      }
+      infoFile.close();
+    }
+  }
   isAlreadyArchived = Ao3ArchiveHelper::isInReadFolder(filePath);
   isEpub = FsHelpers::hasEpubExtension(filePath);
   isXtc  = FsHelpers::hasXtcExtension(filePath);
@@ -160,6 +183,7 @@ void BookActionActivity::buildScreen(UiScreen& uiScreen) {
       case 4: rowTitles[i] = tr(STR_DELETE); break;
       case 5: rowTitles[i] = "Remove from List"; break;
       case 6: rowTitles[i] = "Show AO3 Page QR"; break;
+      case 7: rowTitles[i] = "Show Whole Series"; break;
     }
 
     if (logicalRow(i) == 1) {
@@ -428,6 +452,25 @@ void BookActionActivity::activateIndex(int index) {
     case 6: {
       startActivityForResult(
           std::make_unique<Ao3PageQrActivity>(renderer, mappedInput, filePath),
+          [this](const ActivityResult&) { requestUpdate(true); });
+      break;
+    }
+
+    case 7: {
+      const uint32_t originHash = static_cast<uint32_t>(std::hash<std::string>{}(filePath));
+      
+      char truncatedName[32];
+      strncpy(truncatedName, bookSeriesName.c_str(), 31);
+      truncatedName[31] = '\0';
+      
+      startActivityForResult(
+          std::make_unique<Ao3EndOfBookSeriesActivity>(
+              renderer, mappedInput,
+              bookSeriesName,
+              fnv1a(truncatedName), // using global fnv1a
+              originHash,
+              filePath,
+              SeriesReturn::PopToCaller),
           [this](const ActivityResult&) { requestUpdate(true); });
       break;
     }

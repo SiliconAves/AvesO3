@@ -136,11 +136,25 @@ void Ao3EndOfBookSeriesActivity::loadPageCache(int page) {
   }
 }
 
+void Ao3EndOfBookSeriesActivity::goBack() {
+  if (returnMode_ == SeriesReturn::PopToCaller) {
+    finish();
+  } else {
+    activityManager.goToReader(originEpubPath_);
+  }
+}
+
 // ---------------------------------------------------------------------------
 //  loop
 // ---------------------------------------------------------------------------
 
 void Ao3EndOfBookSeriesActivity::loop() {
+  // Guard against slow edge swipe being interpreted as a long-press Back
+  if (mappedInput.wasBackGesture()) {
+    goBack();
+    return;
+  }
+
   // Long press Back → go home
   if (mappedInput.isPressed(MappedInputManager::Button::Back) &&
       mappedInput.getHeldTime() >= ReaderUtils::GO_HOME_MS) {
@@ -148,10 +162,10 @@ void Ao3EndOfBookSeriesActivity::loop() {
     return;
   }
 
-  // Short press Back → reopen origin book (lands back on its EOB screen)
+  // Short press Back
   if (mappedInput.wasReleased(MappedInputManager::Button::Back) &&
       mappedInput.getHeldTime() < ReaderUtils::GO_HOME_MS) {
-    activityManager.goToReader(originEpubPath_);
+    goBack();
     return;
   }
 

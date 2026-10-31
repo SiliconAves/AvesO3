@@ -9,22 +9,31 @@
 #include "../../Ao3ViewEntry.h"
 #include "../../util/ButtonNavigator.h"
 
+enum class SeriesReturn : uint8_t {
+  ReopenBook,
+  PopToCaller
+};
+
 class Ao3EndOfBookSeriesActivity final : public Activity {
  public:
   Ao3EndOfBookSeriesActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                               std::string seriesName, uint32_t seriesHash,
-                              uint32_t originCacheHash, std::string originEpubPath)
+                              uint32_t originCacheHash, std::string originEpubPath,
+                              SeriesReturn returnMode = SeriesReturn::ReopenBook)
       : Activity("Ao3EndOfBookSeries", renderer, mappedInput),
         seriesName_(std::move(seriesName)),
         seriesHash_(seriesHash),
         originCacheHash_(originCacheHash),
-        originEpubPath_(std::move(originEpubPath)) {}
+        originEpubPath_(std::move(originEpubPath)),
+        returnMode_(returnMode) {}
 
   void onEnter() override;
   void loop() override;
   void render(RenderLock&&) override;
 
  private:
+  SeriesReturn returnMode_;
+  void goBack();
   std::string seriesName_;
   uint32_t    seriesHash_;
   uint32_t    originCacheHash_;
