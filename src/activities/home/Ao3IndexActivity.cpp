@@ -135,9 +135,8 @@ void Ao3IndexActivity::buildScreen(UiScreen& screen) {
   int count = 0;
 
   if (state == State::ERROR) {
-    footerActions[count++] = {"Back", ACTION_BACK};
-    if (errorMessage == "Not enough memory. Please restart the device.") {
-      footerActions[count++] = {"Reboot", ACTION_CONFIRM};
+    if (errorMessage != "Not enough memory. Please restart the device.") {
+      footerActions[count++] = {"Back", ACTION_BACK};
     }
   } else if (state == State::SINGLE_COMPLETE || state == State::DIR_FAILED_LIST || state == State::DIR_COMPLETE) {
     footerActions[count++] = {"Done", ACTION_CONFIRM};
@@ -566,7 +565,6 @@ void Ao3IndexActivity::tickDirIndexing() {
   // Move the path out and immediately free its heap buffer.
   std::string filePath = std::move(pendingBooks[currentBookIndex]);
   pendingBooks[currentBookIndex].shrink_to_fit();
-  Epub epub(filePath, "/.crosspoint");
 LOG_INF("AO3I", "pre  #%u maxAlloc=%u free=%u", (unsigned)currentBookIndex,
         (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getFreeHeap());
 
