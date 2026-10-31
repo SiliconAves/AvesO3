@@ -15,6 +15,8 @@
 #include "BookActionActivity.h"
 
 #include "CrossPointState.h"
+// Silent restart to Dashboard or AO3 Library, depending on the hint set by the activity that called silentRestartToHint()
+#include "SilentRestart.h"
 #include "MappedInputManager.h"
 #include "RecentBooksStore.h"
 #include "activities/util/ConfirmationActivity.h"
@@ -167,7 +169,8 @@ void RecentBooksActivity::onExit() {
   recentBooks.clear();
   MARKED_FOR_LATER_STORE.clearEntries();
   NEW_CHAPTERS_STORE.clearEntries();     
-  AO3_WIPS_STORE.clearEntries(); 
+  AO3_WIPS_STORE.clearEntries();
+  g_silentReturnHint = {};  // safety net: never leave a stale hint behind
 }
 
 void RecentBooksActivity::loop() {
@@ -475,6 +478,7 @@ void RecentBooksActivity::launchDashboardMenu(const std::string& path, const std
   const int savedTab = selectedTabIndex;
 
   auto handler = [this, path, savedTab](const ActivityResult& res) {
+    g_silentReturnHint = {};  // normal return: no restart happened, drop the hint
     if (const auto* r = std::get_if<BookActionResult>(&res.data)) {
       RenderLock lock(*this); 
       if (r->removedFromList) {
@@ -521,6 +525,8 @@ void RecentBooksActivity::launchDashboardMenu(const std::string& path, const std
     }
   };
 
+  g_silentReturnHint = {SILENT_TARGET_DASHBOARD, static_cast<uint8_t>(savedTab),
+                        static_cast<int16_t>(ringPos() - 1)};
   startActivityForResult(
       std::make_unique<BookActionActivity>(renderer, mappedInput, path, title, BookActionMode::DASHBOARD),
       std::move(handler));

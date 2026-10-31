@@ -76,7 +76,7 @@ void Ao3ReceiveActivity::onExit() {
         Storage.writeFile("/.crosspoint/pending_ao3_scan", "");
 
         // WiFi fragments the heap — silent restart is mandatory
-        silentRestart();
+        silentRestartToHint();
     }
 }
 

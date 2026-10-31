@@ -20,6 +20,8 @@
 #include "../../components/UITheme.h"
 #include "../../RecentBooksStore.h"
 #include "../../CrossPointState.h"
+// Silent restart to Dashboard or AO3 Library, depending on the hint set by the activity that called silentRestartToHint()
+#include "SilentRestart.h"
 #include "Ao3MarkedForLaterStore.h"
 
 #include <FreeInkUIGfxRenderer.h>
@@ -138,6 +140,7 @@ void Ao3LibraryActivity::onExit() {
     Activity::onExit();
     Ao3TagMergeStore::unload();
     MARKED_FOR_LATER_STORE.clearEntries();
+    g_silentReturnHint = {};
 }
 
 // ---------------------------------------------------------------------------
@@ -450,6 +453,7 @@ void Ao3LibraryActivity::loop() {
       if ((touchHold || (!touchOpen && mappedInput.getHeldTime() >= 1000)) && !epubPath.empty()) {
         // Long-press → BookAction menu
         auto handler = [this, epubPath, hash](const ActivityResult& res) {
+          g_silentReturnHint = {};
           if (const auto* actionRes = std::get_if<BookActionResult>(&res.data)) {
             if (actionRes->modified) {
              if (actionRes->deleted || actionRes->archived) {
@@ -483,6 +487,7 @@ void Ao3LibraryActivity::loop() {
             }
           }
         };
+        g_silentReturnHint = {SILENT_TARGET_AO3_LIBRARY, 0, static_cast<int16_t>(selectorIndex)};
         startActivityForResult(
             std::make_unique<BookActionActivity>(renderer, mappedInput, epubPath, epubTitle),
             handler);
@@ -1676,6 +1681,10 @@ void Ao3LibraryActivity::rebuildViewEntries() {
   indexState = IndexState::OK;
   cachedPage = -1;
   buttonsSetup = false;
+
+  // A restored index (silent-restart resume) may exceed the filtered list
+  if (selectorIndex >= viewEntries.size())
+    selectorIndex = viewEntries.empty() ? 0 : viewEntries.size() - 1;
 }
 
 void Ao3LibraryActivity::applyStateChange(const SortFilterState& prev, const SortFilterState& next) {

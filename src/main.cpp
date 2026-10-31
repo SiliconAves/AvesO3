@@ -26,6 +26,8 @@
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+//Dashboard and AO3 Library resume after silent restart
+#include "silentRestart.h"
 #include "KOReaderCredentialStore.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
@@ -190,6 +192,29 @@ void silentRestartToReader() {
   silentRebootTarget = SILENT_REBOOT_TARGET_READER;
   silentRebootMagic = SILENT_REBOOT_MAGIC;
   LOG_DBG("MAIN", "Silent restart (target=reader)");
+  GUI.drawPopup(renderer, tr(STR_LOADING_POPUP));
+  delay(50);
+  ESP.restart();
+}
+
+//Silent restart to Dashboard or AO3 Library, depending on the hint set by the activity that called silentRestartToHint()
+void silentRestartToHint() {
+  if (deepSleepInProgress) return;  // sleeping supersedes the heap-defrag reboot
+#if FREEINK_CAP_TOUCH
+  if (finishWifiSessionWithoutRestart()) return;
+#endif
+  const SilentReturnHint h = g_silentReturnHint;
+  g_silentReturnHint = {};
+
+  uint32_t word = SILENT_REBOOT_TARGET_HOME;
+  if (h.target == SILENT_TARGET_DASHBOARD || h.target == SILENT_TARGET_AO3_LIBRARY) {
+    // low byte = target, next byte = tab, high 16 bits = index (signed)
+    word = h.target | (static_cast<uint32_t>(h.tab) << 8) |
+           (static_cast<uint32_t>(static_cast<uint16_t>(h.index)) << 16);
+  }
+  silentRebootTarget = word;
+  silentRebootMagic = SILENT_REBOOT_MAGIC;
+  LOG_DBG("MAIN", "Silent restart (target=%u)", (unsigned)h.target);
   GUI.drawPopup(renderer, tr(STR_LOADING_POPUP));
   delay(50);
   ESP.restart();
@@ -365,8 +390,13 @@ void setup() {
   // Read-and-clear so a panic later in setup() doesn't loop into silent reboot.
   // Bound the target range too — RTC_NOINIT memory is uninitialized on cold boot.
   const bool isSilentReboot = (silentRebootMagic == SILENT_REBOOT_MAGIC);
-  const uint32_t snapshotTarget =
-      (isSilentReboot && silentRebootTarget <= SILENT_REBOOT_TARGET_READER) ? silentRebootTarget : 0;
+  const uint32_t rawRebootWord = silentRebootTarget;
+  const uint32_t rawTarget = rawRebootWord & 0xFF;
+  const uint32_t snapshotTarget = (isSilentReboot && rawTarget <= SILENT_TARGET_AO3_LIBRARY) ? rawTarget : 0;
+  const uint32_t rawTab = (rawRebootWord >> 8) & 0xFF;
+  const int snapshotTab = (isSilentReboot && rawTab < 4) ? static_cast<int>(rawTab) : -1;
+  const int rawIdx = static_cast<int16_t>(rawRebootWord >> 16);
+  const int snapshotIndex = (isSilentReboot && rawIdx >= 0) ? rawIdx : -1;
   silentRebootMagic = 0;
   silentRebootTarget = 0;
 
@@ -538,6 +568,10 @@ void setup() {
   } else if (resume == BootResume::Silent && snapshotTarget == SILENT_REBOOT_TARGET_READER &&
              !APP_STATE.openEpubPath.empty()) {
     activityManager.goToReader(APP_STATE.openEpubPath);
+  } else if (resume == BootResume::Silent && snapshotTarget == SILENT_TARGET_DASHBOARD) {
+    activityManager.goToRecentBooks(snapshotTab, snapshotIndex);
+  } else if (resume == BootResume::Silent && snapshotTarget == SILENT_TARGET_AO3_LIBRARY) {
+    activityManager.goToAo3Library(snapshotIndex >= 0 ? static_cast<size_t>(snapshotIndex) : 0);
   } else if (resume == BootResume::Silent) {
     // target == home (or reader with no open book): land on home — don't fall
     // through to the sleep-wake "resume reader" logic, which fires on stale
