@@ -183,7 +183,7 @@ void BookActionActivity::buildScreen(UiScreen& uiScreen) {
       case 4: rowTitles[i] = tr(STR_DELETE); break;
       case 5: rowTitles[i] = "Remove from List"; break;
       case 6: rowTitles[i] = "Show AO3 Page QR"; break;
-      case 7: rowTitles[i] = "Show Whole Series"; break;
+      case 7: rowTitles[i] = "Show Series"; break;
     }
 
     if (logicalRow(i) == 1) {
