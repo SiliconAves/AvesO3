@@ -2,6 +2,7 @@
 
 #include <string>
 #include "activities/Activity.h"
+#include "components/UiAppHost.h"
 
 enum class AO3SyncState {
     INITIALIZING,
@@ -14,7 +15,7 @@ enum class AO3SyncState {
     ERROR
 };
 
-class AO3SyncActivity final : public Activity {
+class AO3SyncActivity final : public Activity, private UiAppHost {
 private:
     AO3SyncState state = AO3SyncState::INITIALIZING;
     std::string workId;
@@ -45,11 +46,19 @@ private:
     void renderResult() const;
     void renderError() const;
 
+    // --- FreeInkUI & touch actions ---
+    static constexpr freeink::ui::ActionId ACTION_BACK = 1;
+    static constexpr freeink::ui::ActionId ACTION_CONFIRM = 2;
+    void handleInput(bool back, bool confirm);
+    void onAction(const freeink::ui::ActionEvent& event);
+    void buildScreen(UiScreen& screen);
+
 public:
     AO3SyncActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                     const std::string& workId, const std::string& currentLocalDate,
                     const std::string& bookPath)
         : Activity("AO3Sync", renderer, mappedInput),
+          UiAppHost(renderer),
           workId(workId), currentLocalDate(currentLocalDate), bookPath(bookPath) {}
 
     void onEnter() override;

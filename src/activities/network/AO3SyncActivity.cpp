@@ -29,6 +29,13 @@ extern esp_err_t esp_crt_bundle_attach(void* conf);
 
 void AO3SyncActivity::onEnter() {
     Activity::onEnter();
+
+    resetUi();
+    auto onAct = [](const freeink::ui::ActionEvent& e, void* u) { static_cast<AO3SyncActivity*>(u)->onAction(e); };
+    app.on(ACTION_BACK, onAct, this);
+    app.on(ACTION_CONFIRM, onAct, this);
+    app.setScreen([](UiScreen& s, void* u) { static_cast<AO3SyncActivity*>(u)->buildScreen(s); }, this);
+
     WiFi.mode(WIFI_STA);
 
     state = AO3SyncState::CONNECTING_WIFI;
@@ -42,9 +49,11 @@ void AO3SyncActivity::onEnter() {
 
 void AO3SyncActivity::onExit() {
     Activity::onExit();
-    WiFi.disconnect(false);
-    delay(100);
-    WiFi.mode(WIFI_OFF);
+    if (WiFi.getMode() != WIFI_MODE_NULL) {
+        WiFi.disconnect(false);
+        delay(100);
+        WiFi.mode(WIFI_OFF);
+    }
 }
 
 void AO3SyncActivity::onWifiSelectionComplete(bool success) {
@@ -446,34 +455,79 @@ void AO3SyncActivity::performDownload() {
     requestUpdate();
 }
 
-void AO3SyncActivity::loop() {
+// silentRestart*() only return on touch devices (no reboot there); the code after
+// each call is the touch exit path.
+void AO3SyncActivity::handleInput(bool back, bool confirm) {
     if (state == AO3SyncState::UPDATE_SUCCESSFUL) {
-        if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
-            mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-            silentRestart();
-        }
+        if (confirm || back) { silentRestart(); onGoHome(); }
     } else if (state == AO3SyncState::UPDATE_FOUND || state == AO3SyncState::UP_TO_DATE) {
-        if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+        if (confirm) {
             if (state == AO3SyncState::UPDATE_FOUND) {
                 performDownload();
             } else {
-                silentRestart();
+                silentRestart(); onGoHome();
             }
-        } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+        } else if (back) {
             if (state == AO3SyncState::UPDATE_FOUND) {
                 // Signal the update exists so status becomes NEW_CHAPTER_AVAILABLE
                 AO3Result res;
                 res.updateFound = true;
                 setResult(ActivityResult(res));
             }
-            silentRestartToReader();
+            silentRestartToReader(); finish();
         }
     } else if (state == AO3SyncState::ERROR) {
-        if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
-            mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-            silentRestartToReader();
+        if (confirm) {
+            // "Retry": back to the book so the sync can be started again from there
+            silentRestartToReader();                // buttons: reboots into the reader
+            activityManager.goToReader(bookPath);   // touch: reopen the book
+        } else if (back) {
+            silentRestart();                        // buttons: reboots to Home
+            onGoHome();                             // touch: leave to Home
         }
     }
+}
+
+void AO3SyncActivity::onAction(const freeink::ui::ActionEvent& e) {
+    app.clearTapFlash();
+    handleInput(e.action == ACTION_BACK, e.action == ACTION_CONFIRM);
+}
+
+void AO3SyncActivity::buildScreen(UiScreen& screen) {
+    if (!mappedInput.hasTouch()) return;  // buttons use GUI.drawButtonHints
+    using freeink::ui::FooterAction;
+    switch (state) {
+        case AO3SyncState::UPDATE_SUCCESSFUL: {
+            FooterAction a[] = {{tr(STR_DONE), ACTION_CONFIRM}};
+            screen.footer(a, 1); break;
+        }
+        case AO3SyncState::UP_TO_DATE: {
+            FooterAction a[] = {{tr(STR_BACK), ACTION_BACK}, {tr(STR_DONE), ACTION_CONFIRM}};
+            screen.footer(a, 2); break;
+        }
+        case AO3SyncState::UPDATE_FOUND: {
+            FooterAction a[] = {{tr(STR_CANCEL), ACTION_BACK}, {tr(STR_AO3_DOWNLOAD), ACTION_CONFIRM}};
+            screen.footer(a, 2); break;
+        }
+        case AO3SyncState::ERROR: {
+            if (errorMessage == "Not enough memory. Please reboot the device.") {
+                // Retrying can't help; the user reboots manually, so Back only
+                FooterAction a[] = {{tr(STR_HOME), ACTION_BACK}};
+                screen.footer(a, 1);
+            } else {
+                FooterAction a[] = {{tr(STR_HOME), ACTION_BACK}, {tr(STR_RETRY), ACTION_CONFIRM}};
+                screen.footer(a, 2);
+            }
+            break;
+        }
+        default: break;
+    }
+}
+
+void AO3SyncActivity::loop() {
+    if (routeTouch(mappedInput)) return;  // touch taps + swipe-back (ACTION_BACK)
+    handleInput(mappedInput.wasReleased(MappedInputManager::Button::Back),
+                mappedInput.wasReleased(MappedInputManager::Button::Confirm));
 }
 
 void AO3SyncActivity::renderInitializing() const {
@@ -546,9 +600,9 @@ void AO3SyncActivity::renderError() const {
 
     renderer.drawCenteredText(UI_10_FONT_ID, top, errorMessage.c_str(), true, EpdFontFamily::BOLD);
     if (errorMessage == "Not enough memory. Please reboot the device.") {
-        GUI.drawButtonHints(renderer, tr(STR_BACK), "Reboot", "", "");
+        GUI.drawButtonHints(renderer, tr(STR_HOME), "Reboot", "", "");
     } else {
-        GUI.drawButtonHints(renderer, tr(STR_BACK), tr(STR_RETRY), "", "");
+        GUI.drawButtonHints(renderer, tr(STR_HOME), tr(STR_RETRY), "", "");
     }
 }
 
@@ -580,6 +634,6 @@ void AO3SyncActivity::render(RenderLock&& lock) {
             renderError();
             break;
     }
-
+    renderUi();
     renderer.displayBuffer();
 }
