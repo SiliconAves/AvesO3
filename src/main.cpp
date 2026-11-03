@@ -27,7 +27,7 @@
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 //Dashboard and AO3 Library resume after silent restart
-#include "silentRestart.h"
+#include "SilentRestart.h"
 #include "KOReaderCredentialStore.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
