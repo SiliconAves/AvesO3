@@ -31,6 +31,7 @@
 #include "components/icons/wifi.h"
 #include "components/icons/ao3library.h"
 #include "components/icons/sendtoaveso3.h"
+#include "components/icons/bookmarkheart.h"
 #include "fontIds.h"
 
 // Internal constants
@@ -57,6 +58,7 @@ const uint8_t* iconForName(UIIcon icon) {
     case UIIcon::Ao3Library: return Ao3libraryIcon;
     case UIIcon::SendToAvesO3: return Sendtoaveso3Icon;
     case UIIcon::OpdsBrowser: return GlobeIcon;
+    case UIIcon::BookmarkHeart: return BookmarkheartIcon;
     default: return nullptr;
   }
 }

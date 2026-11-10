@@ -70,6 +70,7 @@ class HomeActivity final : public Activity {
   void onFileTransferOpen();
   void onOpdsBrowserOpen();
   void onAo3LibraryOpen();
+  void onBookmarksOpen();
 
   int getMenuItemCount() const;
   int getPage1ItemCount() const;

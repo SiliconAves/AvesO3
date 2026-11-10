@@ -52,7 +52,7 @@ int HomeActivity::getMenuItemCount() const {
 }
 
 int HomeActivity::getPage1ItemCount() const {
-  int count = 0;
+  int count = 1; // File Browser is always on page 1
   if (hasOpdsServers) count++;
   // future page-1 entries go here
   return count;
@@ -246,6 +246,7 @@ void HomeActivity::loop() {
       // it here — that would shift OPDS Browser to index 1 while menuIndex for
       // selectorIndex=1 computes to 0, causing OPDS to open the book instead.
       std::vector<std::function<void()>> page1Actions;
+      page1Actions.push_back([this] { onFileBrowserOpen(); });
       if (hasOpdsServers) page1Actions.push_back([this] { onOpdsBrowserOpen(); });
       // future page-1 entries go here
       if (menuIndex >= 0 && menuIndex < static_cast<int>(page1Actions.size())) {
@@ -258,7 +259,7 @@ void HomeActivity::loop() {
     std::vector<std::function<void()>> page0Actions = {
       [this] { onAo3LibraryOpen(); },
       [this] { onRecentsOpen(); },
-      [this] { onFileBrowserOpen(); },
+      [this] { onBookmarksOpen(); },
       [this] { onFileTransferOpen(); },
       [this] { onSettingsOpen(); }
     };
@@ -575,8 +576,8 @@ void HomeActivity::render(RenderLock&&) {
   std::vector<UIIcon> menuIcons;
 
   if (menuPage == 0) {
-    menuItems = { "AO3 Library", "Dashboard", tr(STR_BROWSE_FILES), tr(STR_FILE_TRANSFER), tr(STR_SETTINGS_TITLE) };
-    menuIcons = { Ao3Library, Recent, Folder, Transfer, Settings };
+    menuItems = { "AO3 Library", "Dashboard", "AO3 Bookmarks", tr(STR_FILE_TRANSFER), tr(STR_SETTINGS_TITLE) };
+    menuIcons = { Ao3Library, Recent, BookmarkHeart, Transfer, Settings };
     if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
       menuItems.insert(menuItems.begin(), tr(STR_CONTINUE_READING));
       menuIcons.insert(menuIcons.begin(), Book);
@@ -588,6 +589,8 @@ void HomeActivity::render(RenderLock&&) {
       menuItems.push_back(tr(STR_CONTINUE_READING));
       menuIcons.push_back(Book);
     }
+    menuItems.push_back(tr(STR_BROWSE_FILES));
+    menuIcons.push_back(Folder);
     if (hasOpdsServers) {
       menuItems.push_back("OPDS Browser");
       menuIcons.push_back(OpdsBrowser);
@@ -662,3 +665,5 @@ void HomeActivity::onFileTransferOpen() { activityManager.goToFileTransfer(); }
 
 void HomeActivity::onOpdsBrowserOpen() { activityManager.goToBrowser(); }
 void HomeActivity::onAo3LibraryOpen() { activityManager.goToAo3Library(); }
+// Placeholder: just opens the regular library until Bookmark mode is wired in
+void HomeActivity::onBookmarksOpen() { activityManager.goToAo3Library(); }
