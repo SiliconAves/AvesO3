@@ -5,6 +5,7 @@
 #include "Ao3LibraryMetadata.h"
 
 #include "Ao3CompactIndexRecord.h"
+#include "Ao3Paths.h"
 
 class Epub;
 
@@ -59,20 +60,41 @@ class Ao3Librarian {
   /**
    * @brief Writes a compact record into the unified index file.
    */
-  static bool writeIndexRecord(const CompactIndexRecord& rec);
+  static bool writeIndexRecord(const CompactIndexRecord& rec,
+                               const char* indexPath = Ao3Paths::MAIN_INDEX);
 
   /**
    * @brief Marks a record as tombstoned (deleted) in the index.
    */
   static bool tombstoneRecord(const std::string& epubPath);
-  static bool setRecordFinished(const std::string& epubPath, bool finished);
+    static bool setRecordFinished(const std::string& epubPath, bool finished);
+
+  /**
+   * @brief Number of live (non-tombstoned) records in an index.
+   * @return 0 if the index file does not exist, -1 if it is unreadable or corrupt.
+   */
+  static int liveCount(const char* indexPath = Ao3Paths::MAIN_INDEX);
+
+  /**
+   * @brief True if the index can take another record. An unreadable or corrupt
+   *        index counts as having room, since writeIndexRecord recreates it.
+   */
+  static bool hasRoom(const char* indexPath = Ao3Paths::MAIN_INDEX) {
+    return liveCount(indexPath) < MAX_LIBRARY_BOOKS;
+  }
+
+  /**
+   * @brief Copies the live record for epubPath out of the index that owns that path.
+   * @return false if the index is missing/corrupt or no live record matches.
+   */
+  static bool readRecord(const std::string& epubPath, CompactIndexRecord& out);
 
   /**
    * @brief Tombstones any index record whose epub file or ao3_library_info
    *        sidecar no longer exists on disk (e.g. book was moved/renamed).
    * @return Number of records tombstoned, or -1 on index open failure.
    */
-  static int sanitizeIndex();
+   static int sanitizeIndex(const char* indexPath = Ao3Paths::MAIN_INDEX);
 
  private:
   /**

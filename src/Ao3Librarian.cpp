@@ -949,9 +949,7 @@ bool Ao3Librarian::hasAnyAo3Fics() {
   return found;
 }
 
-bool Ao3Librarian::writeIndexRecord(const CompactIndexRecord& rec) {
-    const char* indexPath = "/.crosspoint/ao3_library_index.bin";
-
+bool Ao3Librarian::writeIndexRecord(const CompactIndexRecord& rec, const char* indexPath) {
     // --- Validate existing file ---
     bool needsCreate = false;
     if (!Storage.exists(indexPath)) {
@@ -1062,7 +1060,7 @@ bool Ao3Librarian::writeIndexRecord(const CompactIndexRecord& rec) {
 }
 
 bool Ao3Librarian::tombstoneRecord(const std::string& epubPath) {
-    const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+    const char* indexPath = Ao3Paths::indexPathFor(epubPath);
     if (!Storage.exists(indexPath)) return false;
 
     HalFile f = Storage.open(indexPath, O_RDWR);
@@ -1101,7 +1099,7 @@ bool Ao3Librarian::tombstoneRecord(const std::string& epubPath) {
 }
 
 bool Ao3Librarian::setRecordFinished(const std::string& epubPath, bool finished) {
-    const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+    const char* indexPath = Ao3Paths::indexPathFor(epubPath);
     if (!Storage.exists(indexPath)) return false;
 
     HalFile f = Storage.open(indexPath, O_RDWR);
@@ -1143,8 +1141,7 @@ bool Ao3Librarian::setRecordFinished(const std::string& epubPath, bool finished)
     return false;
 }
 
-int Ao3Librarian::sanitizeIndex() {
-    const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+int Ao3Librarian::sanitizeIndex(const char* indexPath) {
     if (!Storage.exists(indexPath)) return 0;
 
     HalFile f = Storage.open(indexPath, O_RDWR);
@@ -1185,20 +1182,19 @@ int Ao3Librarian::sanitizeIndex() {
         sidecarPath += "/ao3_library_info";
 
         bool valid = false;
-        if (Storage.exists(sidecarPath.c_str())) {
-            // Read only the filepath field — avoids a full 1232-byte struct on the stack.
-            HalFile sf;
-            if (Storage.openFileForRead("AO3L", sidecarPath, sf)) {
-                if (sf.seek(kFilepathOffset)) {
-                    char filepath[kFilepathLen];
-                    memset(filepath, 0, sizeof(filepath));
-                    sf.read((uint8_t*)filepath, kFilepathLen - 1);
-                    if (filepath[0] != '\0' && Storage.exists(filepath)) {
-                        valid = true;
-                    }
+        // A missing sidecar makes openFileForRead fail, so no separate exists() check.
+        // Read only the filepath field — avoids a full 1232-byte struct on the stack.
+        HalFile sf;
+        if (Storage.openFileForRead("AO3L", sidecarPath, sf)) {
+            if (sf.seek(kFilepathOffset)) {
+                char filepath[kFilepathLen];
+                memset(filepath, 0, sizeof(filepath));
+                sf.read((uint8_t*)filepath, kFilepathLen - 1);
+                if (filepath[0] != '\0' && Storage.exists(filepath)) {
+                    valid = true;
                 }
-                sf.close();
             }
+            sf.close();
         }
 
         if (!valid) {
@@ -1217,4 +1213,70 @@ int Ao3Librarian::sanitizeIndex() {
         LOG_INF("AO3L", "sanitizeIndex: removed %d ghost record(s)", tombstoned);
     }
     return tombstoned;
+}
+
+int Ao3Librarian::liveCount(const char* indexPath) {
+    if (!Storage.exists(indexPath)) return 0;
+
+    HalFile f;
+    if (!Storage.openFileForRead("AO3L", indexPath, f)) return -1;
+
+    char     magic[4];
+    uint8_t  version;
+    uint16_t recordCount;
+    bool readOk = f.read(magic, 4) == 4 &&
+                  f.read(&version, 1) == 1 &&
+                  f.read((uint8_t*)&recordCount, 2) == 2;
+
+    if (!readOk || memcmp(magic, "AO3X", 4) != 0 || version != 1 ||
+        recordCount > MAX_LIBRARY_BOOKS) {
+        f.close();
+        return -1;
+    }
+
+    f.seek(INDEX_HEADER_SIZE);
+    int live = 0;
+    CompactIndexRecord rec;
+    for (uint16_t i = 0; i < recordCount; i++) {
+        if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
+        if (!(rec.flags & 0x01)) live++;
+    }
+    f.close();
+    return live;
+}
+
+bool Ao3Librarian::readRecord(const std::string& epubPath, CompactIndexRecord& out) {
+    const char* indexPath = Ao3Paths::indexPathFor(epubPath);
+    if (!Storage.exists(indexPath)) return false;
+
+    HalFile f;
+    if (!Storage.openFileForRead("AO3L", indexPath, f)) return false;
+
+    char     magic[4];
+    uint8_t  version;
+    uint16_t recordCount;
+    bool readOk = f.read(magic, 4) == 4 &&
+                  f.read(&version, 1) == 1 &&
+                  f.read((uint8_t*)&recordCount, 2) == 2;
+
+    if (!readOk || memcmp(magic, "AO3X", 4) != 0 || version != 1 ||
+        recordCount > MAX_LIBRARY_BOOKS) {
+        f.close();
+        return false;
+    }
+
+    const uint32_t targetHash = static_cast<uint32_t>(std::hash<std::string>{}(epubPath));
+    f.seek(INDEX_HEADER_SIZE);
+    CompactIndexRecord rec;
+    for (uint16_t i = 0; i < recordCount; i++) {
+        if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
+        if (!(rec.flags & 0x01) && rec.cacheHash == targetHash) {
+            out = rec;
+            f.close();
+            return true;
+        }
+    }
+
+    f.close();
+    return false;
 }

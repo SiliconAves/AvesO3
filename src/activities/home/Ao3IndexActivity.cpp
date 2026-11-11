@@ -14,7 +14,7 @@ namespace {
   constexpr uint32_t MIN_BLOCK_SINGLE = 48 * 1024;
 
 bool isLibraryFull() {
-  const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+  const char* indexPath = Ao3Paths::MAIN_INDEX;
   if (!Storage.exists(indexPath)) return false;
   HalFile f;
   if (Storage.openFileForRead("AO3L", indexPath, f)) {
@@ -223,7 +223,7 @@ void Ao3IndexActivity::loadSettings() {
 
 void Ao3IndexActivity::buildIndexedHashes() {
   indexedHashes.clear();
-  const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+  const char* indexPath = Ao3Paths::MAIN_INDEX;
   if (!Storage.exists(indexPath)) return;
 
   HalFile f;
