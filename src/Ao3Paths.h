@@ -7,8 +7,9 @@ namespace Ao3Paths {
 constexpr char MAIN_INDEX[] = "/.crosspoint/ao3_library_index.bin";
 constexpr char BOOKMARKS_INDEX[] = "/.crosspoint/ao3_bookmarks_index.bin";
 
-constexpr char MAIN_SORT_STATE[] = "/.crosspoint/ao3_library_sort.bin";
-constexpr char BOOKMARKS_SORT_STATE[] = "/.crosspoint/ao3_bookmarks_sort.bin";
+// MAIN keeps the existing filename: it is the file users already have on their SD card.
+constexpr char MAIN_SORT_STATE[] = "/.crosspoint/ao3SortFilterState.json";
+constexpr char BOOKMARKS_SORT_STATE[] = "/.crosspoint/ao3_bookmarks_sort.json";
 
 // Bookmarked fics live in the read folder, next to the archive subfolder.
 constexpr char BOOKMARKS_FOLDER[] = "/read/AO3 Bookmarks";   // no trailing slash
