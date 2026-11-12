@@ -665,5 +665,4 @@ void HomeActivity::onFileTransferOpen() { activityManager.goToFileTransfer(); }
 
 void HomeActivity::onOpdsBrowserOpen() { activityManager.goToBrowser(); }
 void HomeActivity::onAo3LibraryOpen() { activityManager.goToAo3Library(); }
-// Placeholder: just opens the regular library until Bookmark mode is wired in
-void HomeActivity::onBookmarksOpen() { activityManager.goToAo3Library(); }
+void HomeActivity::onBookmarksOpen() { activityManager.goToAo3Library(0, Ao3LibraryMode::BOOKMARKS); }

@@ -10,6 +10,7 @@
 #include "../../Ao3SortFilterState.h"
 #include "../../util/ButtonNavigator.h"
 #include "Ao3LibrarySettingsActivity.h"
+#include "../../Ao3Paths.h"
 
 #include "../../components/UiAppHost.h"
 
@@ -34,11 +35,17 @@ inline FilterHashes computeFilterHashes(const SortFilterState& state) {
 // Inherit private UiAppHost
 class Ao3LibraryActivity final : public Activity, private UiAppHost {
  public:
-  explicit Ao3LibraryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                              size_t initialSelectorIndex = 0)
+    explicit Ao3LibraryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                              size_t initialSelectorIndex = 0,
+                              Ao3LibraryMode mode = Ao3LibraryMode::REGULAR)
       : Activity("Ao3Library", renderer, mappedInput),
         UiAppHost(renderer),
-        initialSelectorIndex_(initialSelectorIndex) {}
+        initialSelectorIndex_(initialSelectorIndex),
+        mode_(mode),
+        indexPath_(mode == Ao3LibraryMode::BOOKMARKS ? Ao3Paths::BOOKMARKS_INDEX
+                                                     : Ao3Paths::MAIN_INDEX),
+        statePath_(mode == Ao3LibraryMode::BOOKMARKS ? Ao3Paths::BOOKMARKS_SORT_STATE
+                                                     : Ao3Paths::MAIN_SORT_STATE) {}
 
   void onEnter() override;
   void loop() override;
@@ -105,6 +112,10 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
 
   // Restored tracking variables
   size_t initialSelectorIndex_ = 0;
+  // Library mode and the paths derived from it (set once in the constructor).
+  Ao3LibraryMode mode_ = Ao3LibraryMode::REGULAR;
+  const char* indexPath_ = Ao3Paths::MAIN_INDEX;
+  const char* statePath_ = Ao3Paths::MAIN_SORT_STATE;
   bool skipNextBackRelease = false;
   bool autoIndexOnOpen_ = false;
   bool autoIndexLaunched_ = false;

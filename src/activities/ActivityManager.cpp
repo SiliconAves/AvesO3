@@ -286,8 +286,8 @@ void ActivityManager::goToReader(std::string path, const bool allowFastInitialRe
   }
 }
 
-void ActivityManager::goToAo3Library(size_t selectorIndex) {
-  replaceActivity(std::make_unique<Ao3LibraryActivity>(renderer, mappedInput, selectorIndex));
+void ActivityManager::goToAo3Library(size_t selectorIndex, Ao3LibraryMode mode) {
+  replaceActivity(std::make_unique<Ao3LibraryActivity>(renderer, mappedInput, selectorIndex, mode));
 }
 
 void ActivityManager::goToSleep(bool fromTimeout) {

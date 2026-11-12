@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "../Ao3Paths.h"
 #include "GfxRenderer.h"
 #include "MappedInputManager.h"
 #include "util/ScreenshotInfo.h"
@@ -88,7 +89,7 @@ class ActivityManager {
   void goToRecentBooks(int initialTab = -1, int initialIndex = -1, std::string initialPath = {});
   void goToBrowser();
   void goToReader(std::string path, bool allowFastInitialRefresh = false);
-  void goToAo3Library(size_t selectorIndex = 0);
+    void goToAo3Library(size_t selectorIndex = 0, Ao3LibraryMode mode = Ao3LibraryMode::REGULAR);
   void goToSleep(bool fromTimeout = false);
   void goToBoot();
   void goToFullScreenMessage(std::string message, EpdFontFamily::Style style = EpdFontFamily::REGULAR);
