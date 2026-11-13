@@ -92,6 +92,14 @@ void Ao3LibraryActivity::loadFilterMode() {
         folderTreeFandom.clear();
         folderTreeRelationship.clear();
     }
+
+    // Bookmark mode: Folder-Tree filtering is rooted at the bookmarks folder, and the
+    // main-library auto-index is off. (The early returns above leave the defaults,
+    // AUTOMATIC mode and auto-index off, so they need no override.)
+    if (mode_ == Ao3LibraryMode::BOOKMARKS) {
+        ao3Folder = Ao3Paths::BOOKMARKS_FOLDER;
+        autoIndexOnOpen_ = false;
+    }
 }
 
 void Ao3LibraryActivity::buildAllowedHashes(const std::string& scanPath, int maxDepth) {
@@ -270,7 +278,8 @@ void Ao3LibraryActivity::loop() {
 
     if (!swapNavButtons) {
       // Default: side buttons open panels, front left/right scroll
-      if (mappedInput.wasReleased(MappedInputManager::Button::Up ) &&
+      if (mode_ == Ao3LibraryMode::REGULAR &&
+          mappedInput.wasReleased(MappedInputManager::Button::Up ) &&
           mappedInput.getHeldTime() < 500) {
         screenState = ScreenState::MANAGE_PANEL;
         managePanelRowIndex = 0;
@@ -323,7 +332,8 @@ void Ao3LibraryActivity::loop() {
         requestUpdate(true);
         return;
       }
-      if (mappedInput.wasReleased(MappedInputManager::Button::Left) &&
+      if (mode_ == Ao3LibraryMode::REGULAR &&
+          mappedInput.wasReleased(MappedInputManager::Button::Left) &&
           mappedInput.getHeldTime() < 500) {
         screenState = ScreenState::MANAGE_PANEL;
         managePanelRowIndex = 0;
@@ -417,7 +427,7 @@ void Ao3LibraryActivity::loop() {
         }
         
         // Tapping anywhere in the bottom 56px band opens the manage panel
-        if (ty >= renderer.getScreenHeight() - 56) {
+          if (mode_ == Ao3LibraryMode::REGULAR && ty >= renderer.getScreenHeight() - 56) {
           screenState = ScreenState::MANAGE_PANEL;
           managePanelRowIndex = 0;
           requestUpdate(true);
@@ -998,13 +1008,14 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
 
   // Draw Button hints
 
+    const char* manageLabel = (mode_ == Ao3LibraryMode::REGULAR) ? "Manage" : "";
     const auto labels = (swapNavButtons && screenState == ScreenState::LIBRARY)
-      ? mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), "Manage", "Filter")
+      ? mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), manageLabel, "Filter")
       : mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
     // Triangle indicator: Show 'Up' triangle when Manage Panel is closed
-    if (screenState != ScreenState::MANAGE_PANEL) {
+      if (mode_ == Ao3LibraryMode::REGULAR && screenState != ScreenState::MANAGE_PANEL) {
 
       const auto& metrics = UITheme::getInstance().getMetrics();
       const int tx = renderer.getScreenWidth() - 26;
@@ -1453,7 +1464,7 @@ void Ao3LibraryActivity::loadSortFilterState() {
   activeState.sortMode  = SortMode::ALPHABETIC;
   activeState.ascending = true;
 
-  const char* path = "/.crosspoint/ao3SortFilterState.json";
+  const char* path = statePath_;
   if (!Storage.exists(path)) return;
 
   String json = Storage.readFile(path);
@@ -1509,7 +1520,7 @@ void Ao3LibraryActivity::saveSortFilterState() const {
 
   String json;
   serializeJson(doc, json);
-  Storage.writeFile("/.crosspoint/ao3SortFilterState.json", json);
+  Storage.writeFile(statePath_, json);
 }
 
 // ---------------------------------------------------------------------------
@@ -1592,7 +1603,7 @@ bool Ao3LibraryActivity::passesFilter(const ViewEntry& v, const FilterHashes& h)
 
 void Ao3LibraryActivity::rebuildViewEntries() {
   viewEntries.clear();
-  const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+  const char* indexPath = indexPath_;
 
   if (!Storage.exists(indexPath)) {
     indexState = IndexState::MISSING;
