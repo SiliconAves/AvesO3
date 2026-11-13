@@ -33,4 +33,8 @@ std::string restoreFic(const std::string& srcPath);
 // bookmarks index. Returns the new path, or empty string on failure (nothing is changed).
 std::string bookmarkFic(const std::string& srcPath);
 
+// Moves a bookmarked fic back under ao3Folder (mirrored path) and transfers its record to
+// the main index. Returns the restored path, or empty string on failure (nothing is changed).
+std::string restoreBookmark(const std::string& srcPath);
+
 }

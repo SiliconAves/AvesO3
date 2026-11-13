@@ -146,7 +146,9 @@ void Ao3LibrarySettingsActivity::doCleanupStart() {
   // Force an immediate render so the "Please Wait" screen appears during the blocking call
   render(RenderLock(*this));
   
-  cleanupRemovedCount = Ao3Librarian::sanitizeIndex();
+  const int mainRemoved = Ao3Librarian::sanitizeIndex(Ao3Paths::MAIN_INDEX);
+  const int bookmarksRemoved = Ao3Librarian::sanitizeIndex(Ao3Paths::BOOKMARKS_INDEX);
+  cleanupRemovedCount = (mainRemoved < 0 || bookmarksRemoved < 0) ? -1 : mainRemoved + bookmarksRemoved;
   cleaningUpIndex = false;
   showingCleanupResult = true;
   requestUpdate(true);

@@ -70,11 +70,12 @@ int BookActionActivity::logicalRow(int visual) const {
   // FULL mode
   int idx = 0;
   if (isEpub || isXtc)   { if (visual == idx) return 0; idx++; } // Status cycle
-  if (hasAo3LibraryInfo) { if (visual == idx) return 1; idx++; } // Mark for Later
+  if (hasAo3LibraryInfo && !isBookmarked) { if (visual == idx) return 1; idx++; } // Mark for Later
   if (hasAo3LibraryInfo) { if (visual == idx) return 6; idx++; } // Show AO3 Page QR
   if (hasAo3LibraryInfo && isInSeries) { if (visual == idx) return 7; idx++; } // Open AO3 Series
-  if (isEpub && !isAlreadyArchived) { if (visual == idx) return 2; idx++; } // Index Book
-  if (hasAo3LibraryInfo) { if (visual == idx) return 3; idx++; } // Move to Read Folder / Restore
+  if (isEpub && !isAlreadyArchived && !isBookmarked) { if (visual == idx) return 2; idx++; } // Index Book
+  if (hasAo3LibraryInfo && !isAlreadyArchived) { if (visual == idx) return 8; idx++; } // Bookmark / Remove Bookmark
+  if (hasAo3LibraryInfo && !isBookmarked) { if (visual == idx) return 3; idx++; } // Move to Read Folder / Restore
   if (visual == idx)     return 4;                               // Delete
   return -1;
 }
@@ -89,11 +90,12 @@ int BookActionActivity::listCount() const {
 
   int n = 1;                      // Delete always present
   if (isEpub || isXtc)      n++;  // Status
-  if (hasAo3LibraryInfo)    n++;  // Mark for Later
+  if (hasAo3LibraryInfo && !isBookmarked) n++;  // Mark for Later
   if (hasAo3LibraryInfo)    n++;  // Show AO3 Page QR
   if (hasAo3LibraryInfo && isInSeries) n++; // Open AO3 Series
-  if (isEpub && !isAlreadyArchived) n++;  // Index Book
-  if (hasAo3LibraryInfo)    n++;  // Move to Read Folder / Restore
+  if (isEpub && !isAlreadyArchived && !isBookmarked) n++;  // Index Book
+  if (hasAo3LibraryInfo && !isAlreadyArchived) n++;  // Bookmark / Remove Bookmark
+  if (hasAo3LibraryInfo && !isBookmarked) n++;  // Move to Read Folder / Restore
   return n;
 }
 
@@ -128,7 +130,9 @@ void BookActionActivity::onEnter() {
       infoFile.close();
     }
   }
-  isAlreadyArchived = Ao3ArchiveHelper::isInReadFolder(filePath);
+  // Bookmarks live under /read too, so they must be told apart before the archive check.
+  isBookmarked      = Ao3Paths::isInBookmarks(filePath);
+  isAlreadyArchived = Ao3ArchiveHelper::isInReadFolder(filePath) && !isBookmarked;
   isEpub = FsHelpers::hasEpubExtension(filePath);
   isXtc  = FsHelpers::hasXtcExtension(filePath);
   
@@ -184,6 +188,7 @@ void BookActionActivity::buildScreen(UiScreen& uiScreen) {
       case 5: rowTitles[i] = "Remove from List"; break;
       case 6: rowTitles[i] = "Show AO3 Page QR"; break;
       case 7: rowTitles[i] = "Show Series"; break;
+      case 8: rowTitles[i] = isBookmarked ? "Remove Bookmark" : "Bookmark Fic"; break;
     }
 
     if (logicalRow(i) == 1) {
@@ -472,6 +477,31 @@ void BookActionActivity::activateIndex(int index) {
               filePath,
               SeriesReturn::PopToCaller),
           [this](const ActivityResult&) { requestUpdate(true); });
+      break;
+    }
+
+        case 8: {
+      // Status and the finished bit must be saved before the record moves.
+      saveStatusIfModified();
+      const std::string newPath = isBookmarked ? Ao3ArchiveHelper::restoreBookmark(filePath)
+                                               : Ao3ArchiveHelper::bookmarkFic(filePath);
+      if (!newPath.empty()) {
+        BookActionResult result;
+        result.modified  = true;
+        result.archived  = true;  // "moved out of this list": hosts drop the entry
+        result.newPath   = newPath;
+        result.newStatus = currentStatus;
+        setResult(ActivityResult(std::move(result)));
+        finish();
+      } else {
+        startActivityForResult(
+            std::make_unique<ConfirmationActivity>(
+                renderer, mappedInput,
+                isBookmarked ? "Cannot Remove Bookmark" : "Cannot Bookmark",
+                isBookmarked ? "Check your AO3 folder setting and library space."
+                             : "The fic must be indexed and the bookmark list not full."),
+            [this](const ActivityResult&) { requestUpdate(true); });
+      }
       break;
     }
 

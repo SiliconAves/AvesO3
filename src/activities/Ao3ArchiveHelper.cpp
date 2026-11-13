@@ -123,6 +123,21 @@ bool transferFic(const std::string& srcPath, const std::string& dstPath) {
     return true;
 }
 
+// Returns path if free, else "name (2).epub", "name (3).epub", ... Returns "" if none is free.
+std::string uniquePath(const std::string& path) {
+    if (!Storage.exists(path.c_str())) return path;
+    const size_t slash = path.rfind('/');
+    const size_t dot = path.rfind('.');
+    const bool hasExt = dot != std::string::npos && (slash == std::string::npos || dot > slash);
+    const std::string base = hasExt ? path.substr(0, dot) : path;
+    const std::string ext = hasExt ? path.substr(dot) : "";
+    for (int i = 2; i < 100; i++) {
+        const std::string candidate = base + " (" + std::to_string(i) + ")" + ext;
+        if (!Storage.exists(candidate.c_str())) return candidate;
+    }
+    return "";
+}
+
 namespace Ao3ArchiveHelper {
 
 std::string buildDestinationPath(const std::string& srcPath, const char* rootOverride) {
@@ -341,5 +356,41 @@ std::string bookmarkFic(const std::string& srcPath) {
     LOG_INF("AO3BKM", "Bookmarked: %s -> %s", srcPath.c_str(), dstPath.c_str());
     return dstPath;
     }
+
+    
+std::string restoreBookmark(const std::string& srcPath) {
+    if (!Ao3Paths::isInBookmarks(srcPath)) {
+        LOG_ERR("AO3BKM", "Not a bookmarked fic: %s", srcPath.c_str());
+        return "";
+    }
+
+    std::string ao3Folder = loadAo3FolderSetting();
+    while (ao3Folder.size() > 1 && ao3Folder.back() == '/') ao3Folder.pop_back();
+    if (ao3Folder.empty()) {
+        LOG_ERR("AO3BKM", "No AO3 folder configured, cannot restore");
+        return "";
+    }
+
+    // Bookmarks mirror the path relative to ao3Folder: strip the prefix and re-root.
+    const std::string relPart = srcPath.substr(sizeof(Ao3Paths::BOOKMARKS_PREFIX) - 1);
+    const std::string wanted = (ao3Folder == "/") ? "/" + relPart : ao3Folder + "/" + relPart;
+
+    const size_t lastSlash = wanted.rfind('/');
+    if (lastSlash != 0) {
+        Storage.mkdir(wanted.substr(0, lastSlash).c_str(), true);
+    }
+
+    const std::string dstPath = uniquePath(wanted);
+    if (dstPath.empty() || !transferFic(srcPath, dstPath)) return "";
+
+    RECENT_BOOKS.updatePath(srcPath, dstPath, cachePathFor(srcPath), cachePathFor(dstPath));
+    if (APP_STATE.openEpubPath == srcPath) {
+        APP_STATE.openEpubPath = dstPath;
+        APP_STATE.saveToFile();
+    }
+
+    LOG_INF("AO3BKM", "Restored bookmark: %s -> %s", srcPath.c_str(), dstPath.c_str());
+    return dstPath;
+}
 
 }
