@@ -55,7 +55,8 @@ void Ao3LibraryActivity::onEnter() {
   skipNextBackRelease = mappedInput.isPressed(MappedInputManager::Button::Back);
   autoIndexLaunched_ = false;
 
-  if (Storage.exists("/.crosspoint/pending_ao3_scan")) {
+  // The pending-scan flag belongs to the main library; bookmark mode must not consume it.
+  if (mode_ == Ao3LibraryMode::REGULAR && Storage.exists("/.crosspoint/pending_ao3_scan")) {
     Storage.remove("/.crosspoint/pending_ao3_scan");
     pendingTransferScan = true;
   }
@@ -497,7 +498,11 @@ void Ao3LibraryActivity::loop() {
             }
           }
         };
-        g_silentReturnHint = {SILENT_TARGET_AO3_LIBRARY, 0, static_cast<int16_t>(selectorIndex)};
+        // A restart resumes into the main library, so only hint it from regular mode.
+        // In bookmark mode the hint stays empty and a restart lands on Home.
+        if (mode_ == Ao3LibraryMode::REGULAR) {
+          g_silentReturnHint = {SILENT_TARGET_AO3_LIBRARY, 0, static_cast<int16_t>(selectorIndex)};
+        }
         startActivityForResult(
             std::make_unique<BookActionActivity>(renderer, mappedInput, epubPath, epubTitle),
             handler);
@@ -923,7 +928,8 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
   renderer.clearScreen();
 
   // Draw Header Title (Truncate to 25 chars if fandom filter is active)
-  char headerTitle[32] = "AO3 Library";
+  char headerTitle[32];
+  strcpy(headerTitle, mode_ == Ao3LibraryMode::BOOKMARKS ? "Bookmarked Fics" : "AO3 Library");
   if (activeState.fandom[0] != '\0') {
     std::string cleanFandom(activeState.fandom);
     if (cleanFandom.length() > 29) {
@@ -959,13 +965,18 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
   if (indexState == IndexState::MISSING || (indexState == IndexState::OK && viewEntries.empty())) {
     if (activeState.fandom[0] != '\0') {
       renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2 - 12, "No matches for current filter.");
+    } else if (mode_ == Ao3LibraryMode::BOOKMARKS) {
+      renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2 - 12, "No bookmarked fics yet.");
+      renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 12, "Bookmark a fic from the hold CONFIRM menu.");
     } else {
       renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2 - 12, "No AO3 books indexed yet.");
       renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 12, "Press SIDE UP to index new books.");
     }
   } else if (indexState == IndexState::CORRUPT) {
     renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2 - 12, "Library index missing or corrupt.");
-    renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 12, "Open a book to recreate it.");
+        renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 12,
+                              mode_ == Ao3LibraryMode::REGULAR ? "Open a book to recreate it."
+                                                               : "Bookmarks index is unreadable.");
   } else {
     const int startIdx = (selectorIndex / 3) * 3;
     const int endIdx   = std::min(startIdx + 3, static_cast<int>(viewEntries.size()));
@@ -1461,8 +1472,10 @@ void Ao3LibraryActivity::loadSortFilterState() {
   memset(activeState.fandom,       0, 32);
   memset(activeState.relationship, 0, 32);
   activeState.relationshipNoneOnly = false;
-  activeState.sortMode  = SortMode::ALPHABETIC;
-  activeState.ascending = true;
+  // Bookmarks default to newest-bookmarked first; the regular library stays alphabetical.
+  const bool bookmarks = (mode_ == Ao3LibraryMode::BOOKMARKS);
+  activeState.sortMode  = bookmarks ? SortMode::DATE_ADDED : SortMode::ALPHABETIC;
+  activeState.ascending = !bookmarks;
 
   const char* path = statePath_;
   if (!Storage.exists(path)) return;
