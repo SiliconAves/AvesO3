@@ -6,7 +6,9 @@
 #include <HalStorage.h>
 #include <Logging.h>
 
+#include <cstring>
 #include <functional>
+#include <memory>
 #include <string>
 
 #include "Ao3Librarian.h"
@@ -25,13 +27,105 @@ std::string loadAo3FolderSetting() {
     JsonDocument doc;
     if (deserializeJson(doc, json)) return "";
     return doc["ao3Folder"] | "";
+    }
+
+    std::string cachePathFor(const std::string& path) {
+    return "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(path));
+    }
+} // namespace
+
+// Rewrites the filepath field of the ao3_library_info sidecar inside cacheDir.
+// Reads and rewrites the whole struct (heap-allocated, ~1.3 KB), so it does not depend
+// on how openFileForWrite treats an existing file.
+bool patchSidecarPath(const std::string& cacheDir, const std::string& newPath) {
+    if (newPath.size() >= sizeof(Ao3LibraryMetadata::filepath)) return false;
+    const std::string infoPath = cacheDir + "/ao3_library_info";
+    auto meta = std::unique_ptr<Ao3LibraryMetadata>(new Ao3LibraryMetadata());
+    {
+        HalFile f;
+        if (!Storage.openFileForRead("AO3BKM", infoPath, f)) return false;
+        const bool ok = f.read((uint8_t*)meta.get(), sizeof(Ao3LibraryMetadata)) ==
+                        static_cast<int>(sizeof(Ao3LibraryMetadata));
+        f.close();
+        if (!ok || !meta->isValid()) return false;
+    }
+    memset(meta->filepath, 0, sizeof(meta->filepath));
+    strncpy(meta->filepath, newPath.c_str(), sizeof(meta->filepath) - 1);
+
+    HalFile f;
+    if (!Storage.openFileForWrite("AO3BKM", infoPath, f)) return false;
+    const bool ok = f.write((uint8_t*)meta.get(), sizeof(Ao3LibraryMetadata)) == sizeof(Ao3LibraryMetadata);
+    f.close();
+    return ok;
 }
 
-} // namespace
+// Moves a fic between libraries: epub, cache dir, sidecar path, index record.
+// The direction is implied by the paths: indexPathFor() routes the source record
+// and the destination record. Any failure before the record is committed rolls
+// everything back and returns false.
+bool transferFic(const std::string& srcPath, const std::string& dstPath) {
+    const std::string oldCache = cachePathFor(srcPath);
+    const std::string newCache = cachePathFor(dstPath);
+    const char* dstIndex = Ao3Paths::indexPathFor(dstPath);
+
+    // Pre-flight: nothing is touched unless all of this holds.
+    CompactIndexRecord rec;
+    if (!Ao3Librarian::readRecord(srcPath, rec)) {
+        LOG_ERR("AO3BKM", "No index record for: %s", srcPath.c_str());
+        return false;
+    }
+    if (!Storage.exists((oldCache + "/ao3_library_info").c_str())) {
+        LOG_ERR("AO3BKM", "No sidecar for: %s", srcPath.c_str());
+        return false;
+    }
+    if (!Ao3Librarian::hasRoom(dstIndex)) {
+        LOG_ERR("AO3BKM", "Destination index full: %s", dstIndex);
+        return false;
+    }
+
+    // 1. Move the epub.
+    if (!Storage.rename(srcPath.c_str(), dstPath.c_str())) {
+        LOG_ERR("AO3BKM", "Rename failed: %s -> %s", srcPath.c_str(), dstPath.c_str());
+        return false;
+    }
+
+    // 2. Re-key the cache dir. dstPath did not exist, so a cache already keyed to it is stale.
+    if (Storage.exists(newCache.c_str())) Storage.removeDir(newCache.c_str());
+    if (!Storage.rename(oldCache.c_str(), newCache.c_str())) {
+        LOG_ERR("AO3BKM", "Cache rename failed, rolling back");
+        Storage.rename(dstPath.c_str(), srcPath.c_str());
+        return false;
+    }
+
+    // 3. Point the sidecar at the new path.
+    if (!patchSidecarPath(newCache, dstPath)) {
+        LOG_ERR("AO3BKM", "Sidecar patch failed, rolling back");
+        Storage.rename(newCache.c_str(), oldCache.c_str());
+        Storage.rename(dstPath.c_str(), srcPath.c_str());
+        return false;
+    }
+
+    // 4. Write the record into the destination index (new hash, live, finished bit kept).
+    rec.cacheHash = static_cast<uint32_t>(std::hash<std::string>{}(dstPath));
+    rec.flags &= static_cast<uint8_t>(~0x01);
+    if (!Ao3Librarian::writeIndexRecord(rec, dstIndex)) {
+        LOG_ERR("AO3BKM", "Index write failed, rolling back");
+        patchSidecarPath(newCache, srcPath);
+        Storage.rename(newCache.c_str(), oldCache.c_str());
+        Storage.rename(dstPath.c_str(), srcPath.c_str());
+        return false;
+    }
+
+    // 5. Tombstone the source record last (routed by the source path).
+    if (!Ao3Librarian::tombstoneRecord(srcPath)) {
+        LOG_ERR("AO3BKM", "Source tombstone failed (non-fatal): %s", srcPath.c_str());
+    }
+    return true;
+}
 
 namespace Ao3ArchiveHelper {
 
-std::string buildDestinationPath(const std::string& srcPath) {
+std::string buildDestinationPath(const std::string& srcPath, const char* rootOverride) {
     const std::string ao3Folder = loadAo3FolderSetting();
 
     // Last component of ao3Folder becomes the archive subfolder name.
@@ -44,7 +138,7 @@ std::string buildDestinationPath(const std::string& srcPath) {
                             : ao3Folder;
     }
 
-    const std::string archiveRoot = std::string(READ_FOLDER_ROOT) + "/" + subfolderName;
+    const std::string archiveRoot = rootOverride ? std::string(rootOverride) : std::string(READ_FOLDER_ROOT) + "/" + subfolderName;
 
     // Strip ao3Folder prefix to get relative path; fall back to filename only
     // if the book lives outside the configured ao3Folder.
@@ -218,5 +312,34 @@ std::string restoreFic(const std::string& srcPath) {
     LOG_INF("AO3ARC", "Restored: %s -> %s", srcPath.c_str(), originalPath.c_str());
     return originalPath;
 }
+
+std::string bookmarkFic(const std::string& srcPath) {
+    // Bookmarks and archived fics both live under /read; neither can be bookmarked.
+    if (isInReadFolder(srcPath)) {
+        LOG_ERR("AO3BKM", "Already under /read: %s", srcPath.c_str());
+        return "";
+    }
+
+    const std::string dstPath = buildDestinationPath(srcPath, Ao3Paths::BOOKMARKS_FOLDER);
+    if (dstPath.empty() || !transferFic(srcPath, dstPath)) return "";
+
+    // Repoint pointers, as in archiveFic.
+    RECENT_BOOKS.updatePath(srcPath, dstPath, cachePathFor(srcPath), cachePathFor(dstPath));
+    if (APP_STATE.openEpubPath == srcPath) {
+        APP_STATE.openEpubPath = dstPath;
+        APP_STATE.saveToFile();
+    }
+
+    // Dashboard stores key on the path; load first so the removals actually persist.
+    MARKED_FOR_LATER_STORE.loadFromFile();
+    MARKED_FOR_LATER_STORE.removeByPath(srcPath);
+    NEW_CHAPTERS_STORE.loadFromFile();
+    NEW_CHAPTERS_STORE.removeByPath(srcPath);
+    AO3_WIPS_STORE.loadFromFile();
+    AO3_WIPS_STORE.removeBook(srcPath);
+
+    LOG_INF("AO3BKM", "Bookmarked: %s -> %s", srcPath.c_str(), dstPath.c_str());
+    return dstPath;
+    }
 
 }

@@ -11,9 +11,9 @@ inline bool isInReadFolder(const std::string& path) {
            path.compare(0, prefixLen, "/read/") == 0;
 }
 
-// Builds the mirrored destination path under /read/<ao3FolderName>/.
-// Creates intermediate directories. Returns empty string on failure.
-std::string buildDestinationPath(const std::string& srcPath);
+// rootOverride (optional): build under this root instead of /read/<ao3FolderName>
+// (used by bookmarks). Relative structure and collision suffixing are identical.
+std::string buildDestinationPath(const std::string& srcPath, const char* rootOverride = nullptr);
 
 // Full archive sequence:
 //   1. tombstone index record
@@ -28,5 +28,9 @@ std::string archiveFic(const std::string& srcPath);
 // Re-keys the cache dir, updates recents and APP_STATE.
 // Returns the restored path on success, empty string on failure.
 std::string restoreFic(const std::string& srcPath);
+
+// Moves an indexed fic into /read/AO3 Bookmarks and transfers its index record to the
+// bookmarks index. Returns the new path, or empty string on failure (nothing is changed).
+std::string bookmarkFic(const std::string& srcPath);
 
 }
