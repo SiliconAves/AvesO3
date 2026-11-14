@@ -128,6 +128,9 @@ Ao3EndOfBookActivity::Ao3EndOfBookActivity(GfxRenderer& renderer, MappedInputMan
 
 void Ao3EndOfBookActivity::buildActiveRows() {
   activeRows.clear();
+  isBookmarked = Ao3Paths::isInBookmarks(bookPath);
+  // Bookmarks live under /read too, so only the plain read folder counts as archived.
+  const bool archived = Ao3ArchiveHelper::isInReadFolder(bookPath) && !isBookmarked;
   activeRows.push_back(ROW_GO_HOME);
   activeRows.push_back(ROW_AO3_PAGE);
   if (!seriesName.empty()) {
@@ -136,9 +139,15 @@ void Ao3EndOfBookActivity::buildActiveRows() {
   if (!isCompleted) {
     activeRows.push_back(ROW_UPDATE);
   }
-  if (!Ao3ArchiveHelper::isInReadFolder(bookPath)) {
-    activeRows.push_back(ROW_ARCHIVE);
+    if (!archived) {
+    activeRows.push_back(ROW_BOOKMARK);
+    activeRows.push_back(ROW_ARCHIVE);  // shown greyed out while bookmarked
   }
+}
+
+bool Ao3EndOfBookActivity::isRowEnabled(int index) const {
+  // Archive is unavailable while bookmarked: both live under /read.
+  return !(activeRows[index] == ROW_ARCHIVE && isBookmarked);
 }
 
 void Ao3EndOfBookActivity::loadBookInfo() {
@@ -213,6 +222,7 @@ void Ao3EndOfBookActivity::buildScreen(UiScreen& uiScreen) {
       case ROW_AO3_PAGE: return fui::bitmapFromIcon(icon_ao3_page_32);
       case ROW_SERIES:   return fui::bitmapFromIcon(icon_series_fic_32);
       case ROW_UPDATE:   return fui::bitmapFromIcon(icon_update_fic_32);
+      case ROW_BOOKMARK: return fui::bitmapFromIcon(isBookmarked ? icon_bookmarkremove_fic_32 : icon_bookmark_fic_32);
       case ROW_ARCHIVE:  return fui::bitmapFromIcon(icon_archive_fic_32);
     }
     return {};
@@ -275,6 +285,7 @@ void Ao3EndOfBookActivity::buildScreen(UiScreen& uiScreen) {
       case ROW_AO3_PAGE: return "AO3 Page";
       case ROW_SERIES:   return "Series";
       case ROW_UPDATE:   return "Update";
+      case ROW_BOOKMARK: return isBookmarked ? "Remove B." : "Bookmark";
       case ROW_ARCHIVE:  return "Archive";
       case ROW_GO_HOME:  return "Go Home";
     }
@@ -336,9 +347,11 @@ void Ao3EndOfBookActivity::buildScreen(UiScreen& uiScreen) {
 
   for (int i = 0; i < count; i++) {
     const fui::Rect btnRect{startX, btnY, btnWidth, BUTTON_HEIGHT};
+    const bool enabled = isRowEnabled(i);
     // Touch: register the button's hit area; a tap arrives as ACTION_ROW with
     // value = i and the base class selects the row and calls activateIndex().
-    uiScreen.frame().hit(btnRect, ACTION_ROW, static_cast<int16_t>(i), fui::InputTouch);
+    // Disabled rows get no hit area.
+    if (enabled) uiScreen.frame().hit(btnRect, ACTION_ROW, static_cast<int16_t>(i), fui::InputTouch);
 
     const fui::BoxStyle& box = (i == nav.selected) ? buttonStyles.selected : buttonStyles.normal;
     target.fill(btnRect, box.background, box.radius);
@@ -353,6 +366,13 @@ void Ao3EndOfBookActivity::buildScreen(UiScreen& uiScreen) {
                              static_cast<int16_t>(btnRect.width - textOffset - 4), btnRect.height};
     target.text(textRect, labelFor(i), buttonText);
 
+    // Disabled: checkerboard-dither the whole button so it reads as greyed out.
+    if (!enabled) {
+      for (int py = btnRect.y; py < btnRect.y + btnRect.height; py++)
+        for (int px = btnRect.x; px < btnRect.x + btnRect.width; px++)
+          if ((px + py) % 2 == 0) renderer.drawPixel(px, py, false);
+    }
+
     btnY = static_cast<int16_t>(btnY + BUTTON_HEIGHT + BUTTON_GAP);
   }
 }
@@ -364,9 +384,14 @@ void Ao3EndOfBookActivity::buildScreen(UiScreen& uiScreen) {
 void Ao3EndOfBookActivity::stepSelection(int delta) {
   const int count = listCount();
   if (count <= 0) return;
-  {
+    {
     RenderLock lock(*this);  // the render task reads nav while building the screen
-    nav.selected = (nav.selected + delta % count + count) % count;
+    int next = nav.selected;
+    for (int n = 0; n < count; n++) {  // at most one lap, skipping disabled rows
+      next = (next + delta % count + count) % count;
+      if (isRowEnabled(next)) break;
+    }
+    nav.selected = next;
   }
   requestUpdate(true);
 }
@@ -393,6 +418,8 @@ bool Ao3EndOfBookActivity::handleButtons() {
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     if (backHoldHandled) {  // the hold already acted; swallow the release
       backHoldHandled = false;
+    } else if (fileMoved) {
+      returnToLibraryOrBrowser();  // a reader below would still point at the old path
     } else {
       finish();
     }
@@ -480,6 +507,33 @@ void Ao3EndOfBookActivity::activateIndex(int index) {
       startActivityForResult(std::make_unique<ConfirmationActivity>(renderer, mappedInput, "Move to Read Folder?",
                                                                     "The fic will leave the AO3 Library."),
                              handler);
+      break;
+    }
+
+        case ROW_BOOKMARK: {
+      const bool wasBookmarked = isBookmarked;
+      const std::string newPath = wasBookmarked ? Ao3ArchiveHelper::restoreBookmark(bookPath)
+                                                : Ao3ArchiveHelper::bookmarkFic(bookPath);
+      if (newPath.empty()) {
+        startActivityForResult(
+            std::make_unique<ConfirmationActivity>(
+                renderer, mappedInput,
+                wasBookmarked ? "Cannot Remove Bookmark" : "Cannot Bookmark",
+                wasBookmarked ? "Check your AO3 folder setting and library space."
+                              : "The fic must be indexed and the bookmark list not full."),
+            [this](const ActivityResult&) { requestUpdate(true); });
+        break;
+      }
+      {
+        RenderLock lock(*this);  // also protects activeRows while it is rebuilt
+        GUI.drawPopup(renderer, wasBookmarked ? "Bookmark Removed" : "Fic Bookmarked");
+        delay(800);
+        // Follow the file and refresh the rows: the heart flips, Archive greys out or re-enables.
+        bookPath = newPath;
+        fileMoved = true;
+        buildActiveRows();
+      }
+      requestUpdate(true);  // redraw in the new state; this also clears the popup
       break;
     }
 

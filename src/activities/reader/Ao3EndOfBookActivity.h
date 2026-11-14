@@ -51,13 +51,17 @@ class Ao3EndOfBookActivity final : public UiListActivity {
     ROW_AO3_PAGE,
     ROW_SERIES,
     ROW_UPDATE,
+    ROW_BOOKMARK,
     ROW_ARCHIVE
   };
   std::vector<ActionRow> activeRows;
+  bool isBookmarked = false;  // fic lives in /read/AO3 Bookmarks
+  bool fileMoved = false;  // bookmark toggled: any reader below still points at the old path
 
   void loadBookInfo();
   void stepSelection(int delta);
   void buildActiveRows();
+  bool isRowEnabled(int index) const;
   void launchSeriesActivity();
   void returnToLibraryOrBrowser();
 };
