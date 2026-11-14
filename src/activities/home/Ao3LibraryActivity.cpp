@@ -1696,8 +1696,9 @@ void Ao3LibraryActivity::rebuildViewEntries() {
   CompactIndexRecord rec;
   for (uint16_t i = 0; i < recordCount; i++) {
     if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
-    if (rec.flags & 0x01) continue;           // Skip tombstone
-    if (hideFinished && (rec.flags & 0x02)) continue; // Skip finished
+    if (rec.flags & 0x01) continue;  // Skip tombstone
+    // Skip finished (never in bookmarks)
+    if (hideFinished && mode_ == Ao3LibraryMode::REGULAR && (rec.flags & 0x02)) continue; 
     ViewEntry v = buildViewEntry(rec);
     if (passesFilter(v, filterHashes)) {
       viewEntries.push_back(v);
@@ -1782,7 +1783,7 @@ void Ao3LibraryActivity::buildFandomList(std::vector<std::string>& out) const {
       return;
   }
 
-  const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+  const char* indexPath = indexPath_;
   HalFile f;
   if (!Storage.openFileForRead("AO3L", indexPath, f)) return;
 
@@ -1852,7 +1853,7 @@ void Ao3LibraryActivity::buildRelationshipList(const char* fandom, std::vector<s
       return;
   }
 
-  const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+  const char* indexPath = indexPath_;
   HalFile f;
   if (!Storage.openFileForRead("AO3L", indexPath, f)) return;
 
