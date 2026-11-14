@@ -257,12 +257,16 @@ void Ao3LibraryActivity::loop() {
         viewEntries.clear();
         viewEntries.shrink_to_fit();
         auto handler = [this](const ActivityResult&) {
+          g_silentReturnHint = {};
           indexState = IndexState::UNKNOWN;
           rebuildViewEntries();
           requestUpdate();
         };
 
         // Pass autoFinishIfEmpty = true, headless = true
+        if (mode_ == Ao3LibraryMode::REGULAR) {
+          g_silentReturnHint = {SILENT_TARGET_AO3_LIBRARY, 0, static_cast<int16_t>(selectorIndex)};
+        }
         startActivityForResult(
             std::make_unique<Ao3IndexActivity>(renderer, mappedInput, Ao3IndexMode::DIRECTORY, "", true, true),
             handler);
@@ -868,9 +872,13 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
           indexState = IndexState::UNKNOWN; // mark for rebuild on return
           screenState = ScreenState::LIBRARY;
           auto handler = [this](const ActivityResult&) {
+            g_silentReturnHint = {};
             rebuildViewEntries();
             requestUpdate(true);
           };
+          if (mode_ == Ao3LibraryMode::REGULAR) {
+            g_silentReturnHint = {SILENT_TARGET_AO3_LIBRARY, 0, static_cast<int16_t>(selectorIndex)};
+          }
           startActivityForResult(std::make_unique<Ao3IndexActivity>(renderer, mappedInput, Ao3IndexMode::DIRECTORY), handler);
         }
       } else {

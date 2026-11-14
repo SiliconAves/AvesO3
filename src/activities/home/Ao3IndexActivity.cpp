@@ -78,7 +78,7 @@ bool Ao3IndexActivity::handleBack() {
 bool Ao3IndexActivity::handleConfirm() {
   if (state == State::ERROR) {
     app.clearTapFlash();
-    if (errorMessage == "Not enough memory. Please restart the device.") silentRestart();
+    if (errorMessage == "Not enough memory. Please restart the device.") silentRestartToHint();
     else finish();
     return true;
   }
