@@ -265,7 +265,7 @@ void Ao3LibraryActivity::loop() {
 
         // Pass autoFinishIfEmpty = true, headless = true
         if (mode_ == Ao3LibraryMode::REGULAR) {
-          g_silentReturnHint = {SILENT_TARGET_AO3_LIBRARY, 0, static_cast<int16_t>(selectorIndex)};
+          g_silentReturnHint = {SILENT_TARGET_AO3_LIBRARY, static_cast<uint8_t>(mode_), static_cast<int16_t>(selectorIndex)};
         }
         startActivityForResult(
             std::make_unique<Ao3IndexActivity>(renderer, mappedInput, Ao3IndexMode::DIRECTORY, "", true, true),
@@ -502,11 +502,8 @@ void Ao3LibraryActivity::loop() {
             }
           }
         };
-        // A restart resumes into the main library, so only hint it from regular mode.
-        // In bookmark mode the hint stays empty and a restart lands on Home.
-        if (mode_ == Ao3LibraryMode::REGULAR) {
-          g_silentReturnHint = {SILENT_TARGET_AO3_LIBRARY, 0, static_cast<int16_t>(selectorIndex)};
-        }
+        g_silentReturnHint = {SILENT_TARGET_AO3_LIBRARY, static_cast<uint8_t>(mode_),
+                              static_cast<int16_t>(selectorIndex)};
         startActivityForResult(
             std::make_unique<BookActionActivity>(renderer, mappedInput, epubPath, epubTitle),
             handler);
@@ -877,7 +874,7 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
             requestUpdate(true);
           };
           if (mode_ == Ao3LibraryMode::REGULAR) {
-            g_silentReturnHint = {SILENT_TARGET_AO3_LIBRARY, 0, static_cast<int16_t>(selectorIndex)};
+            g_silentReturnHint = {SILENT_TARGET_AO3_LIBRARY, static_cast<uint8_t>(mode_), static_cast<int16_t>(selectorIndex)};
           }
           startActivityForResult(std::make_unique<Ao3IndexActivity>(renderer, mappedInput, Ao3IndexMode::DIRECTORY), handler);
         }

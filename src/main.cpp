@@ -571,7 +571,10 @@ void setup() {
   } else if (resume == BootResume::Silent && snapshotTarget == SILENT_TARGET_DASHBOARD) {
     activityManager.goToRecentBooks(snapshotTab, snapshotIndex);
   } else if (resume == BootResume::Silent && snapshotTarget == SILENT_TARGET_AO3_LIBRARY) {
-    activityManager.goToAo3Library(snapshotIndex >= 0 ? static_cast<size_t>(snapshotIndex) : 0);
+    const auto mode = (snapshotTab == static_cast<int>(Ao3LibraryMode::BOOKMARKS))
+                          ? Ao3LibraryMode::BOOKMARKS
+                          : Ao3LibraryMode::REGULAR;
+    activityManager.goToAo3Library(snapshotIndex >= 0 ? static_cast<size_t>(snapshotIndex) : 0, mode);
   } else if (resume == BootResume::Silent) {
     // target == home (or reader with no open book): land on home — don't fall
     // through to the sleep-wake "resume reader" logic, which fires on stale

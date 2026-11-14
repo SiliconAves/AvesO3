@@ -18,7 +18,7 @@ constexpr uint8_t SILENT_TARGET_AO3_LIBRARY = 3;
 
 struct SilentReturnHint {
   uint8_t target = 0;   // 0 = none/Home
-  uint8_t tab = 0;      // dashboard tab
+  uint8_t tab = 0;      // dashboard tab or AO3 library mode (0 = Regular, 1 = Bookmarks)
   int16_t index = -1;   // dashboard row (0-based, -1 = none) or library selectorIndex
 };
 inline SilentReturnHint g_silentReturnHint;
