@@ -74,7 +74,7 @@ int BookActionActivity::logicalRow(int visual) const {
   // FULL mode
   int idx = 0;
   if (isEpub || isXtc)   { if (visual == idx) return 0; idx++; } // Status cycle
-  if (hasAo3LibraryInfo && !isBookmarked) { if (visual == idx) return 1; idx++; } // Mark for Later
+  if (hasAo3LibraryInfo) { if (visual == idx) return 1; idx++; } // Mark for Later
   if (hasAo3LibraryInfo) { if (visual == idx) return 6; idx++; } // Show AO3 Page QR
   if (hasAo3LibraryInfo && isInSeries) { if (visual == idx) return 7; idx++; } // Open AO3 Series
   if (isEpub && !isAlreadyArchived && !isBookmarked) { if (visual == idx) return 2; idx++; } // Index Book

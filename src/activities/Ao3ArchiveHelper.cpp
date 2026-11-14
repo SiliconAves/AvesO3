@@ -32,6 +32,17 @@ std::string loadAo3FolderSetting() {
     std::string cachePathFor(const std::string& path) {
     return "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(path));
     }
+
+    void repointDashboardStores(const std::string& oldPath, const std::string& newPath) {
+        // Load first so the update works on current data and the save persists it.
+        MARKED_FOR_LATER_STORE.loadFromFile();
+        MARKED_FOR_LATER_STORE.updatePath(oldPath, newPath);
+        NEW_CHAPTERS_STORE.loadFromFile();
+        NEW_CHAPTERS_STORE.updatePath(oldPath, newPath);
+        AO3_WIPS_STORE.loadFromFile();
+        AO3_WIPS_STORE.updatePath(oldPath, newPath);
+    }
+
 } // namespace
 
 // Rewrites the filepath field of the ao3_library_info sidecar inside cacheDir.
@@ -345,13 +356,8 @@ std::string bookmarkFic(const std::string& srcPath) {
         APP_STATE.saveToFile();
     }
 
-    // Dashboard stores key on the path; load first so the removals actually persist.
-    MARKED_FOR_LATER_STORE.loadFromFile();
-    MARKED_FOR_LATER_STORE.removeByPath(srcPath);
-    NEW_CHAPTERS_STORE.loadFromFile();
-    NEW_CHAPTERS_STORE.removeByPath(srcPath);
-    AO3_WIPS_STORE.loadFromFile();
-    AO3_WIPS_STORE.removeBook(srcPath);
+    // Dashboard stores key on the path: repoint so the fic keeps its place in them.
+    repointDashboardStores(srcPath, dstPath);
 
     LOG_INF("AO3BKM", "Bookmarked: %s -> %s", srcPath.c_str(), dstPath.c_str());
     return dstPath;
@@ -389,6 +395,7 @@ std::string restoreBookmark(const std::string& srcPath) {
         APP_STATE.saveToFile();
     }
 
+    repointDashboardStores(srcPath, dstPath);
     LOG_INF("AO3BKM", "Restored bookmark: %s -> %s", srcPath.c_str(), dstPath.c_str());
     return dstPath;
 }

@@ -51,6 +51,16 @@ bool Ao3MarkedForLaterStore::removeByPath(const std::string& path) {
   return true;
 }
 
+bool Ao3MarkedForLaterStore::updatePath(const std::string& oldPath, const std::string& newPath) {
+  for (auto& e : entries) {
+    if (e.path == oldPath) {
+      e.path = newPath;
+      return saveToFile();
+    }
+  }
+  return false;
+}
+
 bool Ao3MarkedForLaterStore::isMissing(const Ao3MarkedForLaterEntry& e) {
   return !Storage.exists(e.path.c_str());
 }

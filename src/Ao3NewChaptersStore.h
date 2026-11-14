@@ -42,6 +42,9 @@ class Ao3NewChaptersStore {
   // Persists on success (best-effort).
   bool removeByPath(const std::string& path);
 
+  // Repoint an entry after its file moved. Keeps queue position. Persists on success.
+  bool updatePath(const std::string& oldPath, const std::string& newPath);
+
   // Remove entries whose backing file is no longer on the SD card.
   // Returns true if any entry was removed.  Does not persist — caller decides.
   bool pruneMissing();

@@ -26,6 +26,8 @@ public:
     void addBook(const std::string& path, const std::string& title, const std::string& author);
     void clearEntries() { entries.clear(); entries.shrink_to_fit(); }
     bool removeBook(const std::string& path);
+    // Repoint an entry after its file moved. Persists on success.
+    bool updatePath(const std::string& oldPath, const std::string& newPath);
     bool pruneMissing();
 
     const std::vector<Ao3WipEntry>& getEntries() const { return entries; }

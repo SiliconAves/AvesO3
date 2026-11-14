@@ -41,6 +41,16 @@ bool Ao3WipsStore::removeBook(const std::string& path) {
     return false;
 }
 
+bool Ao3WipsStore::updatePath(const std::string& oldPath, const std::string& newPath) {
+    for (auto& entry : entries) {
+        if (entry.path == oldPath) {
+            entry.path = newPath;  // list is ordered by title, so the position is unaffected
+            return saveToFile();
+        }
+    }
+    return false;
+}
+
 bool Ao3WipsStore::pruneMissing() {
     const size_t before = entries.size();
     entries.erase(

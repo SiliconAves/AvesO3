@@ -47,6 +47,16 @@ bool Ao3NewChaptersStore::removeByPath(const std::string& path) {
   return true;
 }
 
+bool Ao3NewChaptersStore::updatePath(const std::string& oldPath, const std::string& newPath) {
+  for (auto& e : entries) {
+    if (e.path == oldPath) {
+      e.path = newPath;
+      return saveToFile();
+    }
+  }
+  return false;
+}
+
 bool Ao3NewChaptersStore::isMissing(const Ao3NewChaptersEntry& e) {
   return !Storage.exists(e.path.c_str());
 }
