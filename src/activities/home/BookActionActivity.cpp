@@ -62,6 +62,10 @@ int BookActionActivity::logicalRow(int visual) const {
         if (visual == idx) return 7; // Open AO3 Series
         idx++;
       }
+      if (!isAlreadyArchived) {
+        if (visual == idx) return 8; // Bookmark Fic / Remove Bookmark
+        idx++;
+      }
     }
     if (visual == idx) return 5;  // Remove from List
     return -1;
@@ -85,6 +89,7 @@ int BookActionActivity::listCount() const {
     int n = 2; // Status cycle + Remove from List
     if (hasAo3LibraryInfo) n++; // Show AO3 Page QR
     if (hasAo3LibraryInfo && isInSeries) n++; // Open AO3 Series
+    if (hasAo3LibraryInfo && !isAlreadyArchived) n++; // Bookmark Fic / Remove Bookmark
     return n;
   }
 
@@ -486,6 +491,12 @@ void BookActionActivity::activateIndex(int index) {
       const std::string newPath = isBookmarked ? Ao3ArchiveHelper::restoreBookmark(filePath)
                                                : Ao3ArchiveHelper::bookmarkFic(filePath);
       if (!newPath.empty()) {
+        {
+          // isBookmarked is still the state from before the toggle.
+          RenderLock lock(*this);  // keep the render task off the framebuffer while the popup shows
+          GUI.drawPopup(renderer, isBookmarked ? "Bookmark Removed" : "Fic Bookmarked");
+          delay(800);
+        }
         BookActionResult result;
         result.modified  = true;
         result.archived  = true;  // "moved out of this list": hosts drop the entry
