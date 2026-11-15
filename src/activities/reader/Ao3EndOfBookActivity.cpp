@@ -129,6 +129,7 @@ Ao3EndOfBookActivity::Ao3EndOfBookActivity(GfxRenderer& renderer, MappedInputMan
 void Ao3EndOfBookActivity::buildActiveRows() {
   activeRows.clear();
   isBookmarked = Ao3Paths::isInBookmarks(bookPath);
+  libraryMode = isBookmarked ? Ao3LibraryMode::BOOKMARKS : Ao3LibraryMode::REGULAR;
   // Bookmarks live under /read too, so only the plain read folder counts as archived.
   const bool archived = Ao3ArchiveHelper::isInReadFolder(bookPath) && !isBookmarked;
   activeRows.push_back(ROW_GO_HOME);
@@ -566,7 +567,7 @@ void Ao3EndOfBookActivity::returnToLibraryOrBrowser() {
   if (dashboardReturnTab >= 0) {
     activityManager.goToRecentBooks(dashboardReturnTab, dashboardReturnIndex, bookPath);
   } else if (ao3LibraryReturnIndex >= 0) {
-    activityManager.goToAo3Library(static_cast<size_t>(ao3LibraryReturnIndex));
+        activityManager.goToAo3Library(static_cast<size_t>(ao3LibraryReturnIndex), libraryMode);
   } else {
     activityManager.goToFileBrowser(bookPath);
   }

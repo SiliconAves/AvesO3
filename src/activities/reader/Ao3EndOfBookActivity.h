@@ -56,6 +56,7 @@ class Ao3EndOfBookActivity final : public UiListActivity {
   };
   std::vector<ActionRow> activeRows;
   bool isBookmarked = false;  // fic lives in /read/AO3 Bookmarks
+  Ao3LibraryMode libraryMode = Ao3LibraryMode::REGULAR;  // the library the user came from
   bool fileMoved = false;  // bookmark toggled: any reader below still points at the old path
 
   void loadBookInfo();

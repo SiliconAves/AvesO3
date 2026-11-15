@@ -2625,7 +2625,8 @@ void EpubReaderActivity::returnToLibraryOrBrowser() {
   if (dashboardReturnTab_ >= 0) {
     activityManager.goToRecentBooks(dashboardReturnTab_, dashboardReturnIndex_, bookPath);
   } else if (ao3LibraryReturnIndex_ >= 0) {
-    activityManager.goToAo3Library(static_cast<size_t>(ao3LibraryReturnIndex_));
+    activityManager.goToAo3Library(static_cast<size_t>(ao3LibraryReturnIndex_),
+    Ao3Paths::isInBookmarks(bookPath) ? Ao3LibraryMode::BOOKMARKS : Ao3LibraryMode::REGULAR);
   } else {
     activityManager.goToFileBrowser(bookPath);
   }
