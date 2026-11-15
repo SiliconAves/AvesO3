@@ -485,18 +485,25 @@ void BookActionActivity::activateIndex(int index) {
       break;
     }
 
-        case 8: {
-      // Status and the finished bit must be saved before the record moves.
-      saveStatusIfModified();
-      const std::string newPath = isBookmarked ? Ao3ArchiveHelper::restoreBookmark(filePath)
-                                               : Ao3ArchiveHelper::bookmarkFic(filePath);
-      if (!newPath.empty()) {
-        {
+    case 8: {
+      std::string newPath;
+      {
+        // One lock scope for the whole sequence: the mutex is not re-entrant, and holding it
+        // keeps the render task from painting over the popups.
+        RenderLock lock(*this);
+        GUI.drawPopup(renderer, tr(STR_LOADING_POPUP));
+
+        // Status and the finished bit must be saved before the record moves.
+        saveStatusIfModified();
+        newPath = isBookmarked ? Ao3ArchiveHelper::restoreBookmark(filePath)
+                               : Ao3ArchiveHelper::bookmarkFic(filePath);
+        if (!newPath.empty()) {
           // isBookmarked is still the state from before the toggle.
-          RenderLock lock(*this);  // keep the render task off the framebuffer while the popup shows
           GUI.drawPopup(renderer, isBookmarked ? "Bookmark Removed" : "Fic Bookmarked");
           delay(800);
         }
+      }
+      if (!newPath.empty()) {
         BookActionResult result;
         result.modified  = true;
         result.archived  = true;  // "moved out of this list": hosts drop the entry

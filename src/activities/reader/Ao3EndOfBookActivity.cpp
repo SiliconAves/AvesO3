@@ -513,8 +513,26 @@ void Ao3EndOfBookActivity::activateIndex(int index) {
 
         case ROW_BOOKMARK: {
       const bool wasBookmarked = isBookmarked;
-      const std::string newPath = wasBookmarked ? Ao3ArchiveHelper::restoreBookmark(bookPath)
-                                                : Ao3ArchiveHelper::bookmarkFic(bookPath);
+      std::string newPath;
+      {
+        // One lock scope for the whole sequence: the render lock is not re-entrant, and
+        // holding it keeps the render task from painting over the popups. It also protects
+        // activeRows while it is rebuilt.
+        RenderLock lock(*this);
+        GUI.drawPopup(renderer, tr(STR_LOADING_POPUP));
+
+        newPath = wasBookmarked ? Ao3ArchiveHelper::restoreBookmark(bookPath)
+                                : Ao3ArchiveHelper::bookmarkFic(bookPath);
+        if (!newPath.empty()) {
+          GUI.drawPopup(renderer, wasBookmarked ? "Bookmark Removed" : "Fic Bookmarked");
+          delay(800);
+          // Follow the file and refresh the rows: the heart flips, Archive greys out or re-enables.
+          bookPath = newPath;
+          fileMoved = true;
+          buildActiveRows();
+        }
+      }
+
       if (newPath.empty()) {
         startActivityForResult(
             std::make_unique<ConfirmationActivity>(
@@ -524,15 +542,6 @@ void Ao3EndOfBookActivity::activateIndex(int index) {
                               : "The fic must be indexed and the bookmark list not full."),
             [this](const ActivityResult&) { requestUpdate(true); });
         break;
-      }
-      {
-        RenderLock lock(*this);  // also protects activeRows while it is rebuilt
-        GUI.drawPopup(renderer, wasBookmarked ? "Bookmark Removed" : "Fic Bookmarked");
-        delay(800);
-        // Follow the file and refresh the rows: the heart flips, Archive greys out or re-enables.
-        bookPath = newPath;
-        fileMoved = true;
-        buildActiveRows();
       }
       requestUpdate(true);  // redraw in the new state; this also clears the popup
       break;
