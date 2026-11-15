@@ -167,15 +167,14 @@ void Ao3IndexActivity::onAction(const freeink::ui::ActionEvent& event) {
 // ---------------------------------------------------------------------------
 
 void Ao3IndexActivity::runHeapCheck() {
-  {
+  const uint32_t minBlock = (mode == Ao3IndexMode::DIRECTORY) ? MIN_BLOCK_DIR : MIN_BLOCK_SINGLE;
   const uint32_t blk = ESP.getMaxAllocHeap();
-  if (blk < MIN_BLOCK_SINGLE) {
+  if (blk < minBlock) {
     gateBlockKb_ = blk / 1024;
     state = State::ERROR;
     errorMessage = "Not enough memory. Please restart the device.";
     return;
   }
-}
 
   if (mode == Ao3IndexMode::SINGLE) {
     if (isLibraryFull()) {
@@ -532,19 +531,8 @@ void Ao3IndexActivity::startDirIndexing() {
 }
 
 void Ao3IndexActivity::tickDirIndexing() {
-  {
-  const uint32_t blk = ESP.getMaxAllocHeap();
-  if (blk < MIN_BLOCK_DIR) {
-    gateBlockKb_ = blk / 1024;
-    state = State::ERROR;
-    errorMessage = "Not enough memory. Please restart the device.";
-    requestUpdate(true);
-    return;
-  }
-}
-
   // Batch exhausted. If we got fewer books than requested, this was the last batch.
-  // Otherwise there may be more unindexed books — show the batch complete prompt.
+  // Otherwise there may be more unindexed books, so show the batch complete prompt.
   if (currentBookIndex >= pendingBooks.size()) {
     if ((int)pendingBooks.size() < batchSize) {
       state = State::DIR_COMPLETE;
@@ -565,30 +553,30 @@ void Ao3IndexActivity::tickDirIndexing() {
   // Move the path out and immediately free its heap buffer.
   std::string filePath = std::move(pendingBooks[currentBookIndex]);
   pendingBooks[currentBookIndex].shrink_to_fit();
-LOG_INF("AO3I", "pre  #%u maxAlloc=%u free=%u", (unsigned)currentBookIndex,
-        (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getFreeHeap());
+  LOG_INF("AO3I", "pre  #%u maxAlloc=%u free=%u", (unsigned)currentBookIndex,
+          (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getFreeHeap());
 
-bool indexedOk = false;
-{
-  Epub epub(filePath, "/.crosspoint");
-  if (epub.load(true, true, true)) {
-    currentBookTitle = epub.getTitle();
-    indexedOk = Ao3Librarian::scrape(epub, /*force=*/true);
+  bool indexedOk = false;
+  {
+    Epub epub(filePath, "/.crosspoint");
+    if (epub.load(true, true, true)) {
+      currentBookTitle = epub.getTitle();
+      indexedOk = Ao3Librarian::scrape(epub, /*force=*/true);
+    }
+  }  // epub destroyed here, so the post log reflects the freed heap
+
+  LOG_INF("AO3I", "post #%u maxAlloc=%u minFree=%u ok=%d", (unsigned)currentBookIndex,
+          (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getMinFreeHeap(), indexedOk);
+
+  if (indexedOk) {
+    successCount++;
+  } else {
+    failureCount++;
+    failedHashes.push_back(static_cast<uint32_t>(std::hash<std::string>{}(filePath)));
+    if (failedBooks.size() < 10) failedBooks.push_back(filePath);
   }
-}  // epub destroyed here, so the post log reflects the freed heap
 
-LOG_INF("AO3I", "post #%u maxAlloc=%u minFree=%u ok=%d", (unsigned)currentBookIndex,
-        (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getMinFreeHeap(), indexedOk);
-
-if (indexedOk) {
-  successCount++;
-} else {
-  failureCount++;
-  failedHashes.push_back(static_cast<uint32_t>(std::hash<std::string>{}(filePath)));
-  if (failedBooks.size() < 10) failedBooks.push_back(filePath);
-}
-
-currentBookIndex++;
+  currentBookIndex++;
   requestUpdate(true);
 }
 
