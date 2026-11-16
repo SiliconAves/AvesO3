@@ -7,6 +7,7 @@
 #include "../../Ao3CompactIndexRecord.h"
 #include "../../Ao3Librarian.h"
 #include "../../util/ButtonNavigator.h"
+#include "../../Ao3Paths.h"
 
 enum class Ao3IndexMode {
   SINGLE,
@@ -71,6 +72,15 @@ class Ao3IndexActivity final : public Activity, private UiAppHost {
   bool initialized = false;
   bool autoFinishIfEmpty_ = false;
   bool headless_{false};
+  Ao3LibraryMode libraryMode_{Ao3LibraryMode::REGULAR};
+
+  const char* targetIndexPath() const {
+    if (mode == Ao3IndexMode::SINGLE) {
+      return Ao3Paths::indexPathFor(targetPath);
+    }
+    return (libraryMode_ == Ao3LibraryMode::BOOKMARKS) ? Ao3Paths::BOOKMARKS_INDEX
+                                                        : Ao3Paths::MAIN_INDEX;
+  }
 
   void runHeapCheck();
   void startSingleSniffing();
@@ -101,13 +111,15 @@ class Ao3IndexActivity final : public Activity, private UiAppHost {
 
  public:
   Ao3IndexActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, Ao3IndexMode mode,
-                   std::string targetPath = "", bool autoFinishIfEmpty = false, bool headless = false)
+                   std::string targetPath = "", bool autoFinishIfEmpty = false, bool headless = false,
+                   Ao3LibraryMode libraryMode = Ao3LibraryMode::REGULAR)
       : Activity("Ao3Index", renderer, mappedInput),
         UiAppHost(renderer),
         mode(mode),
         targetPath(std::move(targetPath)),
         autoFinishIfEmpty_(autoFinishIfEmpty),
-        headless_(headless) {}
+        headless_(headless),
+        libraryMode_(libraryMode) {}
 
   void onEnter() override;
   void loop() override;

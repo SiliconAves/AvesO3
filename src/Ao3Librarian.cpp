@@ -696,7 +696,7 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
   // Archived fics are intentionally outside the library; their sidecar filepath
   // is the restore origin. Never overwrite it — return true so callers don't
   // treat this as an indexing error.
-  if (Ao3ArchiveHelper::isInReadFolder(epub.getPath())) return true;
+  if (Ao3ArchiveHelper::isInReadFolder(epub.getPath()) && !Ao3Paths::isInBookmarks(epub.getPath())) return true;
 
   const std::string infoPath = epub.getCachePath() + "/ao3_library_info";
 
@@ -785,7 +785,7 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
     rec.cacheHash  = static_cast<uint32_t>(
                          std::hash<std::string>{}(epub.getPath()));
 
-    if (!writeIndexRecord(rec)) {
+    if (!writeIndexRecord(rec, Ao3Paths::indexPathFor(epub.getPath()))) {
         return false;
     }
 

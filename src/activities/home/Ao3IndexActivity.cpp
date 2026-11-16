@@ -13,8 +13,7 @@ namespace {
   constexpr uint32_t MIN_BLOCK_DIR    = 80 * 1024;
   constexpr uint32_t MIN_BLOCK_SINGLE = 48 * 1024;
 
-bool isLibraryFull() {
-  const char* indexPath = Ao3Paths::MAIN_INDEX;
+bool isLibraryFull(const char* indexPath = Ao3Paths::MAIN_INDEX) {
   if (!Storage.exists(indexPath)) return false;
   HalFile f;
   if (Storage.openFileForRead("AO3L", indexPath, f)) {
@@ -177,7 +176,7 @@ void Ao3IndexActivity::runHeapCheck() {
   }
 
   if (mode == Ao3IndexMode::SINGLE) {
-    if (isLibraryFull()) {
+    if (isLibraryFull(targetIndexPath())) {
       // Build index hashes to check if this specific file is already indexed
       buildIndexedHashes();
       uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(targetPath));
@@ -185,16 +184,16 @@ void Ao3IndexActivity::runHeapCheck() {
 
       if (!isExistingBook) {
         state = State::ERROR;
-        errorMessage = "AO3 library full (1000 books).";
+        errorMessage = (libraryMode_ == Ao3LibraryMode::BOOKMARKS) ? "Bookmarks full (1000 books)." : "AO3 library full (1000 books).";
         return;
       }
     }
     state = State::SINGLE_SNIFFING;
   } else {
     // Directory mode: Block immediately if full (no need to waste time scanning folders)
-    if (isLibraryFull()) {
+    if (isLibraryFull(targetIndexPath())) {
       state = State::ERROR;
-      errorMessage = "AO3 library full (1000 books).";
+      errorMessage = (libraryMode_ == Ao3LibraryMode::BOOKMARKS) ? "Bookmarks full (1000 books)." : "AO3 library full (1000 books).";
       return;
     }
     state = State::DIR_LOAD_SETTINGS;
@@ -204,25 +203,33 @@ void Ao3IndexActivity::runHeapCheck() {
 void Ao3IndexActivity::loadSettings() {
   ao3Folder = "";
   excludedFolders.clear();
+
+  if (libraryMode_ == Ao3LibraryMode::BOOKMARKS) {
+    ao3Folder = Ao3Paths::BOOKMARKS_FOLDER;
+  }
+
   const char* path = "/.crosspoint/ao3_settings.json";
   if (!Storage.exists(path)) return;
   String json = Storage.readFile(path);
   if (json.isEmpty()) return;
   JsonDocument doc;
   if (deserializeJson(doc, json)) return;
-  ao3Folder = doc["ao3Folder"] | "";
-  batchSize = doc["batchSize"] | 10;
-  JsonArray arr = doc["excludedFolders"];
-  if (!arr.isNull()) {
-    for (JsonVariant val : arr) {
-      excludedFolders.push_back(val.as<std::string>());
+
+  if (libraryMode_ != Ao3LibraryMode::BOOKMARKS) {
+    ao3Folder = doc["ao3Folder"] | "";
+    JsonArray arr = doc["excludedFolders"];
+    if (!arr.isNull()) {
+      for (JsonVariant val : arr) {
+        excludedFolders.push_back(val.as<std::string>());
+      }
     }
   }
+  batchSize = doc["batchSize"] | 10;
 }
 
 void Ao3IndexActivity::buildIndexedHashes() {
   indexedHashes.clear();
-  const char* indexPath = Ao3Paths::MAIN_INDEX;
+  const char* indexPath = targetIndexPath();
   if (!Storage.exists(indexPath)) return;
 
   HalFile f;
@@ -543,9 +550,9 @@ void Ao3IndexActivity::tickDirIndexing() {
     return;
   }
 
-  if (isLibraryFull()) {
+  if (isLibraryFull(targetIndexPath())) {
     state = State::DIR_COMPLETE;
-    errorMessage = "AO3 library full (1000 books).";
+    errorMessage = (libraryMode_ == Ao3LibraryMode::BOOKMARKS) ? "Bookmarks full (1000 books)." : "AO3 library full (1000 books).";
     requestUpdate(true);
     return;
   }
@@ -593,11 +600,14 @@ void Ao3IndexActivity::render(RenderLock&& lock) {
   const auto pageHeight = renderer.getScreenHeight();
   const auto& metrics = UITheme::getInstance().getMetrics();
 
-  std::string titleStr = (mode == Ao3IndexMode::SINGLE) ? "Index Book" : "Index AO3 Library";
+  std::string titleStr = (mode == Ao3IndexMode::SINGLE)
+                             ? "Index Book"
+                             : ((libraryMode_ == Ao3LibraryMode::BOOKMARKS) ? "Reindex Bookmarks" : "Index AO3 Library");
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, titleStr.c_str());
 
   if (state == State::HEAP_CHECK) {
-    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2, "Checking AO3 Folder...");
+    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2,
+                              (libraryMode_ == Ao3LibraryMode::BOOKMARKS) ? "Checking Bookmarks Folder..." : "Checking AO3 Folder...");
   }
   else if (state == State::ERROR) {
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, "Error");
@@ -645,7 +655,8 @@ void Ao3IndexActivity::render(RenderLock&& lock) {
     int usableAreaBottom = pageHeight - metrics.buttonHintsHeight;
     int centeredContentTop = usableAreaTop + ((usableAreaBottom - usableAreaTop) - 162) / 2;
 
-    renderer.drawCenteredText(UI_12_FONT_ID, centeredContentTop, "Building AO3 Library", true);
+    renderer.drawCenteredText(UI_12_FONT_ID, centeredContentTop,
+                              (libraryMode_ == Ao3LibraryMode::BOOKMARKS) ? "Reindexing Bookmarks" : "Building AO3 Library", true);
 
     // Progress bar
     int progressBarWidth = pageWidth - 120;
@@ -681,7 +692,9 @@ void Ao3IndexActivity::render(RenderLock&& lock) {
     if (!errorMessage.empty()) {
       renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, errorMessage.c_str());
     } else if (unindexedCount == 0) {
-      renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, "No new books found in your AO3 directory.");
+      renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20,
+                                (libraryMode_ == Ao3LibraryMode::BOOKMARKS) ? "No new books found in your bookmarks directory."
+                                                                            : "No new books found in your AO3 directory.");
     } else {
       renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, "Indexing Complete!");
     }

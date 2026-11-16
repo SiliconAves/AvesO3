@@ -283,8 +283,7 @@ void Ao3LibraryActivity::loop() {
 
     if (!swapNavButtons) {
       // Default: side buttons open panels, front left/right scroll
-      if (mode_ == Ao3LibraryMode::REGULAR &&
-          mappedInput.wasReleased(MappedInputManager::Button::Up ) &&
+      if (mappedInput.wasReleased(MappedInputManager::Button::Up ) &&
           mappedInput.getHeldTime() < 500) {
         screenState = ScreenState::MANAGE_PANEL;
         managePanelRowIndex = 0;
@@ -337,8 +336,7 @@ void Ao3LibraryActivity::loop() {
         requestUpdate(true);
         return;
       }
-      if (mode_ == Ao3LibraryMode::REGULAR &&
-          mappedInput.wasReleased(MappedInputManager::Button::Left) &&
+      if (mappedInput.wasReleased(MappedInputManager::Button::Left) &&
           mappedInput.getHeldTime() < 500) {
         screenState = ScreenState::MANAGE_PANEL;
         managePanelRowIndex = 0;
@@ -432,7 +430,7 @@ void Ao3LibraryActivity::loop() {
         }
         
         // Tapping anywhere in the bottom 56px band opens the manage panel
-          if (mode_ == Ao3LibraryMode::REGULAR && ty >= renderer.getScreenHeight() - 56) {
+        if (ty >= renderer.getScreenHeight() - 56) {
           screenState = ScreenState::MANAGE_PANEL;
           managePanelRowIndex = 0;
           requestUpdate(true);
@@ -830,16 +828,18 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
 
     if (executeManagePanel) {
       if (managePanelRowIndex == 0) {
-        // "Index New Books" — check if ao3 folder is configured first
-        const char* settingsPath = "/.crosspoint/ao3_settings.json";
-        bool hasFolder = false;
-        if (Storage.exists(settingsPath)) {
-          String json = Storage.readFile(settingsPath);
-          if (!json.isEmpty()) {
-            JsonDocument doc;
-            if (!deserializeJson(doc, json)) {
-              std::string folder = doc["ao3Folder"] | "";
-              hasFolder = !folder.empty();
+        // "Index New Books" / "Reindex Bookmarks"
+        bool hasFolder = (mode_ == Ao3LibraryMode::BOOKMARKS);
+        if (!hasFolder) {
+          const char* settingsPath = "/.crosspoint/ao3_settings.json";
+          if (Storage.exists(settingsPath)) {
+            String json = Storage.readFile(settingsPath);
+            if (!json.isEmpty()) {
+              JsonDocument doc;
+              if (!deserializeJson(doc, json)) {
+                std::string folder = doc["ao3Folder"] | "";
+                hasFolder = !folder.empty();
+              }
             }
           }
         }
@@ -873,10 +873,10 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
             rebuildViewEntries();
             requestUpdate(true);
           };
-          if (mode_ == Ao3LibraryMode::REGULAR) {
-            g_silentReturnHint = {SILENT_TARGET_AO3_LIBRARY, static_cast<uint8_t>(mode_), static_cast<int16_t>(selectorIndex)};
-          }
-          startActivityForResult(std::make_unique<Ao3IndexActivity>(renderer, mappedInput, Ao3IndexMode::DIRECTORY), handler);
+          g_silentReturnHint = {SILENT_TARGET_AO3_LIBRARY, static_cast<uint8_t>(mode_), static_cast<int16_t>(selectorIndex)};
+          startActivityForResult(
+              std::make_unique<Ao3IndexActivity>(renderer, mappedInput, Ao3IndexMode::DIRECTORY, "", false, false, mode_),
+              handler);
         }
       } else {
         // "AO3 Library Settings"
@@ -979,9 +979,9 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
     }
   } else if (indexState == IndexState::CORRUPT) {
     renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2 - 12, "Library index missing or corrupt.");
-        renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 12,
-                              mode_ == Ao3LibraryMode::REGULAR ? "Open a book to recreate it."
-                                                               : "Bookmarks index is unreadable.");
+    renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 12,
+                          mode_ == Ao3LibraryMode::REGULAR ? "Open a book to recreate it."
+                                                           : "Press SIDE UP to reindex bookmarks.");
   } else {
     const int startIdx = (selectorIndex / 3) * 3;
     const int endIdx   = std::min(startIdx + 3, static_cast<int>(viewEntries.size()));
@@ -1024,14 +1024,14 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
 
   // Draw Button hints
 
-    const char* manageLabel = (mode_ == Ao3LibraryMode::REGULAR) ? "Manage" : "";
+    const char* manageLabel = "Manage";
     const auto labels = (swapNavButtons && screenState == ScreenState::LIBRARY)
       ? mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), manageLabel, "Filter")
       : mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
     // Triangle indicator: Show 'Up' triangle when Manage Panel is closed
-      if (mode_ == Ao3LibraryMode::REGULAR && screenState != ScreenState::MANAGE_PANEL) {
+      if (screenState != ScreenState::MANAGE_PANEL) {
 
       const auto& metrics = UITheme::getInstance().getMetrics();
       const int tx = renderer.getScreenWidth() - 26;
@@ -1069,12 +1069,16 @@ void Ao3LibraryActivity::renderManagePanel() {
   }
 
   // Panel header
-  renderer.drawText(UI_12_FONT_ID, margin + 12, panelY + 22, "Manage AO3 Library", true, EpdFontFamily::BOLD);
+  const char* panelTitle = (mode_ == Ao3LibraryMode::BOOKMARKS) ? "Manage Bookmarks" : "Manage AO3 Library";
+  renderer.drawText(UI_12_FONT_ID, margin + 12, panelY + 22, panelTitle, true, EpdFontFamily::BOLD);
 
   // Row definitions
-  const char* rowLabels[2] = { "Index New Books", "Settings" };
+  const char* rowLabels[2] = {
+    (mode_ == Ao3LibraryMode::BOOKMARKS) ? "Index Bookmarks" : "Index New Books",
+    "Settings"
+  };
   const char* rowDescs[2]  = {
-    "Scan AO3 folder & find unindexed epubs",
+    (mode_ == Ao3LibraryMode::BOOKMARKS) ? "Scan bookmarks folder for unindexed epubs" : "Scan AO3 folder & find unindexed epubs",
     "Set AO3 folder & Filter mode"
   };
 
