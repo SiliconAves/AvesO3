@@ -99,6 +99,11 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
   if (dictionaryName[0] != '\0') {
     doc["dictionaryName"] = dictionaryName;
   }
+  // Parental PIN lock — not in SettingsList; the PIN is only ever stored obfuscated.
+  if (parentalPin[0] != '\0') {
+    doc["parentalPin_obf"] = obfuscation::obfuscateToBase64(parentalPin);
+  }
+  doc["pinLockEnabled"] = pinLockEnabled;
 
   // Language -- managed by LanguageSelectActivity, not in SettingsList.
   // Stored as ISO code string ("EN", "DE", ...) for stability across enum reorders.
@@ -177,6 +182,8 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
     }
   }
 
+  pinLockEnabled = clamp(doc["pinLockEnabled"] | (uint8_t)0, (uint8_t)2, (uint8_t)0);
+
   if (doc["sleepTimeoutMinutes"].isNull() && !doc["sleepTimeout"].isNull()) {
     const uint8_t legacyValue =
         clamp(doc["sleepTimeout"] | (uint8_t)SLEEP_10_MIN, SLEEP_TIMEOUT_COUNT, (uint8_t)SLEEP_10_MIN);
@@ -220,6 +227,27 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   }
   // Dictionary folder name — uses dynamic getter/setter in SettingsList, load manually
   copyToField(dictionaryName, doc["dictionaryName"] | "", sizeof(dictionaryName));
+
+  // Parental PIN — a lock without a valid PIN would be unopenable, so any bad
+  // value disables the lock rather than trusting it.
+  if (doc["parentalPin_obf"].is<const char*>()) {
+    bool ok = false;
+    bool tooLong = false;
+    const std::string pin =
+        obfuscation::deobfuscateFromBase64(doc["parentalPin_obf"] | "", sizeof(parentalPin) - 1, &ok, &tooLong);
+    if (ok && isValidPin(pin.c_str())) {
+      copyToField(parentalPin, pin.c_str(), sizeof(parentalPin));
+    } else {
+      pinLockEnabled = 0;
+      parentalPin[0] = '\0';
+      LOG_ERR("CPS", "Invalid parental PIN in settings; PIN lock disabled");
+      needsResave = true;
+      if (tooLong) LOG_ERR("CPS", "Oversized parental PIN in settings");
+    }
+  } else if (pinLockEnabled) {
+    pinLockEnabled = 0;
+    needsResave = true;
+  }
 
   // Language -- stored as code string for stability across enum reorders.
   if (doc["language"].is<const char*>()) {

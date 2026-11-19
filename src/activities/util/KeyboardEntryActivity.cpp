@@ -95,6 +95,13 @@ const fui::KeyboardKey URL_SNIP_BOTTOM[] = {UKS("abc", fui::KeyKind::Mode, fui::
                                             UKS("Del", fui::KeyKind::Delete, fui::QWERTY_KEY_BACKSPACE, 2),
                                             UKS("OK", fui::KeyKind::Ok, fui::QWERTY_KEY_ENTER, 2)};
 
+// PIN pad: phone-style digit grid; PINs need nothing else.
+const fui::KeyboardKey PIN_ROW1[] = {UK("1", "1", '1'), UK("2", "2", '2'), UK("3", "3", '3')};
+const fui::KeyboardKey PIN_ROW2[] = {UK("4", "4", '4'), UK("5", "5", '5'), UK("6", "6", '6')};
+const fui::KeyboardKey PIN_ROW3[] = {UK("7", "7", '7'), UK("8", "8", '8'), UK("9", "9", '9')};
+const fui::KeyboardKey PIN_BOTTOM[] = {UKS("Del", fui::KeyKind::Delete, fui::QWERTY_KEY_BACKSPACE, 1),
+                                       UK("0", "0", '0'), UKS("OK", fui::KeyKind::Ok, fui::QWERTY_KEY_ENTER, 1)};
+
 #undef UK
 #undef UKA
 #undef UKW
@@ -110,6 +117,9 @@ const fui::KeyboardRow URL_SNIP_ROWS[] = {
 const fui::KeyboardLayout URL_LAYOUT{URL_ROWS, 5};
 const fui::KeyboardLayout URL_SHIFT_LAYOUT{URL_SHIFT_ROWS, 5};
 const fui::KeyboardLayout URL_SNIPPET_LAYOUT{URL_SNIP_ROWS, 4};
+
+const fui::KeyboardRow PIN_ROWS[] = {{PIN_ROW1, 3, 0}, {PIN_ROW2, 3, 0}, {PIN_ROW3, 3, 0}, {PIN_BOTTOM, 3, 0}};
+const fui::KeyboardLayout PIN_LAYOUT{PIN_ROWS, 4};
 
 }  // namespace
 
@@ -147,6 +157,7 @@ void KeyboardEntryActivity::onEnter() {
 void KeyboardEntryActivity::onExit() { Activity::onExit(); }
 
 const fui::KeyboardLayout& KeyboardEntryActivity::currentLayout() const {
+  if (inputType == InputType::Pin) return PIN_LAYOUT;
   if (symbols) return fui::builtinKeyboardLayout(layoutId, shifted, true);
   if (inputType == InputType::Url) {
     if (urlPanel) return URL_SNIPPET_LAYOUT;
@@ -349,7 +360,9 @@ bool KeyboardEntryActivity::clearAllOrAltOnSelected() {
 
 std::string KeyboardEntryActivity::displayTextForCurrentState() const {
   std::string displayText = text;
-  if (inputType != InputType::Password || passwordVisible) {
+  // A PIN is always masked; only passwords have a show/hide toggle.
+  const bool masked = inputType == InputType::Pin || (inputType == InputType::Password && !passwordVisible);
+  if (!masked) {
     return displayText;
   }
 
@@ -929,6 +942,9 @@ void KeyboardEntryActivity::render(RenderLock&&) {
       if (!text.empty()) {
         drawTip(tr(STR_KB_HINT_CLEAR_TEXT), y);
       }
+    } else if (inputType == InputType::Pin) {
+      drawTip(tr(STR_KB_HINT_PIN_NUMPAD), y);
+      y += tipsLh;
     } else {
       const char* altCharTip;
       if (inputType == InputType::Url) {

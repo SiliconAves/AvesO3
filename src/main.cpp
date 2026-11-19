@@ -30,6 +30,7 @@
 #include "SilentRestart.h"
 #include "KOReaderCredentialStore.h"
 #include "MappedInputManager.h"
+#include "Memory.h"
 #include "OpdsServerStore.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
@@ -37,6 +38,7 @@
 #include "activities/ActivityManager.h"
 #include "activities/network/Ao3ReceiveActivity.h"
 #include "activities/settings/SdFirmwareUpdateActivity.h"
+#include "activities/util/PinLockActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "images/LoadingIcon.h"
@@ -512,6 +514,9 @@ void setup() {
   const BootResume resume = isSilentReboot         ? BootResume::Silent
                             : isPersistedSleepWake ? BootResume::SplashlessWake
                                                    : BootResume::Splash;
+  // A silent heap-defrag restart continues the unlocked session, and recovery
+  // mode goes straight to the SD firmware picker, so neither asks for the PIN.
+  const bool pinRequired = SETTINGS.pinLockEnabled && resume != BootResume::Silent && !recoveryFirmwareMode;
   bool allowFastInitialReaderRefresh = false;
   bool needsWakeRefresh = false;
 
@@ -562,6 +567,21 @@ void setup() {
     // Skip normal home/reader routing: jump straight into the SD firmware picker.
     activityManager.replaceActivity(
         std::make_unique<SdFirmwareUpdateActivity>(renderer, mappedInputManager, /*recoveryMode=*/true));
+  } else if (pinRequired) {
+    // Same reader-resume decision as the final branches below, deferred until
+    // the PIN is entered (PinLockActivity::continueAfterUnlock).
+    const bool resumeReader = !rebootedFromPanic && !APP_STATE.openEpubPath.empty() && APP_STATE.lastSleepFromReader &&
+                              !mappedInputManager.isPressed(MappedInputManager::Button::Back) &&
+                              APP_STATE.readerActivityLoadCount == 0;
+    auto lock = makeUniqueNoThrow<PinLockActivity>(renderer, mappedInputManager, PinLockActivity::Mode::Unlock,
+                                                   resumeReader ? APP_STATE.openEpubPath : std::string(), resumeReader,
+                                                   needsWakeRefresh, allowFastInitialReaderRefresh, rebootedFromPanic);
+    if (lock) {
+      activityManager.replaceActivity(std::move(lock));
+    } else {
+      LOG_ERR("MAIN", "OOM: PIN lock activity");
+      activityManager.goToFullScreenMessage(tr(STR_PIN_LOCK_START_FAILED), EpdFontFamily::BOLD);
+    }
   } else if (rebootedFromPanic) {
     // If we rebooted from a panic, go to crash report screen to show the panic info
     activityManager.goToCrashReport();
@@ -782,8 +802,8 @@ void loop() {
 
   // Start AO3 Receive Activity with Power Button (outside reader)
   if (mappedInputManager.wasReleased(MappedInputManager::Button::Power) &&
-      SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::AVESO3_RECEIVE &&
-      !activityManager.isReaderActivity()) {
+      SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::AVESO3_RECEIVE && !activityManager.isReaderActivity() &&
+      !activityManager.blocksGlobalShortcuts()) {
     activityManager.replaceActivity(std::make_unique<Ao3ReceiveActivity>(renderer, mappedInputManager));
     return;
   }

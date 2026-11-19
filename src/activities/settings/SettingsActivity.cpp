@@ -27,6 +27,8 @@
 #include "TextSettingsActivity.h"
 #include "activities/network/WifiSelectionActivity.h"
 #include "activities/util/IntervalSelectionActivity.h"
+#include "activities/util/KeyboardEntryActivity.h"
+#include "activities/util/PinLockActivity.h"
 #include "components/UITheme.h"
 #include "components/UIThemeTokens.h"
 #include "components/UiAppHelpers.h"
@@ -77,6 +79,8 @@ void SettingsActivity::rebuildSettingsLists() {
       systemSettings.push_back(setting);
     }
   }
+
+  controlsSettings.push_back(SettingInfo::Action(StrId::STR_SET_CHANGE_PIN, SettingAction::SetChangePin));
 
   // Append device-only ACTION items
   if (!BoardConfig::hasTouch()) {
@@ -312,6 +316,24 @@ void SettingsActivity::toggleCurrentSetting() {
     return;
   }
 
+  // The PIN lock toggle is gated: enabling with no PIN runs PIN setup, any
+  // other change needs the current PIN first.
+  if (setting.type == SettingType::TOGGLE && setting.valuePtr == &CrossPointSettings::pinLockEnabled) {
+    if (!SETTINGS.pinLockEnabled && SETTINGS.parentalPin[0] == '\0') {
+      if (auto activity = makeUniqueNoThrow<PinLockActivity>(renderer, mappedInput, PinLockActivity::Mode::Setup)) {
+        startActivityForResult(std::move(activity), [this](const ActivityResult&) {
+          rebuildSettingsLists();
+          requestUpdate();
+        });
+      } else {
+        LOG_ERR("SETTINGS", "OOM: PIN setup activity");
+      }
+    } else {
+      promptForPin(!SETTINGS.pinLockEnabled, false);
+    }
+    return;
+  }
+
   if (setting.type == SettingType::TOGGLE && setting.valuePtr != nullptr) {
     // Toggle the boolean value using the member pointer
     const bool currentValue = SETTINGS.*(setting.valuePtr);
@@ -422,6 +444,16 @@ void SettingsActivity::toggleCurrentSetting() {
           LOG_ERR("SETTINGS", "OOM: KeyboardLayoutsActivity");
         }
         break;
+      case SettingAction::SetChangePin:
+        if (auto activity = makeUniqueNoThrow<PinLockActivity>(renderer, mappedInput, PinLockActivity::Mode::Setup)) {
+          startActivityForResult(std::move(activity), [this](const ActivityResult&) {
+            rebuildSettingsLists();
+            requestUpdate();
+          });
+        } else {
+          LOG_ERR("SETTINGS", "OOM: PIN setup activity");
+        }
+        break;
       case SettingAction::None:
         // Do nothing
         break;
@@ -510,6 +542,27 @@ std::string SettingsActivity::settingValueText(const SettingInfo& setting) {
     return std::to_string(SETTINGS.*(setting.valuePtr));
   }
   return "";
+}
+
+void SettingsActivity::promptForPin(const bool enableLock, const bool retry) {
+  auto keyboard = makeUniqueNoThrow<KeyboardEntryActivity>(
+      renderer, mappedInput, I18N.get(retry ? StrId::STR_INCORRECT_PIN : StrId::STR_ENTER_PIN), "", 4, InputType::Pin);
+  if (!keyboard) {
+    LOG_ERR("SETTINGS", "OOM: PIN verification keyboard");
+    return;
+  }
+  startActivityForResult(std::move(keyboard), [this, enableLock](const ActivityResult& result) {
+    if (result.isCancelled) return;
+    const auto* entry = std::get_if<KeyboardResult>(&result.data);
+    if (entry && entry->text == SETTINGS.parentalPin) {
+      SETTINGS.pinLockEnabled = enableLock;
+      SETTINGS.saveToFile();
+      rebuildSettingsLists();
+      requestUpdate();
+      return;
+    }
+    promptForPin(enableLock, true);
+  });
 }
 
 void SettingsActivity::buildScreen(UiScreen& screen) {

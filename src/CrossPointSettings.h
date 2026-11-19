@@ -199,6 +199,10 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
 
   // Sleep screen settings
   uint8_t sleepScreen = DARK;
+  // Parental PIN lock: when enabled, boot and wake require the 4-digit PIN.
+  // parentalPin is persisted obfuscated ("parentalPin_obf"), never in clear.
+  uint8_t pinLockEnabled = 0;
+  char parentalPin[5] = "";
   // Night mode: inverted output polarity, applied to every activity per
   // render by ActivityManager. The sleep screen opts out itself.
   uint8_t screenInverted = 0;
@@ -396,6 +400,15 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
 
   static void validateFrontButtonMapping(CrossPointSettings& settings);
   static uint8_t sleepTimeoutEnumToMinutes(uint8_t legacyValue);
+
+  // Exactly four ASCII digits.
+  static bool isValidPin(const char* pin) {
+    if (pin == nullptr) return false;
+    for (int i = 0; i < 4; i++) {
+      if (pin[i] < '0' || pin[i] > '9') return false;
+    }
+    return pin[4] == '\0';
+  }
 
   float getReaderLineCompression() const;
   unsigned long getSleepTimeoutMs() const;

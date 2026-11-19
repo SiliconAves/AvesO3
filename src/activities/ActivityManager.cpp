@@ -341,6 +341,10 @@ void ActivityManager::popActivity() {
 
 bool ActivityManager::preventAutoSleep() const { return currentActivity && currentActivity->preventAutoSleep(); }
 
+bool ActivityManager::blocksGlobalShortcuts() const {
+  return currentActivity && currentActivity->blocksGlobalShortcuts();
+}
+
 bool ActivityManager::requiresExclusiveStorageLoop() const {
   return currentActivity && currentActivity->requiresExclusiveStorageLoop();
 }
