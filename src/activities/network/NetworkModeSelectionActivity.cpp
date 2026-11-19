@@ -96,7 +96,7 @@ void NetworkModeSelectionActivity::buildScreen(UiScreen& screen) {
   props.labelText.maxLines = 2;
   props.subtitleText = screen.theme().smallText;
   props.subtitleText.maxLines = 2;
-  syncListViewport(screen, props, /*hasSubtitle=*/true);
+  syncListViewport(screen, props);
   screen.list(props);
 }
 

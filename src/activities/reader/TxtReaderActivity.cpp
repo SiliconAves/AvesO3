@@ -118,7 +118,7 @@ void TxtReaderActivity::buildPageIndex(GfxRenderer& renderer) {
   LOG_DBG("TRS", "Built page index: %d pages", totalPages);
 }
 
-bool TxtReaderActivity::loadPageAtOffset(GfxRenderer& renderer, size_t offset, std::vector<std::string>& outLines,
+bool TxtReaderActivity::loadPageAtOffset(const GfxRenderer& renderer, size_t offset, std::vector<std::string>& outLines,
                                          size_t& nextOffset) {
   outLines.clear();
   const size_t fileSize = txt->getFileSize();
@@ -261,10 +261,19 @@ void TxtReaderActivity::renderBook() {
   size_t offset = pageOffsets[currentPage];
   size_t nextOffset;
   currentPageLines.clear();
-  loadPageAtOffset(renderer, offset, currentPageLines, nextOffset);
+  if (!loadPageAtOffset(renderer, offset, currentPageLines, nextOffset)) {
+    LOG_ERR("TRS", "Failed to load page at offset %zu", offset);
+    renderer.clearScreen();
+    renderer.drawCenteredText(UI_12_FONT_ID, 300, tr(STR_PAGE_LOAD_ERROR), true, EpdFontFamily::BOLD);
+    const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
+    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    renderer.displayBuffer();
+    return;
+  }
 
   renderer.clearScreen();
   renderPage(renderer);
+  markPageRendered();
 
   // Save progress
   saveProgress();

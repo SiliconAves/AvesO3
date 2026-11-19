@@ -134,7 +134,9 @@ void Ao3IndexActivity::buildScreen(UiScreen& screen) {
   int count = 0;
 
   if (state == State::ERROR) {
-    if (errorMessage != "Not enough memory. Please restart the device.") {
+    if (errorMessage == "Not enough memory. Please restart the device.") {
+      footerActions[count++] = {"Reboot", ACTION_CONFIRM};  // handleConfirm() -> silentRestartToHint()
+    } else {
       footerActions[count++] = {"Back", ACTION_BACK};
     }
   } else if (state == State::SINGLE_COMPLETE || state == State::DIR_FAILED_LIST || state == State::DIR_COMPLETE) {
@@ -610,7 +612,7 @@ void Ao3IndexActivity::render(RenderLock&& lock) {
                               (libraryMode_ == Ao3LibraryMode::BOOKMARKS) ? "Checking Bookmarks Folder..." : "Checking AO3 Folder...");
   }
   else if (state == State::ERROR) {
-    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, "Error");
+    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, "Action Required");
     renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 10, errorMessage.c_str());
     if (gateBlockKb_ > 0) {
     char blkBuf[40];

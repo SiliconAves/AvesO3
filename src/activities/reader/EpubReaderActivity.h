@@ -12,7 +12,11 @@
 #include <vector>
 
 #include "BookmarkEntry.h"
+<<<<<<< HEAD
 #include "EndOfBookOptions.h"
+=======
+#include "ChapterPosition.h"
+>>>>>>> 1.6.5
 #include "EpubReaderMenuActivity.h"
 #include "ProgressMapper.h"
 #include "ReaderActivity.h"
@@ -85,7 +89,17 @@ class EpubReaderActivity final : public ReaderActivity {
   std::unique_ptr<ReaderToolbarUi> toolbarUi;
   OptionPopup overlayPopup;
   bool overlayPageStored = false;
+<<<<<<< HEAD
   int autoTurnOption = 0;
+=======
+  // True while a deferred overlay chrome refresh (pushOverlayRefresh) may still
+  // be running on the panel. settleOverlayRefresh() must run before the
+  // framebuffer is touched or another differential refresh is pushed.
+  bool overlayRefreshPending = false;
+  void pushOverlayRefresh();
+  void settleOverlayRefresh();
+  int autoTurnOption = 0;  // current auto page-turn rate index (More panel)
+>>>>>>> 1.6.5
   std::vector<EpubReaderMenuActivity::MenuItem> moreItems;
 
   std::vector<FootnoteEntry> currentPageFootnotes;
@@ -116,6 +130,8 @@ class EpubReaderActivity final : public ReaderActivity {
   static constexpr int BACKGROUND_BUILD_PAGES_PER_TICK = 2;
   static constexpr size_t BACKGROUND_BUILD_MIN_FREE_HEAP = 32 * 1024;
   static constexpr size_t BACKGROUND_BUILD_MIN_MAX_ALLOC = 16 * 1024;
+  // Requires the render lock; heap admission is checked separately by the build tick.
+  bool backgroundBuildWanted() const;
   bool buildTickHeapGate();
   bool buildHeapPaused = false;
   static constexpr size_t RENDER_MIN_FREE_HEAP = 24 * 1024;
@@ -134,6 +150,10 @@ class EpubReaderActivity final : public ReaderActivity {
   void persistManualStatus();
   void jumpToPercent(int percent);
   void onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction action);
+  // Live section position, or the values cached before a child screen
+  // released the section.
+  ChapterPosition chapterPosition() const;
+  int bookPercentFor(const ChapterPosition& position) const;
   void openReaderMenu();
 
   bool usesToolbarMenu() const;
@@ -153,6 +173,7 @@ class EpubReaderActivity final : public ReaderActivity {
   std::string moreRowName(int row) const;
   std::string moreRowValue(int row) const;
   void activateMoreRow(int row);
+  void openFootnoteSelect(bool reopenMenuOnCancel);
   void openDictionaryWordSelect();
   bool launchKOReaderSync();
   unsigned long confirmLongPressThreshold() const;

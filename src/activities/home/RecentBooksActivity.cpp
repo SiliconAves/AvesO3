@@ -431,19 +431,19 @@ void RecentBooksActivity::buildScreen(UiScreen& screen) {
   screen.insetContent(fui::Insets{-6, 0, 0, 0});
 
   fui::ListProps props;
-  syncTabListViewport(screen, props, /*hasSubtitle=*/true);
-
   props.items = rowItems.data();
   props.count = static_cast<uint16_t>(rowItems.size());
-  
+
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch | fui::InputLongPress;
 
   props.labelText = screen.theme().bodyText;
   props.subtitleText = screen.theme().smallText;
-  
+
   // 2. Switch the FUI Small Font slot to 8pt right before drawing the list for the Authors
   uiTarget.setFont(fui::GfxRendererTarget::FONT_SMALL, SMALL_FONT_ID);
+
+  syncTabListViewport(screen, props);
 
   screen.list(props);
 }

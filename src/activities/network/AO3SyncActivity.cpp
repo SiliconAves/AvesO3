@@ -455,8 +455,7 @@ void AO3SyncActivity::performDownload() {
     requestUpdate();
 }
 
-// silentRestart*() only return on touch devices (no reboot there); the code after
-// each call is the touch exit path.
+// silentRestart*() reboot on every board; the code after each call only runs if sleep supersedes the reboot.
 void AO3SyncActivity::handleInput(bool back, bool confirm) {
     if (state == AO3SyncState::UPDATE_SUCCESSFUL) {
         if (confirm || back) { silentRestart(); onGoHome(); }
@@ -510,14 +509,11 @@ void AO3SyncActivity::buildScreen(UiScreen& screen) {
             screen.footer(a, 2); break;
         }
         case AO3SyncState::ERROR: {
-            if (errorMessage == "Not enough memory. Please reboot the device.") {
-                // Retrying can't help; the user reboots manually, so Back only
-                FooterAction a[] = {{tr(STR_HOME), ACTION_BACK}};
-                screen.footer(a, 1);
-            } else {
-                FooterAction a[] = {{tr(STR_HOME), ACTION_BACK}, {tr(STR_RETRY), ACTION_CONFIRM}};
-                screen.footer(a, 2);
-            }
+            // Memory error: Retry can't help, but a silent reboot defragments the heap.
+            const bool memoryError = (errorMessage == "Not enough memory. Please reboot the device.");
+            FooterAction a[] = {{tr(STR_HOME), ACTION_BACK},
+                                {memoryError ? "Reboot" : tr(STR_RETRY), ACTION_CONFIRM}};
+            screen.footer(a, 2);
             break;
         }
         default: break;

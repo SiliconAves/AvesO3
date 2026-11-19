@@ -16,10 +16,11 @@ struct RecentBook {
 };
 
 class RecentBooksStore : public PersistableStore<RecentBooksStore> {
+ public:
+  static constexpr int MAX_RECENT_BOOKS = 10;
+
  private:
   std::vector<RecentBook> recentBooks;
-
-  static constexpr int MAX_RECENT_BOOKS = 10;
 
   RecentBooksStore() = default;
   ~RecentBooksStore() = default;
