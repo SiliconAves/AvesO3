@@ -19,10 +19,7 @@ class FileBrowserActivity final : public UiListActivity {
  private:
   // File actions
   bool removeDirFile(const std::string& fullPath);
-  void showEntryActions();
-  void startRename();
-  void renameSelectedFile(const std::string& oldPath, const std::string& oldEntry, const std::string& newStem,
-                          const std::string& extension);
+  void showEntryActions();  // hold on a row: directory -> delete confirm, file -> BookActionActivity
   void deleteSelected();
 
   Mode mode = Mode::Books;
@@ -31,7 +28,6 @@ class FileBrowserActivity final : public UiListActivity {
   std::string basepath = "/";
   std::vector<std::string> files;
   std::unique_ptr<char[]> fileNameBuffer;
-  OptionPopup optionPopup;
 
   // Pull-based rows: the SDK list resolves each drawn row on demand through
   // provideRow() (fui::ListProps::rowProvider), so the only per-file
@@ -57,12 +53,8 @@ class FileBrowserActivity final : public UiListActivity {
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
   void onRowLongPress(int index) override;
-<<<<<<< HEAD
-  
-=======
   // Long-press BACK goes to root; short Back goes up a directory (home/cancel at
   // root), and Confirm activates on release while a hold opens file actions.
->>>>>>> 1.6.5
   bool handleCustomInput() override;
   bool handleButtons() override;
   void navigateButtons() override; // [ADDED] Override the base navigation loop
@@ -71,11 +63,20 @@ class FileBrowserActivity final : public UiListActivity {
   void drawFooter() override;
   void activateSelected();
 
-  void refreshStatusIcons(int visibleCount);
-
   // Data loading
   BookStatus getBookStatus(const std::string& path);
-  std::map<int, BookStatus> visibleStatusCache;
+  // Status icons (fork). Direct-mapped cache of progress.bin statuses, filled lazily by provideRow()
+  // for the rows actually drawn. A slot is valid only while its stored index matches (index % N).
+  // 64 slots x 8 bytes = 512 B regardless of folder size. Cleared by loadFiles().
+  struct StatusSlot {
+    int index = -1;
+    uint8_t status = 0;
+  };
+  static constexpr int STATUS_SLOTS = 64;
+  StatusSlot statusSlots[STATUS_SLOTS];
+  BookStatus statusFor(int index);
+  void cacheStatus(int index, BookStatus status);
+  void clearStatusCache();
   void loadFiles();
   size_t findEntry(const std::string& name) const;
 
@@ -84,9 +85,4 @@ class FileBrowserActivity final : public UiListActivity {
                                Mode mode = Mode::Books);
   void onEnter() override;
   void onExit() override;
-<<<<<<< HEAD
 };
-=======
-  void render(RenderLock&& lock) override;
-};
->>>>>>> 1.6.5

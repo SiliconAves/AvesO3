@@ -6,12 +6,8 @@
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
-<<<<<<< HEAD
-#include "../../../lib/Memory/Memory.h"
-=======
 #include <Memory.h>
 #include <Utf8.h>
->>>>>>> 1.6.5
 
 #include <algorithm>
 #include <functional>
@@ -21,53 +17,17 @@
 #include "MappedInputManager.h"
 #include "RecentBooksStore.h"
 #include "activities/util/ConfirmationActivity.h"
-#include "activities/util/KeyboardEntryActivity.h"
 #include "components/UITheme.h"
 #include "components/UiAppHelpers.h"
 #include "fontIds.h"
 #include "util/BookCacheUtils.h"
-#include "util/BookmarkUtil.h"
 
 namespace fui = freeink::ui;
 
 namespace {
 constexpr unsigned long GO_HOME_MS = 1000;
 constexpr size_t NAME_BUFFER_SIZE = 500;
-
-std::string getBookCachePath(const std::string& path) {
-  const char* prefix = nullptr;
-  if (FsHelpers::hasEpubExtension(path)) {
-    prefix = "epub_";
-  } else if (FsHelpers::hasXtcExtension(path)) {
-    prefix = "xtc_";
-  } else if (FsHelpers::hasTxtExtension(path) || FsHelpers::hasMarkdownExtension(path)) {
-    prefix = "txt_";
-  } else {
-    return "";
-  }
-  return std::string("/.crosspoint/") + prefix + std::to_string(std::hash<std::string>{}(path));
-}
-
-bool moveStatePath(const std::string& oldPath, const std::string& newPath, bool& moved) {
-  moved = false;
-  if (oldPath.empty() || !Storage.exists(oldPath.c_str())) return true;
-  if (Storage.exists(newPath.c_str())) {
-    LOG_ERR("FileBrowser", "Rename state target already exists: %s", newPath.c_str());
-    return false;
-  }
-  moved = Storage.rename(oldPath.c_str(), newPath.c_str());
-  if (!moved) LOG_ERR("FileBrowser", "Failed to move rename state: %s -> %s", oldPath.c_str(), newPath.c_str());
-  return moved;
-}
-
-void rollBackStatePath(const std::string& oldPath, const std::string& newPath, const bool moved) {
-  if (moved && !Storage.rename(newPath.c_str(), oldPath.c_str())) {
-    LOG_ERR("FileBrowser", "Failed to roll back rename state: %s -> %s", newPath.c_str(), oldPath.c_str());
-  }
-}
 }  // namespace
-
-std::string getFileExtension(const std::string& filename);
 
 void formatFileName(const std::string& filename, char* buffer, const size_t bufferSize) {
   if (filename.empty()) {
@@ -97,18 +57,11 @@ FileBrowserActivity::FileBrowserActivity(GfxRenderer& renderer, MappedInputManag
 
 void FileBrowserActivity::loadFiles() {
   files.clear();
-<<<<<<< HEAD
-  visibleStatusCache.clear();
-
-  auto root = Storage.open(basepath.c_str());
-  if (!root || !root.isDirectory()) {
-    rebuildRowItems(); 
-=======
+  clearStatusCache();   // fork: statuses are keyed by index, so new contents invalidate them
   prewarmedStart = -1;  // new folder contents: re-prewarm the visible window
 
   auto root = Storage.open(basepath.c_str());
   if (!root || !root.isDirectory()) {
->>>>>>> 1.6.5
     return;
   }
 
@@ -156,53 +109,8 @@ void FileBrowserActivity::loadFiles() {
   FsHelpers::sortFileList(files);
 }
 
-<<<<<<< HEAD
-void FileBrowserActivity::refreshStatusIcons(const int visibleCount) {
-  if (mode != Mode::Books || rowItems.empty()) return;
-
-  const int first = std::max(0, nav.top);
-  const int last = std::min(static_cast<int>(rowItems.size()), first + std::max(visibleCount + 2, 12));
-
-  std::string base = basepath;
-  if (base.back() != '/') base += "/";
-
-  for (int i = first; i < last; i++) {
-    if (files[i].back() == '/') continue;
-    auto it = visibleStatusCache.find(i);
-    if (it == visibleStatusCache.end()) {
-      it = visibleStatusCache.emplace(i, getBookStatus(base + files[i])).first;
-    }
-    // START keeps whatever rebuildRowItems() assigned (book/text/image/...).
-    if (it->second != BookStatus::START) rowItems[i].icon = bookStatusIconFor(it->second);
-  }
-}
-
-void FileBrowserActivity::rebuildRowItems() {
-  rowsUseFileIcons = UITheme::getInstance().getTheme().showsFileIcons();
-  rowNames.resize(files.size());
-  rowExtensions.resize(files.size());
-  rowItems.clear();
-  rowItems.reserve(files.size());
-
-  for (size_t i = 0; i < files.size(); i++) {
-    rowNames[i] = getFileName(files[i]);
-    rowExtensions[i] = getFileExtension(files[i]);
-    fui::ListItem item;
-    item.label = rowNames[i].c_str();
-    if (!rowExtensions[i].empty()) item.value = rowExtensions[i].c_str();
-
-    item.icon = listIconFor(UITheme::getFileIcon(files[i]));
-    item.actionValue = static_cast<int16_t>(i);
-    rowItems.push_back(item);
-=======
-// fui::ListProps::rowProvider — formats row `index` from files[index] into the
-// activity's scratch buffers on demand. Runs on the render task only for the
-// rows the list actually lays out, so nothing per-file is materialized beyond
-// `files` itself. The label/value pointers stay valid until the next call,
-// which is all the provider contract requires. The "[folder]" format is
-// theme-dependent, but it's re-derived here on every
-// repaint, so a theme change picked up while this activity was paused
-// underneath another screen needs no cache invalidation.
+// fui::ListProps::rowProvider: formats row `index` from files[index] into the
+// activity's scratch buffers on demand (render task, only for laid-out rows).
 void FileBrowserActivity::provideRow(void* ctx, const uint16_t index, fui::ListItem& item) {
   auto* self = static_cast<FileBrowserActivity*>(ctx);
   if (index >= self->files.size()) return;
@@ -212,10 +120,37 @@ void FileBrowserActivity::provideRow(void* ctx, const uint16_t index, fui::ListI
   formatFileExtension(entry, self->rowExtBuf, sizeof(self->rowExtBuf));
   if (self->rowExtBuf[0] != '\0') {
     item.value = self->rowExtBuf;
->>>>>>> 1.6.5
   }
   item.icon = listIconFor(UITheme::getFileIcon(entry));
+  // Fork: reading-status icon for books. START keeps the normal per-file-type icon.
+  if (self->mode == Mode::Books && entry.back() != '/') {
+    const BookStatus status = self->statusFor(index);
+    if (status != BookStatus::START) item.icon = bookStatusIconFor(status);
+  }
   item.actionValue = static_cast<int16_t>(index);
+}
+
+BookStatus FileBrowserActivity::statusFor(const int index) {
+  StatusSlot& slot = statusSlots[index % STATUS_SLOTS];
+  if (slot.index == index) return static_cast<BookStatus>(slot.status);
+
+  std::string path = basepath;
+  if (path.back() != '/') path += '/';
+  path += files[index];
+  const BookStatus status = getBookStatus(path);  // non-epubs return START without touching the SD
+  slot.index = index;
+  slot.status = static_cast<uint8_t>(status);
+  return status;
+}
+
+void FileBrowserActivity::cacheStatus(const int index, const BookStatus status) {
+  StatusSlot& slot = statusSlots[index % STATUS_SLOTS];
+  slot.index = index;
+  slot.status = static_cast<uint8_t>(status);
+}
+
+void FileBrowserActivity::clearStatusCache() {
+  for (auto& slot : statusSlots) slot.index = -1;
 }
 
 // Batch-prewarm the CJK fallback glyphs for a bounded window of display names
@@ -241,17 +176,17 @@ void FileBrowserActivity::prewarmRowGlyphs(const int start) {
     int first;
     int count;
   } prewarmCtx{this, clamped, count};
-  renderer.prewarmFallbackText(
-      uiScaleSpec().smallFontId,
+    // Rows draw in the 10pt UI font (FONT_BODY is mapped to UI_10_FONT_ID in onEnter).
+    renderer.prewarmFallbackText(
+      UI_10_FONT_ID,
       [](const void* ctx, uint32_t i) -> const char* {
         auto* c = const_cast<PrewarmCtx*>(static_cast<const PrewarmCtx*>(ctx));
-        if (i < static_cast<uint32_t>(c->count)) {
-          formatFileName(c->self->files[c->first + i], c->self->rowNameBuf, sizeof(c->self->rowNameBuf));
-          return c->self->rowNameBuf;
-        }
-        return c->self->basepath.c_str();
+        formatFileName(c->self->files[c->first + i], c->self->rowNameBuf, sizeof(c->self->rowNameBuf));
+        return c->self->rowNameBuf;
       },
-      &prewarmCtx, static_cast<uint32_t>(count) + 1);
+      &prewarmCtx, static_cast<uint32_t>(count));
+  // The path band draws in SMALL_FONT_ID (own size-matched fallback), so it gets its own batch.
+  renderer.prewarmFallbackText(SMALL_FONT_ID, basepath.c_str());
 }
 
 void FileBrowserActivity::onEnter() {
@@ -353,11 +288,6 @@ void FileBrowserActivity::activateIndex(const int index) {
 }
 
 void FileBrowserActivity::onRowLongPress(const int index) {
-<<<<<<< HEAD
-  (void)index;
-  app.clearTapFlash();
-  activateSelected(true);
-=======
   (void)index;  // base already synced nav.selected to the pressed row
   app.clearTapFlash();
   if (mode == Mode::Books) {
@@ -365,7 +295,6 @@ void FileBrowserActivity::onRowLongPress(const int index) {
   } else {
     activateSelected();
   }
->>>>>>> 1.6.5
 }
 
 void FileBrowserActivity::activateSelected() {
@@ -385,91 +314,6 @@ void FileBrowserActivity::activateSelected() {
     return;
   }
 
-<<<<<<< HEAD
-  if (mode == Mode::Books && (forceDelete || mappedInput.getHeldTime() >= GO_HOME_MS)) {
-    std::string cleanBasePath = basepath;
-    if (cleanBasePath.back() != '/') cleanBasePath += "/";
-    const std::string fullPath = cleanBasePath + entry;
-
-    if (isDirectory) {
-      // === DELETE DIRECTORY ===
-      auto handler = [this, fullPath](const ActivityResult& res) {
-        if (!res.isCancelled) {
-          if (removeDirFile(fullPath)) {
-            RenderLock lock(*this);
-            loadFiles();
-            if (files.empty()) {
-              nav.selected = 0;
-            } else if (nav.selected >= listCount()) {
-              nav.selected = listCount() - 1;
-            }
-            nav.follow(listCount());
-            lock.unlock();
-            requestUpdate(true);
-          }
-        }
-      };
-      std::string heading = tr(STR_DELETE) + std::string("? ");
-      startActivityForResult(std::make_unique<ConfirmationActivity>(renderer, mappedInput, heading, entry), handler);
-      return;
-    } else {
-      // === OPEN AO3 BOOK ACTION MENU ===
-      auto handler = [this, fullPath, entry](const ActivityResult& res) {
-        if (const auto* actionRes = std::get_if<BookActionResult>(&res.data)) {
-          if (actionRes->modified) {
-            if (actionRes->deleted) {
-              Ao3Librarian::tombstoneRecord(fullPath);
-              clearBookCache(fullPath);
-              if (Storage.remove(fullPath.c_str())) {
-                RenderLock lock(*this);
-                loadFiles();
-                if (files.empty()) {
-                  nav.selected = 0;
-                } else if (nav.selected >= listCount()) {
-                  nav.selected = listCount() - 1;
-                }
-                nav.follow(listCount());
-              }
-            } else if (actionRes->archived || actionRes->indexingCompleted) {
-              RenderLock lock(*this);
-              loadFiles();
-            } else {
-              RenderLock lock(*this);
-              visibleStatusCache[nav.selected] = actionRes->newStatus;
-              rebuildRowItems();
-            }
-            requestUpdate(true);
-          }
-        }
-      };
-      startActivityForResult(std::make_unique<BookActionActivity>(renderer, mappedInput, fullPath, entry), handler);
-      return;
-    }
-  } else {
-    // --- SHORT PRESS ACTION: OPEN/NAVIGATE ---
-    RenderLock lock(*this);
-    if (basepath.back() != '/') basepath += "/";
-
-    if (isDirectory) {
-      basepath += entry.substr(0, entry.length() - 1);
-      loadFiles();
-      nav.selected = 0;
-      nav.top = 0;
-      lock.unlock();
-      requestUpdate();
-    } else {
-      const std::string fullPath = basepath + entry;
-      lock.unlock(); 
-      onSelectBook(fullPath);
-    }
-  }
-}
-
-bool FileBrowserActivity::handleCustomInput() {
-  if (mode == Mode::Books && mappedInput.wasReleased(MappedInputManager::Button::Back) &&
-      mappedInput.getHeldTime() >= GO_HOME_MS && basepath != "/") {
-    {
-=======
   // buildScreen() runs on the render task and reads basepath plus `files`
   // through the row provider; mutate only under the render lock.
   RenderLock lock(*this);
@@ -489,26 +333,50 @@ bool FileBrowserActivity::handleCustomInput() {
   }
 }
 
+// Hold on a row (Confirm hold or touch long-press).
+//  - directory: delete confirmation
+//  - file: BookActionActivity (status, mark for later, index, AO3 actions, delete)
 void FileBrowserActivity::showEntryActions() {
-  if (mode != Mode::Books || files.empty() || optionPopup.isActive() || nav.selected < 0 ||
-      nav.selected >= listCount()) {
+  if (mode != Mode::Books || files.empty() || nav.selected < 0 || nav.selected >= listCount()) return;
+
+  const std::string entry = files[nav.selected];
+  if (entry.back() == '/') {
+    deleteSelected();
     return;
   }
 
-  const bool isDirectory = files[nav.selected].back() == '/';
-  static constexpr StrId FILE_OPTIONS[] = {StrId::STR_OPEN, StrId::STR_DELETE, StrId::STR_RENAME};
-  static constexpr StrId DIRECTORY_OPTIONS[] = {StrId::STR_OPEN, StrId::STR_DELETE};
-  optionPopup.show(StrId::STR_FILENAME, isDirectory ? DIRECTORY_OPTIONS : FILE_OPTIONS, isDirectory ? 2 : 3, 0,
-                   [this](const int index) {
-                     if (index == 0) {
-                       activateSelected();
-                     } else if (index == 1) {
-                       deleteSelected();
-                     } else if (index == 2) {
-                       startRename();
-                     }
-                   });
-  requestUpdate();
+  std::string cleanBasePath = basepath;
+  if (cleanBasePath.back() != '/') cleanBasePath += "/";
+  const std::string fullPath = cleanBasePath + entry;
+
+  auto handler = [this, fullPath](const ActivityResult& res) {
+    const auto* actionRes = std::get_if<BookActionResult>(&res.data);
+    if (!actionRes || !actionRes->modified) return;
+
+    if (actionRes->deleted) {
+      Ao3Librarian::tombstoneRecord(fullPath);
+      clearBookCache(fullPath);
+      if (Storage.remove(fullPath.c_str())) {
+        RenderLock lock(*this);
+        loadFiles();
+        if (files.empty()) {
+          nav.selected = 0;
+        } else if (nav.selected >= listCount()) {
+          nav.selected = listCount() - 1;
+        }
+        nav.follow(listCount());
+      }
+    } else if (actionRes->archived || actionRes->indexingCompleted) {
+      RenderLock lock(*this);
+      loadFiles();
+      if (nav.selected >= listCount()) nav.selected = std::max(0, listCount() - 1);
+    } else {
+      RenderLock lock(*this);
+      cacheStatus(nav.selected, actionRes->newStatus);
+    }
+    requestUpdate(true);
+  };
+  startActivityForResult(std::make_unique<BookActionActivity>(renderer, mappedInput, fullPath, entry), handler);
 }
 
 void FileBrowserActivity::deleteSelected() {
@@ -554,83 +422,7 @@ void FileBrowserActivity::deleteSelected() {
   startActivityForResult(std::move(confirmation), std::move(handler));
 }
 
-void FileBrowserActivity::startRename() {
-  if (files.empty() || nav.selected < 0 || nav.selected >= listCount()) return;
-
-  const std::string oldEntry = files[nav.selected];
-  if (oldEntry.back() == '/') return;
-
-  std::string cleanBasePath = basepath;
-  if (cleanBasePath.back() != '/') cleanBasePath += "/";
-  const std::string oldPath = cleanBasePath + oldEntry;
-  const std::string extension = getFileExtension(oldEntry);
-  const std::string initialStem = utf8ComposeNfc(oldEntry.substr(0, oldEntry.size() - extension.size()));
-  const size_t maxStemLength = NAME_BUFFER_SIZE - extension.size() - 1;
-  auto keyboard = makeUniqueNoThrow<KeyboardEntryActivity>(renderer, mappedInput, tr(STR_RENAME), initialStem,
-                                                           maxStemLength, InputType::Text);
-  if (!keyboard) {
-    LOG_ERR("FileBrowser", "OOM: rename keyboard");
-    return;
-  }
-  startActivityForResult(std::move(keyboard), [this, oldPath, oldEntry, extension](const ActivityResult& result) {
-    if (result.isCancelled) return;
-    renameSelectedFile(oldPath, oldEntry, std::get<KeyboardResult>(result.data).text, extension);
-  });
-}
-
-void FileBrowserActivity::renameSelectedFile(const std::string& oldPath, const std::string& oldEntry,
-                                             const std::string& newStem, const std::string& extension) {
-  const std::string newEntry = newStem + extension;
-  if (newStem.empty() || newEntry.size() >= NAME_BUFFER_SIZE || !FsHelpers::isSafePathComponent(newEntry)) {
-    LOG_ERR("FileBrowser", "Invalid rename target: %s", newEntry.c_str());
-    return;
-  }
-  if (newEntry == utf8ComposeNfc(oldEntry)) return;
-
-  const std::string parentPath = FsHelpers::extractFolderPath(oldPath);
-  const std::string newPath = (parentPath == "/" ? parentPath : parentPath + "/") + newEntry;
-  if (Storage.exists(newPath.c_str())) {
-    LOG_ERR("FileBrowser", "Rename target already exists: %s", newPath.c_str());
-    return;
-  }
-
-  const std::string oldCachePath = getBookCachePath(oldPath);
-  const std::string newCachePath = getBookCachePath(newPath);
-  const bool isEpub = FsHelpers::hasEpubExtension(oldPath);
-  const std::string oldBookmarkPath = isEpub ? BookmarkUtil::getBookmarkPath(oldPath) : "";
-  const std::string newBookmarkPath = isEpub ? BookmarkUtil::getBookmarkPath(newPath) : "";
-  bool cacheMoved = false;
-  bool bookmarksMoved = false;
-  if (!moveStatePath(oldCachePath, newCachePath, cacheMoved)) return;
-  if (!moveStatePath(oldBookmarkPath, newBookmarkPath, bookmarksMoved)) {
-    rollBackStatePath(oldCachePath, newCachePath, cacheMoved);
-    return;
-  }
-  if (!Storage.rename(oldPath.c_str(), newPath.c_str())) {
-    LOG_ERR("FileBrowser", "Failed to rename file: %s -> %s", oldPath.c_str(), newPath.c_str());
-    rollBackStatePath(oldBookmarkPath, newBookmarkPath, bookmarksMoved);
-    rollBackStatePath(oldCachePath, newCachePath, cacheMoved);
-    return;
-  }
-
-  RECENT_BOOKS.updatePath(oldPath, newPath, oldCachePath, newCachePath);
-  if (APP_STATE.openEpubPath == oldPath) {
-    APP_STATE.openEpubPath = newPath;
-    if (!APP_STATE.saveToFile()) LOG_ERR("FileBrowser", "Failed to save renamed open-book path");
-  }
-
-  {
-    RenderLock lock(*this);
-    loadFiles();
-    nav.selected = static_cast<int>(findEntry(newEntry));
-    nav.follow(listCount());
-  }
-  requestUpdate(true);
-}
-
 bool FileBrowserActivity::handleCustomInput() {
-  if (optionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return true;
-
   // Long press BACK (1s+) goes to root folder (Books mode only).
   // In firmware-pick mode we keep navigation simple: short Back = up dir / cancel.
   if (mode == Mode::Books && mappedInput.wasReleased(MappedInputManager::Button::Back) &&
@@ -638,7 +430,6 @@ bool FileBrowserActivity::handleCustomInput() {
     {
       // buildScreen() runs on the render task and reads basepath plus `files`
       // through the row provider; mutate only under the render lock.
->>>>>>> 1.6.5
       RenderLock lock(*this);
       basepath = "/";
       loadFiles();
@@ -656,24 +447,34 @@ void FileBrowserActivity::navigateButtons() {
   if (count <= 0) return;
 
   auto& n = activeNav();
+  const bool paged = !mappedInput.hasTouch();  // button-only devices flip whole pages
 
-  // Helper to instantly snap the viewport to the page boundary of the new selection
-  auto stepAndPaginate = [&](const int newIndex) {
-    RenderLock lock(*this);
-    n.selected = newIndex;
-    if (n.pageRows() > 0) {
-      n.top = (n.selected / n.pageRows()) * n.pageRows();
+  // Paged: snap the viewport to the page holding the selection (page flip at the boundary,
+  // no scrolling-list effect). Touch devices: base behaviour, the selection pulls the viewport.
+  auto step = [this, &n, paged](const int newIndex) {
+    if (!paged) {
+      moveSelectionTo(newIndex);
+      return;
     }
+    {
+      RenderLock lock(*this);
+      n.selected = newIndex;
+      const int rows = n.inputPageRows();
+      if (rows > 0) n.top = (newIndex / rows) * rows;
+    }
+    requestUpdate();
   };
 
-  buttonNavigator.onNextRelease([&] { stepAndPaginate(ButtonNavigator::nextIndex(n.selected, count)); requestUpdate(); });
-  buttonNavigator.onPreviousRelease([&] { stepAndPaginate(ButtonNavigator::previousIndex(n.selected, count)); requestUpdate(); });
+  buttonNavigator.onNextRelease([&] { step(ButtonNavigator::nextIndex(n.selected, count)); });
+  buttonNavigator.onPreviousRelease([&] { step(ButtonNavigator::previousIndex(n.selected, count)); });
 
-  buttonNavigator.onSideNextContinuous([&] { stepAndPaginate(ButtonNavigator::nextPageIndex(n.selected, count, n.pageRows())); requestUpdate(); });
-  buttonNavigator.onSidePreviousContinuous([&] { stepAndPaginate(ButtonNavigator::previousPageIndex(n.selected, count, n.pageRows())); requestUpdate(); });
+  buttonNavigator.onSideNextContinuous(
+      [&] { step(ButtonNavigator::nextPageIndex(n.selected, count, n.inputPageRows())); });
+  buttonNavigator.onSidePreviousContinuous(
+      [&] { step(ButtonNavigator::previousPageIndex(n.selected, count, n.inputPageRows())); });
 
-  buttonNavigator.onFrontNextContinuous([&] { stepAndPaginate(ButtonNavigator::nextFourIndex(n.selected, count)); requestUpdate(); });
-  buttonNavigator.onFrontPreviousContinuous([&] { stepAndPaginate(ButtonNavigator::previousFourIndex(n.selected, count)); requestUpdate(); });
+  buttonNavigator.onFrontNextContinuous([&] { step(ButtonNavigator::nextFourIndex(n.selected, count)); });
+  buttonNavigator.onFrontPreviousContinuous([&] { step(ButtonNavigator::previousFourIndex(n.selected, count)); });
 }
 
 bool FileBrowserActivity::handleButtons() {
@@ -693,11 +494,8 @@ bool FileBrowserActivity::handleButtons() {
       if (basepath != "/") {
         const std::string oldPath = basepath;
         {
-<<<<<<< HEAD
-=======
           // buildScreen() runs on the render task and reads basepath plus `files`
           // through the row provider; mutate only under the render lock.
->>>>>>> 1.6.5
           RenderLock lock(*this);
           basepath.replace(basepath.find_last_of('/'), std::string::npos, "");
           if (basepath.empty()) basepath = "/";
@@ -722,17 +520,6 @@ bool FileBrowserActivity::handleButtons() {
     return true;
   }
   return false;
-}
-
-void FileBrowserActivity::render(RenderLock&& lock) {
-  if (optionPopup.processRender(renderer, mappedInput)) return;
-  UiListActivity::render(std::move(lock));
-}
-
-std::string getFileExtension(const std::string& filename) {
-  if (filename.back() == '/') return "";
-  const auto pos = filename.rfind('.');
-  return filename.substr(pos);
 }
 
 BookStatus FileBrowserActivity::getBookStatus(const std::string& path) {
@@ -796,50 +583,31 @@ void FileBrowserActivity::buildScreen(UiScreen& screen) {
     return;
   }
 
-<<<<<<< HEAD
-  if (rowsUseFileIcons != UITheme::getInstance().getTheme().showsFileIcons()) {
-    rebuildRowItems();
-  }
-
-=======
->>>>>>> 1.6.5
   fui::ListProps props;
   props.rowProvider = &FileBrowserActivity::provideRow;
   props.rowProviderCtx = this;
   props.count = static_cast<uint16_t>(files.size());
   props.action = ACTION_ROW;
-<<<<<<< HEAD
-  props.inputMask = fui::InputTouch | fui::InputLongPress;
-  props.valueInset = 8;  
-  
-  // bodyText natively carries Index 1, defeating the textStyleUnset zero-check
-  fui::TextStyle label = screen.theme().bodyText; 
-  label.maxLines = 1;                              // Enforce truncation and consistent row height
-  props.labelText = label;
-  props.valueText = label;                         // Ensure file extensions match the 10pt size
-  props.balanceWrappedLabelWithValue = false;
-  props.partialTrailingRow = mappedInput.hasTouch(); // Fixed grid for button devices, partial row for touch devices
-
-  syncListViewport(screen, props);                 // Needed for base touch support
-  refreshStatusIcons(nav.pageRows());              // after top is final, before list() reads items
-=======
   // Tap opens/navigates; long-press shows entry actions (physical buttons stay in loop()).
   props.inputMask = fui::InputTouch | fui::InputLongPress;
   props.valueInset = 8;  // air between the extension and the row edge
-  // Names use up to two small-font lines; shared list layout sizes each row.
-  fui::TextStyle label = screen.theme().smallText;
-  label.maxLines = 2;
-  props.labelText = label;
 
-  // The trailing value here is just the short extension: skip the balanced
-  // 60%-band wrap cap and let both name lines run the full width before it.
+  // One 10pt line per row (FONT_BODY is mapped to UI_10_FONT_ID in onEnter).
+  fui::TextStyle label = screen.theme().bodyText;
+  label.maxLines = 1;  // truncate, keeps row height fixed
+  props.labelText = label;
+  props.valueText = label;  // extension matches the 10pt size
   props.balanceWrappedLabelWithValue = false;
-  syncListViewport(screen, props);
-  // Prewarm the window at the final viewport (syncListViewport just applied
-  // follow/clamping to nav.top) before the list resolves rows through the
-  // provider.
-  prewarmRowGlyphs(nav.top);
->>>>>>> 1.6.5
+
+  if (mappedInput.hasTouch()) {
+    // Touch: free scrolling with a partial trailing row (base behaviour).
+    syncListViewport(screen, props);
+  } else {
+    // Buttons: fixed pages. The base helper forces partialTrailingRow = true, so sync directly.
+    props.partialTrailingRow = false;
+    screen.syncListViewport(nav, props, listCount(), 0);
+  }
+  prewarmRowGlyphs(nav.top);  // top is final here, before list() resolves rows
   screen.list(props);
 }
 
@@ -864,13 +632,7 @@ void FileBrowserActivity::drawFooter() {
 }
 
 size_t FileBrowserActivity::findEntry(const std::string& name) const {
-<<<<<<< HEAD
-  for (size_t i = 0; i < files.size(); i++)
-    if (files[i] == name) return i;
-  return 0;
-}
-=======
+size_t FileBrowserActivity::findEntry(const std::string& name) const {
   const auto entry = std::find(files.begin(), files.end(), name);
   return entry != files.end() ? static_cast<size_t>(entry - files.begin()) : 0;
 }
->>>>>>> 1.6.5
