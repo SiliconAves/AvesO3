@@ -20,12 +20,8 @@ class HomeActivity final : public Activity {
   bool recentsLoaded = false;
   bool firstRenderDone = false;
   bool hasOpdsServers = false;
-<<<<<<< HEAD
   bool hasAo3Library = false;
   int menuPage = 0;
-=======
-  bool hasContinueReading = false;
->>>>>>> 1.6.5
   bool coverRendered = false;      // Track if cover has been rendered once
   bool coverBufferStored = false;  // Track if cover buffer is stored
   // Home can be entered while Back is still held (e.g. leaving Settings with
@@ -71,6 +67,7 @@ class HomeActivity final : public Activity {
   }
   void onSelectBook(const std::string& path);
   void onFileBrowserOpen();
+  void onRecentsOpen();
   void onLibraryOpen();
   void onSettingsOpen();
   void onFileTransferOpen();

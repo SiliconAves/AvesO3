@@ -33,7 +33,11 @@ constexpr int kPageDotsFromBottom = 38;
 }  // namespace
 
 int HomeActivity::getMenuItemCount() const {
-<<<<<<< HEAD
+  if (coverGridUi) {
+    int count = 4 + (hasOpdsServers ? 1 : 0);
+    return count + static_cast<int>(recentBooks.size());
+  }
+
   const auto& metrics = UITheme::getInstance().getMetrics();
   int menuItems = 0;
   if (menuPage == 0) {
@@ -46,11 +50,6 @@ int HomeActivity::getMenuItemCount() const {
     if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
       menuItems += 1;  // Continue Reading is also prepended on page 1
     }
-=======
-  int count = 4;  // File Browser, Library, File transfer, Settings
-  if (!recentBooks.empty()) {
-    count += recentBooks.size();
->>>>>>> 1.6.5
   }
   // When Continue Reading is embedded in the menu there is no separate book
   // section, so do not add recentBooks.size() again.
@@ -61,9 +60,8 @@ int HomeActivity::getMenuItemCount() const {
 }
 
 int HomeActivity::getPage1ItemCount() const {
-  int count = 1; // File Browser is always on page 1
+  int count = 2;  // Browse Files and Settings are always on page 1
   if (hasOpdsServers) count++;
-  // future page-1 entries go here
   return count;
 }
 
@@ -300,11 +298,10 @@ void HomeActivity::onEnter() {
     if (!coverGridUi) LOG_ERR("HOME", "OOM: cover grid UI; using standard home");
   }
   loadRecentBooks(coverGridUi ? CoverGridHomeUi::MAX_BOOKS : metrics.homeRecentBooksCount);
-  hasContinueReading = !recentBooks.empty();
   if (coverGridUi) {
     fillCoverGridFromLibrary();
     resolveGridCoverPaths();
-    coverGridUi->begin(recentBooks, hasOpdsServers, hasContinueReading);
+    coverGridUi->begin(recentBooks, hasOpdsServers, !recentBooks.empty());
   }
 
   const auto base = static_cast<int>(recentBooks.size());
@@ -373,41 +370,105 @@ void HomeActivity::loop() {
     }
 
     const int menuIndex = selectorIndex - static_cast<int>(recentBooks.size());
-<<<<<<< HEAD
+
+    if (coverGridUi) {
+      switch (indexToMenuItem(menuIndex, hasOpdsServers)) {
+        case HomeMenuItem::FILE_BROWSER:
+          onFileBrowserOpen();
+          break;
+        case HomeMenuItem::LIBRARY:
+          onLibraryOpen();
+          break;
+        case HomeMenuItem::OPDS_BROWSER:
+          onOpdsBrowserOpen();
+          break;
+        case HomeMenuItem::FILE_TRANSFER:
+          onFileTransferOpen();
+          break;
+        case HomeMenuItem::SETTINGS_MENU:
+          onSettingsOpen();
+          break;
+        default:
+          break;
+      }
+      return;
+    }
 
     if (menuPage == 1) {
-      // NOTE: selectorIndex=0 (Continue Reading) is already caught by the
-      // early-return above (selectorIndex < recentBooks.size()). Do NOT prepend
-      // it here — that would shift OPDS Browser to index 1 while menuIndex for
-      // selectorIndex=1 computes to 0, causing OPDS to open the book instead.
-      std::vector<std::function<void()>> page1Actions;
-      page1Actions.push_back([this] { onFileBrowserOpen(); });
-      if (hasOpdsServers) page1Actions.push_back([this] { onOpdsBrowserOpen(); });
-      // future page-1 entries go here
-      if (menuIndex >= 0 && menuIndex < static_cast<int>(page1Actions.size())) {
-        page1Actions[menuIndex]();
+      if (menuIndex == 0) {
+        onFileBrowserOpen();
+      } else if (menuIndex == 1) {
+        if (hasOpdsServers) {
+          onOpdsBrowserOpen();
+        } else {
+          onSettingsOpen();
+        }
+      } else if (menuIndex == 2) {
+        onSettingsOpen();
       }
       return;
     }
 
     // Page 0
-    std::vector<std::function<void()>> page0Actions = {
-      [this] { onAo3LibraryOpen(); },
-      [this] { onRecentsOpen(); },
-      [this] { onBookmarksOpen(); },
-      [this] { onFileTransferOpen(); },
-      [this] { onSettingsOpen(); }
-    };
-
-    // NOTE: when homeContinueReadingInMenu is true, selectorIndex=0 is already
-    // handled by the early-return above (selectorIndex < recentBooks.size()).
-    // Do NOT prepend a Continue Reading action here – that would shift every
-    // subsequent action one slot forward and break them all.
-
-    if (menuIndex >= 0 && menuIndex < static_cast<int>(page0Actions.size())) {
-      page0Actions[menuIndex]();
+    switch (menuIndex) {
+      case 0:
+        onAo3LibraryOpen();
+        break;
+      case 1:
+        onRecentsOpen();
+        break;
+      case 2:
+        onBookmarksOpen();
+        break;
+      case 3:
+        onLibraryOpen();
+        break;
+      case 4:
+        onFileTransferOpen();
+        break;
+      default:
+        break;
     }
   };
+
+  if (coverGridUi) {
+    const int touched = coverGridUi->selectedAction(mappedInput);
+    if (touched >= 0 && touched < menuCount) {
+      selectorIndex = touched;
+      activateSelection();
+      return;
+    }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+      activateSelection();
+      return;
+    }
+    // Side page buttons walk the covers, front Left/Right walk the tabs
+    // (selectorIndex is flat: books first, then the tab items). A press while
+    // selection sits in the other band jumps into this band first.
+    const int bookCount = static_cast<int>(recentBooks.size());
+    const auto cycleBand = [this](const int base, const int count, const int dir) {
+      if (count <= 0) return;
+      int idx = selectorIndex - base;
+      if (idx < 0 || idx >= count) {
+        idx = dir > 0 ? 0 : count - 1;
+      } else {
+        idx = (idx + count + dir) % count;
+      }
+      selectorIndex = base + idx;
+      requestUpdate();
+    };
+    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Up},
+                                         [&cycleBand, bookCount] { cycleBand(0, bookCount, -1); });
+    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Down},
+                                         [&cycleBand, bookCount] { cycleBand(0, bookCount, +1); });
+    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Left}, [&cycleBand, bookCount, menuCount] {
+      cycleBand(bookCount, menuCount - bookCount, -1);
+    });
+    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Right}, [&cycleBand, bookCount, menuCount] {
+      cycleBand(bookCount, menuCount - bookCount, +1);
+    });
+    return;
+  }
 
   if (SETTINGS.uiTheme == CrossPointSettings::LYRA_3_COVERS) {
     const int booksCount = static_cast<int>(recentBooks.size());
@@ -417,42 +478,6 @@ void HomeActivity::loop() {
       selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);
       requestUpdate();
     });
-=======
-    switch (indexToMenuItem(menuIndex, hasOpdsServers)) {
-      case HomeMenuItem::FILE_BROWSER:
-        onFileBrowserOpen();
-        break;
-      case HomeMenuItem::LIBRARY:
-        onLibraryOpen();
-        break;
-      case HomeMenuItem::OPDS_BROWSER:
-        onOpdsBrowserOpen();
-        break;
-      case HomeMenuItem::FILE_TRANSFER:
-        onFileTransferOpen();
-        break;
-      case HomeMenuItem::SETTINGS_MENU:
-        onSettingsOpen();
-        break;
-      default:
-        break;
-    }
-  };
-
-  // Cover grid home splits navigation by button group (see below); the flat
-  // next/previous cycle is for the classic list home only.
-  if (!coverGridUi) {
-    buttonNavigator.onNext([this, menuCount] {
-      selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);
-      requestUpdate();
-    });
-
-    buttonNavigator.onPrevious([this, menuCount] {
-      selectorIndex = ButtonNavigator::previousIndex(selectorIndex, menuCount);
-      requestUpdate();
-    });
-  }
->>>>>>> 1.6.5
 
     buttonNavigator.onFrontNextContinuous([this, booksCount, menuCount] {
       if (selectorIndex < booksCount) {
@@ -559,7 +584,6 @@ void HomeActivity::loop() {
     return;
   }
 
-<<<<<<< HEAD
   // Touch menu paging. Additive: the Back handler below is unchanged, so the
   // physical buttons behave exactly as before. Swipe left -> page 2, swipe
   // right -> page 1. Horizontal swipes are always consumed here so that a
@@ -586,7 +610,7 @@ void HomeActivity::loop() {
     return;
   }
 
-if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     backPressSeen = true;
   }
 
@@ -626,57 +650,6 @@ if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     }
     return;
   }
-
-  // 1.6.0 cover grid touch logic
-=======
-  // Back is otherwise unused on the home menu: open the most recently read
-  // book directly (recentBooks is most-recent-first and already pruned of
-  // files missing from the SD card).
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back) && hasContinueReading && !recentBooks.empty()) {
-    onSelectBook(recentBooks[0].path);
-    return;
-  }
-
-  if (coverGridUi) {
-    const int touched = coverGridUi->selectedAction(mappedInput);
-    if (touched >= 0 && touched < menuCount) {
-      selectorIndex = touched;
-      activateSelection();
-      return;
-    }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-      activateSelection();
-      return;
-    }
-    // Side page buttons walk the covers, front Left/Right walk the tabs
-    // (selectorIndex is flat: books first, then the tab items). A press while
-    // selection sits in the other band jumps into this band first.
-    const int bookCount = static_cast<int>(recentBooks.size());
-    const auto cycleBand = [this](const int base, const int count, const int dir) {
-      if (count <= 0) return;
-      int idx = selectorIndex - base;
-      if (idx < 0 || idx >= count) {
-        idx = dir > 0 ? 0 : count - 1;
-      } else {
-        idx = (idx + count + dir) % count;
-      }
-      selectorIndex = base + idx;
-      requestUpdate();
-    };
-    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Up},
-                                         [&cycleBand, bookCount] { cycleBand(0, bookCount, -1); });
-    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Down},
-                                         [&cycleBand, bookCount] { cycleBand(0, bookCount, +1); });
-    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Left}, [&cycleBand, bookCount, menuCount] {
-      cycleBand(bookCount, menuCount - bookCount, -1);
-    });
-    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Right}, [&cycleBand, bookCount, menuCount] {
-      cycleBand(bookCount, menuCount - bookCount, +1);
-    });
-    return;
-  }
-
->>>>>>> 1.6.5
   const int coverColumnCount = std::max(1, metrics.homeRecentBooksCount);
   const int recentCount = std::min(static_cast<int>(recentBooks.size()), coverColumnCount);
   const int coverColumnWidth = (renderer.getScreenWidth() - 2 * metrics.contentSidePadding) / coverColumnCount;
@@ -822,19 +795,18 @@ void HomeActivity::render(RenderLock&&) {
                           recentBooks, selectorIndex, coverRendered, coverBufferStored, bufferRestored,
                           std::bind(&HomeActivity::storeCoverBuffer, this));
 
-<<<<<<< HEAD
   std::vector<const char*> menuItems;
   std::vector<UIIcon> menuIcons;
 
   if (menuPage == 0) {
-    menuItems = { "AO3 Library", "Dashboard", "AO3 Bookmarks", tr(STR_FILE_TRANSFER), tr(STR_SETTINGS_TITLE) };
-    menuIcons = { Ao3Library, Recent, BookmarkHeart, Transfer, Settings };
+    menuItems = {"AO3 Library", "Dashboard", "AO3 Bookmarks", tr(STR_LIBRARY), tr(STR_FILE_TRANSFER)};
+    menuIcons = {Ao3Library, Recent, BookmarkHeart, Library, Transfer};
     if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
       menuItems.insert(menuItems.begin(), tr(STR_CONTINUE_READING));
       menuIcons.insert(menuIcons.begin(), Book);
     }
   } else {
-    // Page 1: prepend Continue Reading first (same as page 0) so the user
+    // Page 2: prepend Continue Reading first (same as page 1) so the user
     // always sees it as the first entry regardless of which page they're on.
     if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
       menuItems.push_back(tr(STR_CONTINUE_READING));
@@ -846,23 +818,8 @@ void HomeActivity::render(RenderLock&&) {
       menuItems.push_back("OPDS Browser");
       menuIcons.push_back(OpdsBrowser);
     }
-    // future page-1 entries go here
-=======
-  // Build menu items dynamically
-  std::vector<const char*> menuItems = {tr(STR_BROWSE_FILES), tr(STR_LIBRARY), tr(STR_FILE_TRANSFER),
-                                        tr(STR_SETTINGS_TITLE)};
-  std::vector<UIIcon> menuIcons = {Folder, Library, Transfer, Settings};
-
-  if (hasOpdsServers) {
-    menuItems.insert(menuItems.begin() + 2, tr(STR_OPDS_BROWSER));
-    menuIcons.insert(menuIcons.begin() + 2, Blocks);
-  }
-
-  if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
-    // Insert Continue Reading at the top if enabled in theme
-    menuItems.insert(menuItems.begin(), tr(STR_CONTINUE_READING));
-    menuIcons.insert(menuIcons.begin(), Book);
->>>>>>> 1.6.5
+    menuItems.push_back(tr(STR_SETTINGS_TITLE));
+    menuIcons.push_back(Settings);
   }
 
   GUI.drawButtonMenu(
@@ -924,6 +881,8 @@ const char* backLabel = "";
 void HomeActivity::onSelectBook(const std::string& path) { activityManager.goToReader(path); }
 
 void HomeActivity::onFileBrowserOpen() { activityManager.goToFileBrowser(); }
+
+void HomeActivity::onRecentsOpen() { activityManager.goToRecentBooks(); }
 
 void HomeActivity::onLibraryOpen() { activityManager.goToLibrary(); }
 

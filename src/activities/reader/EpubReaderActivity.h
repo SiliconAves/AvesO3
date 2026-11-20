@@ -12,11 +12,8 @@
 #include <vector>
 
 #include "BookmarkEntry.h"
-<<<<<<< HEAD
 #include "EndOfBookOptions.h"
-=======
 #include "ChapterPosition.h"
->>>>>>> 1.6.5
 #include "EpubReaderMenuActivity.h"
 #include "ProgressMapper.h"
 #include "ReaderActivity.h"
@@ -89,9 +86,6 @@ class EpubReaderActivity final : public ReaderActivity {
   std::unique_ptr<ReaderToolbarUi> toolbarUi;
   OptionPopup overlayPopup;
   bool overlayPageStored = false;
-<<<<<<< HEAD
-  int autoTurnOption = 0;
-=======
   // True while a deferred overlay chrome refresh (pushOverlayRefresh) may still
   // be running on the panel. settleOverlayRefresh() must run before the
   // framebuffer is touched or another differential refresh is pushed.
@@ -99,7 +93,6 @@ class EpubReaderActivity final : public ReaderActivity {
   void pushOverlayRefresh();
   void settleOverlayRefresh();
   int autoTurnOption = 0;  // current auto page-turn rate index (More panel)
->>>>>>> 1.6.5
   std::vector<EpubReaderMenuActivity::MenuItem> moreItems;
 
   std::vector<FootnoteEntry> currentPageFootnotes;
