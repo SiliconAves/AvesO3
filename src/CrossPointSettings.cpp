@@ -182,7 +182,9 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
     }
   }
 
-  pinLockEnabled = clamp(doc["pinLockEnabled"] | (uint8_t)0, (uint8_t)2, (uint8_t)0);
+  const uint8_t storedPinLock = doc["pinLockEnabled"] | (uint8_t)0;
+  pinLockEnabled = clamp(storedPinLock, (uint8_t)2, (uint8_t)0);
+  if (storedPinLock != pinLockEnabled) needsResave = true;
 
   if (doc["sleepTimeoutMinutes"].isNull() && !doc["sleepTimeout"].isNull()) {
     const uint8_t legacyValue =
