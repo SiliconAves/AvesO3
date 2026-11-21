@@ -89,8 +89,18 @@ BookMetadataCache::TocEntry readTocEntryFrom(F& file) {
 
 /* ============= WRITING / BUILDING FUNCTIONS ================ */
 
+bool BookMetadataCache::buildHeapLow() {
+  if (buildOutOfMemory) return true;
+  const uint32_t largest = ESP.getMaxAllocHeap();
+  if (largest >= MIN_BUILD_BLOCK) return false;
+  buildOutOfMemory = true;
+  LOG_ERR("BMC", "Low heap while building book cache (largest block %u); stopping", static_cast<unsigned>(largest));
+  return true;
+}
+
 bool BookMetadataCache::beginWrite() {
   buildMode = true;
+  buildOutOfMemory = false;
   spineCount = 0;
   tocCount = 0;
   LOG_DBG("BMC", "Entering write mode");
@@ -117,7 +127,7 @@ bool BookMetadataCache::endContentOpfPass() {
   if (!flushed) {
     LOG_ERR("BMC", "Failed writing spine tmp file");
   }
-  return flushed;
+  return flushed && !buildOutOfMemory;
 }
 
 bool BookMetadataCache::beginTocPass() {
@@ -132,7 +142,10 @@ bool BookMetadataCache::beginTocPass() {
     return false;
   }
 
-  if (spineCount >= LARGE_SPINE_THRESHOLD) {
+  // The fast href index is one contiguous block; without room for it, fall back
+  // to the linear spine scan rather than abort.
+  const bool roomForIndex = ESP.getMaxAllocHeap() >= spineCount * sizeof(SpineHrefIndexEntry) + MIN_BUILD_BLOCK;
+  if (spineCount >= LARGE_SPINE_THRESHOLD && roomForIndex) {
     spineHrefIndex.clear();
     spineHrefIndex.resize(spineCount);
     spineFile.seek(0);
@@ -174,7 +187,7 @@ bool BookMetadataCache::endTocPass() {
   spineHrefIndex.shrink_to_fit();
   useSpineHrefIndex = false;
 
-  return flushed;
+  return flushed && !buildOutOfMemory;
 }
 
 bool BookMetadataCache::endWrite() {
@@ -421,6 +434,7 @@ void BookMetadataCache::createSpineEntry(const std::string& href) {
     LOG_DBG("BMC", "createSpineEntry called but not in build mode");
     return;
   }
+  if (buildHeapLow()) return;
 
   const SpineEntry entry(href, 0, -1);
   if (passOut) {
@@ -437,6 +451,7 @@ void BookMetadataCache::createTocEntry(const std::string& title, const std::stri
     LOG_DBG("BMC", "createTocEntry called but not in build mode");
     return;
   }
+  if (buildHeapLow()) return;
 
   int16_t spineIndex = -1;
 

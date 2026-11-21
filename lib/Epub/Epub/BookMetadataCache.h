@@ -56,6 +56,9 @@ class BookMetadataCache {
   uint16_t tocCount;
   bool loaded;
   bool buildMode;
+  // Set once the heap got too low during a build; the passes then report
+  // failure instead of letting a string allocation abort the device.
+  bool buildOutOfMemory = false;
 
   HalFile bookFile;
   // Temp file handles during build
@@ -82,6 +85,11 @@ class BookMetadataCache {
   bool useSpineHrefIndex = false;
 
   static constexpr uint16_t LARGE_SPINE_THRESHOLD = 400;
+  // Largest free heap block a build needs to keep adding entries. Entries are
+  // small, but with -fno-exceptions any failed allocation aborts.
+  static constexpr uint32_t MIN_BUILD_BLOCK = 16 * 1024;
+
+  bool buildHeapLow();
 
   // FNV-1a 64-bit hash function
   static uint64_t fnvHash64(const std::string& s) {
