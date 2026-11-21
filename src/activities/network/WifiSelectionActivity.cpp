@@ -330,7 +330,7 @@ void WifiSelectionActivity::selectNetwork(const int index) {
     // Use saved password - connect directly
     enteredPassword = savedCred->password;
     usedSavedPassword = true;
-    LOG_DBG("WiFi", "Using saved password for %s, length: %zu", selectedSSID.c_str(), enteredPassword.size());
+    LOG_DBG("WiFi", "Using saved password");
     attemptConnection();
     return;
   }
@@ -396,7 +396,7 @@ bool WifiSelectionActivity::tryAutoConnectCredential(const WifiCredential& cred)
     return false;
   }
 
-  LOG_DBG("WIFI", "Attempting saved network: %s", cred.ssid.c_str());
+  LOG_DBG("WIFI", "Attempting a saved network");
   autoAttemptedSsids.push_back(cred.ssid);
   selectedSSID = cred.ssid;
   enteredPassword = cred.password;
@@ -424,7 +424,7 @@ bool WifiSelectionActivity::tryNextSavedNetworkFromScan() {
 }
 
 void WifiSelectionActivity::handleAutoConnectFailure() {
-  LOG_DBG("WIFI", "Saved network failed: %s", selectedSSID.c_str());
+  LOG_DBG("WIFI", "Saved network failed");
   WiFi.disconnect();
 
   if (!networks.empty()) {
@@ -509,15 +509,8 @@ void WifiSelectionActivity::checkConnectionStatus() {
     connectedIP = ipStr;
     autoConnecting = false;
 
-#if defined(ENABLE_SERIAL_LOG) && LOG_LEVEL >= 2
-    uint8_t connectedBssid[6] = {};
-    WiFi.BSSID(connectedBssid);
-    LOG_DBG("WIFI", "Connected BSSID: %02x:%02x:%02x:%02x:%02x:%02x, channel: %d, RSSI: %d dBm",
-            static_cast<unsigned>(connectedBssid[0]), static_cast<unsigned>(connectedBssid[1]),
-            static_cast<unsigned>(connectedBssid[2]), static_cast<unsigned>(connectedBssid[3]),
-            static_cast<unsigned>(connectedBssid[4]), static_cast<unsigned>(connectedBssid[5]), WiFi.channel(),
-            WiFi.RSSI());
-#endif
+    // Network names and access-point addresses never go to the log.
+    LOG_DBG("WIFI", "Connected, channel: %d, RSSI: %d dBm", WiFi.channel(), WiFi.RSSI());
 
     // Sync RTC from NTP on the first successful WiFi connection only. The DS3231
     // drifts ~2 ppm so one sync is enough; users can force a re-sync from
@@ -622,7 +615,7 @@ void WifiSelectionActivity::loop() {
       // We already know this hidden network - connect with the saved password
       enteredPassword = savedCred->password;
       usedSavedPassword = true;
-      LOG_DBG("WiFi", "Using saved password for hidden network %s", selectedSSID.c_str());
+      LOG_DBG("WiFi", "Using saved password for a hidden network");
       attemptConnection();
     } else {
       // Prompt for the password (empty password connects to open hidden APs)

@@ -1575,13 +1575,13 @@ void CrossPointWebServer::handlePostWifiNetwork() {
       return;
     }
 
-    LOG_DBG("WEB", "Updated Wi-Fi network at index %d (SSID: %s)", idx, ssid.c_str());
+    LOG_DBG("WEB", "Updated Wi-Fi network at index %d", idx);
   } else {
     if (!WIFI_STORE.addCredential(ssid, password)) {
       server->send(400, "text/plain", "Cannot add network (limit reached)");
       return;
     }
-    LOG_DBG("WEB", "Added Wi-Fi network: %s", ssid.c_str());
+    LOG_DBG("WEB", "Added a Wi-Fi network");
   }
 
   server->send(200, "text/plain", "OK");
@@ -1623,7 +1623,7 @@ void CrossPointWebServer::handleDeleteWifiNetwork() {
     return;
   }
 
-  LOG_DBG("WEB", "Deleted Wi-Fi network at index %d (SSID: %s)", idx, ssid->c_str());
+  LOG_DBG("WEB", "Deleted Wi-Fi network at index %d", idx);
   server->send(200, "text/plain", "OK");
 }
 
