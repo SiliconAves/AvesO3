@@ -8,6 +8,14 @@
 
 class ZipFile {
  public:
+  // Why the last zip could not be opened, for callers that report it (the AO3
+  // indexer's failure log). Process-wide and best effort: it describes the most
+  // recent loadZipDetails() failure.
+  enum class Failure : uint8_t { None, Empty, ReadError, NoEndRecord, LooksLikeWebPage, NotAZip };
+  static Failure lastFailure() { return lastFailure_; }
+  static void clearLastFailure() { lastFailure_ = Failure::None; }
+  static const char* describe(Failure failure);
+
   struct FileStatSlim {
     uint16_t method;             // Compression method
     uint32_t compressedSize;     // Compressed size
@@ -39,6 +47,10 @@ class ZipFile {
   }
 
  private:
+  static inline Failure lastFailure_ = Failure::None;
+  // Classify a file whose end record could not be found (reads its first bytes).
+  Failure classifyUnreadable(size_t fileSize);
+
   const std::string& filePath;
   HalFile file;
   ZipDetails zipDetails = {0, 0, false};
