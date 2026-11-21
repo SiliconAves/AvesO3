@@ -936,27 +936,48 @@ void Ao3LibraryActivity::render(RenderLock&& lock) {
 void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
   renderer.clearScreen();
 
-  // Draw Header Title (Truncate to 25 chars if fandom filter is active)
-  char headerTitle[32];
-  strcpy(headerTitle, mode_ == Ao3LibraryMode::BOOKMARKS ? "Bookmarked Fics" : "AO3 Library");
-  if (activeState.fandom[0] != '\0') {
-    std::string cleanFandom(activeState.fandom);
-    if (cleanFandom.length() > 29) {
-      cleanFandom = cleanFandom.substr(0, 27) + "..";
-    }
-    strcpy(headerTitle, cleanFandom.c_str());
-  }
-
   int titleX = 15;
   if (mappedInput.hasTouch()) {
-    renderer.drawIcon(icon_header_back_32.bits, 8, 8, 32);
+    const int size = 32;
+    const int rowBytes = (size + 7) / 8;
+    for (int row = 0; row < size; row++) {
+      for (int col = 0; col < size; col++) {
+        const uint8_t byte = icon_header_back_32.bits[row * rowBytes + (col >> 3)];
+        if (((byte >> (7 - (col & 7))) & 1) == 0) {
+          renderer.drawPixel(8 + col, 8 + row, true);
+        }
+      }
+    }
     HeaderBackTapTarget::set(0, 0, 48, 48);
     titleX = 48;
   } else {
     HeaderBackTapTarget::clear();
   }
 
-  renderer.drawText(UI_12_FONT_ID, titleX, 12, headerTitle, true, EpdFontFamily::BOLD);
+  // Draw page counter first (when > 1 page) so we know the exact space left for the title
+  int rightLimit = renderer.getScreenWidth() - 36;  // 10px before the filter triangle at width - 26
+  if (indexState == IndexState::OK && static_cast<int>(viewEntries.size()) > 3) {
+    const int startIdx = (selectorIndex / 3) * 3;
+    char pageBuf[32];
+    snprintf(pageBuf, sizeof(pageBuf), "%d / %d",
+             (startIdx / 3) + 1,
+             (static_cast<int>(viewEntries.size()) + 2) / 3);
+    const int counterX =
+        renderer.getScreenWidth() - 36 - renderer.getTextWidth(SMALL_FONT_ID, pageBuf);
+    renderer.drawText(SMALL_FONT_ID, counterX, 15, pageBuf);
+    rightLimit = counterX - 10;
+  }
+
+  const char* rawTitle =
+      (activeState.fandom[0] != '\0')
+          ? activeState.fandom
+          : (mode_ == Ao3LibraryMode::BOOKMARKS ? "Bookmarked Fics" : "AO3 Library");
+
+  const int maxTitleWidth = std::max(0, rightLimit - titleX);
+  const std::string headerTitle =
+      renderer.truncatedText(UI_12_FONT_ID, rawTitle, maxTitleWidth, EpdFontFamily::BOLD);
+
+  renderer.drawText(UI_12_FONT_ID, titleX, 12, headerTitle.c_str(), true, EpdFontFamily::BOLD);
   renderer.drawLine(0, 48, renderer.getScreenWidth(), 48);
 
   // States handling
@@ -1022,17 +1043,6 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
       if (i < endIdx - 1) {
         renderer.drawLine(15, y - topPad, renderer.getScreenWidth() - 15, y - topPad);
       }
-    }
-
-    // Page counter
-    if (static_cast<int>(viewEntries.size()) > 3) {
-      char pageBuf[32];
-      sprintf(pageBuf, "%d / %d",
-              (startIdx / 3) + 1,
-              (static_cast<int>(viewEntries.size()) + 2) / 3);
-      const int counterX =
-          renderer.getScreenWidth() - 36 - renderer.getTextWidth(SMALL_FONT_ID, pageBuf);
-      renderer.drawText(SMALL_FONT_ID, counterX, 15, pageBuf);
     }
   }
 
