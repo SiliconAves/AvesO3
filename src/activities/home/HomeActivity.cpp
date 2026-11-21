@@ -418,10 +418,10 @@ void HomeActivity::loop() {
         onRecentsOpen();
         break;
       case 2:
-        onBookmarksOpen();
+        onLibraryOpen();
         break;
       case 3:
-        onLibraryOpen();
+        onBookmarksOpen();
         break;
       case 4:
         onFileTransferOpen();
@@ -798,8 +798,8 @@ void HomeActivity::render(RenderLock&&) {
   std::vector<UIIcon> menuIcons;
 
   if (menuPage == 0) {
-    menuItems = {"AO3 Fanfiction", "Dashboard", "AO3 Bookmarks", tr(STR_LIBRARY), tr(STR_FILE_TRANSFER)};
-    menuIcons = {Ao3Library, Recent, BookmarkHeart, Library, Transfer};
+    menuItems = {"AO3 Fanfiction", "Dashboard", tr(STR_LIBRARY), "AO3 Bookmarks", tr(STR_FILE_TRANSFER)};
+    menuIcons = {Ao3Library, Recent, Library, BookmarkHeart, Transfer};
     if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
       menuItems.insert(menuItems.begin(), tr(STR_CONTINUE_READING));
       menuIcons.insert(menuIcons.begin(), Book);
@@ -831,18 +831,34 @@ void HomeActivity::render(RenderLock&&) {
       [&menuItems](int index) { return std::string(menuItems[index]); },
       [&menuIcons](int index) { return menuIcons[index]; });
 
-  // Page indicator (touch builds only): filled dot = the current menu page.
-  if (mappedInput.hasTouch() && getPage1ItemCount() > 0) {
-    constexpr int kDot = 12;
-    constexpr int kGap = 16;
-    const int dotsX = (pageWidth - (2 * kDot + kGap)) / 2;
-    const int dotsY = pageHeight - metrics.buttonHintsHeight - kPageDotsFromBottom;
-    for (int i = 0; i < 2; ++i) {
-      const int x = dotsX + i * (kDot + kGap);
-      if (i == menuPage) {
-        renderer.fillRoundedRect(x, dotsY, kDot, kDot, kDot / 2, Black);
-      } else {
-        renderer.drawRoundedRect(x, dotsY, kDot, kDot, 1, kDot / 2, true);
+  // Page indicator: circles on touch builds, 9x9 corner-clipped squares on button devices.
+  if (getPage1ItemCount() > 0) {
+    if (mappedInput.hasTouch()) {
+      constexpr int kDot = 12;
+      constexpr int kGap = 16;
+      const int dotsX = (pageWidth - (2 * kDot + kGap)) / 2;
+      const int dotsY = pageHeight - metrics.buttonHintsHeight - kPageDotsFromBottom;
+      for (int i = 0; i < 2; ++i) {
+        const int x = dotsX + i * (kDot + kGap);
+        if (i == menuPage) {
+          renderer.fillRoundedRect(x, dotsY, kDot, kDot, kDot / 2, Black);
+        } else {
+          renderer.drawRoundedRect(x, dotsY, kDot, kDot, 1, kDot / 2, true);
+        }
+      }
+    } else {
+      constexpr int kSquare = 9;
+      constexpr int kGap = 7;
+      constexpr int kFromBottom = 54;
+      const int squaresX = (pageWidth - (2 * kSquare + kGap)) / 2;
+      const int squaresY = pageHeight - kFromBottom - kSquare;
+      for (int i = 0; i < 2; ++i) {
+        const int x = squaresX + i * (kSquare + kGap);
+        if (i == menuPage) {
+          renderer.fillRoundedRect(x, squaresY, kSquare, kSquare, 1, Black);
+        } else {
+          renderer.drawRoundedRect(x, squaresY, kSquare, kSquare, 1, 1, true);
+        }
       }
     }
   }
