@@ -179,6 +179,7 @@ class LibraryListActivity final : public UiTabListActivity {
   // book is not in the index), and the current-direction rows to skip, sorted
   // ascending, so unpinned entries map to sort rows with a <=10-step walk.
   uint16_t pinnedAscRows[RecentBooksStore::MAX_RECENT_BOOKS] = {};
+  uint8_t pinnedStoreIdx[RecentBooksStore::MAX_RECENT_BOOKS] = {};  // pinned row -> RECENT_BOOKS index (AO3 skipped)
   uint16_t overlapRows[RecentBooksStore::MAX_RECENT_BOOKS] = {};
   uint8_t pinnedTotal = 0;
   uint8_t overlapCount = 0;

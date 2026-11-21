@@ -63,6 +63,14 @@ const char* tabLabelFor(const int tab) {
   return tr(STR_LIBRARY_TAB_RECENT);
 }
 
+// AO3 fics (including archived/bookmarked) have a library sidecar in their cache dir.
+bool isAo3Book(const std::string& path) {
+  char buf[80];
+  snprintf(buf, sizeof(buf), "/.crosspoint/epub_%lu/ao3_library_info",
+           static_cast<unsigned long>(std::hash<std::string>{}(path)));
+  return Storage.exists(buf);
+}
+
 }  // namespace
 
 LibraryListActivity::LibraryListActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
@@ -152,13 +160,17 @@ int LibraryListActivity::pinnedCount() const {
 }
 
 void LibraryListActivity::resolvePinned() {
-  const auto& books = RECENT_BOOKS.getBooks();
-  pinnedTotal = static_cast<uint8_t>(std::min<size_t>(books.size(), RecentBooksStore::MAX_RECENT_BOOKS));
+    const auto& books = RECENT_BOOKS.getBooks();
+  const size_t limit = std::min<size_t>(books.size(), RecentBooksStore::MAX_RECENT_BOOKS);
+  pinnedTotal = 0;
+  for (size_t i = 0; i < limit; i++) {
+    if (!isAo3Book(books[i].path)) pinnedStoreIdx[pinnedTotal++] = static_cast<uint8_t>(i);
+  }
   for (int i = 0; i < pinnedTotal; i++) pinnedAscRows[i] = 0xFFFF;
   if (pinnedTotal > 0 && index.isOpen()) {
     library::BookIdentity identities[RecentBooksStore::MAX_RECENT_BOOKS];
     for (int i = 0; i < pinnedTotal; i++) {
-      const std::string& path = books[static_cast<size_t>(i)].path;
+      const std::string& path = books[pinnedStoreIdx[i]].path;
       identities[i].pathHash = library::clixPathHash(path.data(), path.size());
       // Size is only a lookup prefilter; 0 (stat failed, e.g. the index handle
       // is the card's one open reader) falls back to hash-only matching.
@@ -195,7 +207,7 @@ void LibraryListActivity::openSelectedBook() {
   if (selectedEntry() < pinnedCount()) {
     const auto& books = RECENT_BOOKS.getBooks();
     if (selectedEntry() >= static_cast<int>(books.size())) return;
-    path = books[static_cast<size_t>(selectedEntry())].path;
+        path = books[pinnedStoreIdx[selectedEntry()]].path;
   } else {
     if (!index.isOpen()) return;
     const uint16_t ordinal = index.ordinalForRow(sortOrder, static_cast<uint16_t>(rowFor(selectedEntry())));
@@ -258,8 +270,8 @@ void LibraryListActivity::showRecentBookOptions(const int entry) {
   if (isStoreRow) {
     const auto& books = RECENT_BOOKS.getBooks();
     if (entry >= static_cast<int>(books.size())) return;
-    path = books[static_cast<size_t>(entry)].path;
-    title = books[static_cast<size_t>(entry)].title;
+    path = books[pinnedStoreIdx[entry]].path;
+    title = books[pinnedStoreIdx[entry]].title;
   } else {
     if (!index.isOpen()) return;
     const uint16_t ordinal = index.ordinalForRow(sortOrder, static_cast<uint16_t>(rowFor(entry)));
@@ -690,7 +702,7 @@ bool LibraryListActivity::rowTextFor(const int entry, std::string& title, std::s
   if (entry < pinnedCount()) {
     const auto& books = RECENT_BOOKS.getBooks();
     if (entry < 0 || entry >= static_cast<int>(books.size())) return false;
-    const auto& book = books[static_cast<size_t>(entry)];
+    const auto& book = books[pinnedStoreIdx[entry]];
     title = book.title;
     author = book.author;
     if (fileName) *fileName = book.path;
