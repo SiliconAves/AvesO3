@@ -1,6 +1,7 @@
 #include "LibraryBuilder.h"
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <BufferedFile.h>
 #include <Epub.h>
 #include <FsHelpers.h>
@@ -10,6 +11,7 @@
 #include <Utf8.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <cstring>
 
@@ -195,6 +197,24 @@ bool isBookName(const std::string& name) {
 // card written on a Mac shows every book twice.
 bool isHiddenOrSidecar(const char* name) { return name[0] == '.'; }
 
+std::string normalizeFolderPath(std::string p) {
+  while (p.size() > 1 && p.front() == '/' && p[1] == '/') p.erase(p.begin());
+  while (p.size() > 1 && p.back() == '/') p.pop_back();
+  if (!p.empty() && p.front() != '/') p.insert(p.begin(), '/');
+  return p;
+}
+
+bool isSameFolderPath(const std::string& a, const std::string& b) {
+  if (a.size() != b.size() || a.empty()) return false;
+  for (size_t i = 0; i < a.size(); i++) {
+    if (std::tolower(static_cast<unsigned char>(a[i])) !=
+        std::tolower(static_cast<unsigned char>(b[i]))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 std::string stemOf(const std::string& name) {
   const size_t dot = name.find_last_of('.');
   return (dot == std::string::npos || dot == 0) ? name : name.substr(0, dot);
@@ -267,6 +287,7 @@ struct WalkState {
   uint16_t priorCount = 0;
   uint16_t reused = 0;
   uint32_t serviceUnits = 0;
+  std::string ao3Folder;
 };
 
 // Bound to shownTitle when a book told us nothing. A `std::string()` temporary
@@ -473,9 +494,15 @@ void walk(WalkState& st, const std::string& path, const int depth) {
     const std::string name(st.nameBuf);
 
     if (isDir) {
+      const std::string childPath = normalizeFolderPath(joinLibraryPath(path, name));
+      if (isSameFolderPath(normalizeFolderPath(path), "/read") ||
+          isSameFolderPath(childPath, st.ao3Folder)) {
+        LOG_INF("LIBIDX", "skipping excluded folder: %s", childPath.c_str());
+        continue;
+      }
       const size_t resumePosition = dir.position();
       dir.close();
-      walk(st, joinLibraryPath(path, name), depth + 1);
+      walk(st, childPath, depth + 1);
       if (st.failed || st.books >= CLIX_MAX_RECORDS) return;
 
       dir = Storage.open(path.c_str());
@@ -1142,6 +1169,16 @@ bool buildLibraryIndex(const char* rootPath, BuildStats& stats, const bool readM
   st.readMetadata = readMetadata;
   st.previous = previous.isOpen() ? &previous : nullptr;
   st.stats = &stats;
+  if (Storage.exists("/.crosspoint/ao3_settings.json")) {
+    JsonDocument doc;
+    if (!deserializeJson(doc, Storage.readFile("/.crosspoint/ao3_settings.json"))) {
+      std::string folder = normalizeFolderPath(doc["ao3Folder"] | "");
+      if (!folder.empty() && folder != "/") {
+        st.ao3Folder = std::move(folder);
+        LOG_INF("LIBIDX", "excluding AO3 folder: %s", st.ao3Folder.c_str());
+      }
+    }
+  }
 
   if (!Storage.openFileForWrite("LIBIDX", STAGE_PATH, st.stage) ||
       !Storage.openFileForWrite("LIBIDX", folderStagePath, st.folders)) {

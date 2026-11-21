@@ -10,6 +10,7 @@
 #include "Ao3FolderPickerActivity.h"
 #include "Ao3CoverAssignmentActivity.h"
 #include "components/UITheme.h"
+#include "LibraryBuilder.h"
 #include "fontIds.h"
 
 #include "components/UiAppHelpers.h"
@@ -269,6 +270,7 @@ void Ao3LibrarySettingsActivity::activateIndex(int index) {
             ao3Folder = pickerRes->singlePath;
             excludedFolders.clear();
             saveSettings();
+            library::markLibraryIndexDirty();
           }
         }
       }
