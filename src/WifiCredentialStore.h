@@ -42,8 +42,13 @@ class WifiCredentialStore : public PersistableStore<WifiCredentialStore> {
 
  public:
   static const char* getFilePath() { return "/.crosspoint/wifi.json"; }
+  // On the SD card the whole list (names and passwords) is one AES-256-GCM
+  // blob under the device key (see DeviceSecret.h); the plain JSON below only
+  // exists in RAM. A file in the old readable format is re-saved encrypted.
   void toJson(JsonDocument& doc) const;
   bool fromJson(JsonVariantConst doc);
+  void toPlainJson(JsonDocument& doc) const;
+  bool fromPlainJson(JsonVariantConst doc);
 
   // Credential management
   bool addCredential(const std::string& ssid, const std::string& password);
