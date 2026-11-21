@@ -438,7 +438,7 @@ void Ao3IndexActivity::tickDirDiscovery() {
         ext = nameStr.substr(dotPos + 1);
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
       }
-      if (ext == "epub") {
+      if (ext == "epub" && name[0] != '.') {  // hidden files (macOS "._" companions) are never books
         uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(fullChildPath));
         if (!std::binary_search(indexedHashes.begin(), indexedHashes.end(), hash)) {
           unindexedCount++;
@@ -508,7 +508,7 @@ void Ao3IndexActivity::startDirIndexing() {
           ext = nameStr.substr(dotPos + 1);
           std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         }
-        if (ext == "epub") {
+        if (ext == "epub" && name[0] != '.') {  // hidden files (macOS "._" companions) are never books
           uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(fullChildPath));
           if (!std::binary_search(indexedHashes.begin(), indexedHashes.end(), hash)) {
             pendingBooks.push_back(fullChildPath);
