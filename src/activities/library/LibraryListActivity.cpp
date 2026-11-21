@@ -15,6 +15,7 @@
 
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
+#include "BookStatus.h"
 #include "RecentBooksStore.h"
 #include "activities/util/ConfirmationActivity.h"
 #include "activities/util/KeyboardEntryActivity.h"
@@ -69,6 +70,22 @@ bool isAo3Book(const std::string& path) {
   snprintf(buf, sizeof(buf), "/.crosspoint/epub_%lu/ao3_library_info",
            static_cast<unsigned long>(std::hash<std::string>{}(path)));
   return Storage.exists(buf);
+}
+
+// Status byte of progress.bin: offset 6 (7-byte format) or 10 (11-byte format).
+BookStatus readBookStatus(const std::string& path) {
+  char buf[80];
+  snprintf(buf, sizeof(buf), "/.crosspoint/epub_%lu/progress.bin",
+           static_cast<unsigned long>(std::hash<std::string>{}(path)));
+    if (!Storage.exists(buf)) return BookStatus::START;  // never opened: no file, no error log
+  HalFile f;
+  if (!Storage.openFileForRead("LIB", buf, f)) return BookStatus::START;
+  uint8_t data[11];
+  const int n = f.read(data, sizeof(data));
+  f.close();
+  if (n == 7) return static_cast<BookStatus>(data[6]);
+  if (n == 11) return static_cast<BookStatus>(data[10]);
+  return BookStatus::START;
 }
 
 }  // namespace
@@ -166,6 +183,7 @@ void LibraryListActivity::resolvePinned() {
   for (size_t i = 0; i < limit; i++) {
     if (!isAo3Book(books[i].path)) pinnedStoreIdx[pinnedTotal++] = static_cast<uint8_t>(i);
   }
+  std::fill_n(statusKey, STATUS_SLOTS, static_cast<uint16_t>(0xFFFF));  // ordinals/rows may have changed
   for (int i = 0; i < pinnedTotal; i++) pinnedAscRows[i] = 0xFFFF;
   if (pinnedTotal > 0 && index.isOpen()) {
     library::BookIdentity identities[RecentBooksStore::MAX_RECENT_BOOKS];
@@ -842,6 +860,31 @@ void LibraryListActivity::buildRows(UiScreen& screen) {
   uint32_t previousInitial = 0;
   std::string rowFile;
   rowFile.reserve(128);
+  // rowFile is only the bare on-card name for index rows; status needs the full path.
+    const auto statusFor = [this](const int entry) -> BookStatus {
+    const bool pinned = entry < pinnedCount();
+    uint16_t key = static_cast<uint16_t>(0xF000 + entry);  // ordinals are < 0x1000, no overlap
+    if (!pinned) {
+      key = index.ordinalForRow(sortOrder, static_cast<uint16_t>(rowFor(entry)));
+      if (key == 0xFFFF) return BookStatus::START;
+    }
+    const size_t slot = key % STATUS_SLOTS;
+    if (statusKey[slot] == key) return static_cast<BookStatus>(statusVal[slot]);
+
+    std::string path;
+    if (pinned) {
+      const auto& books = RECENT_BOOKS.getBooks();
+      if (pinnedStoreIdx[entry] >= books.size()) return BookStatus::START;
+      path = books[pinnedStoreIdx[entry]].path;
+    } else {
+      library::ClixRecord record{};
+      if (!index.readRecord(key, record) || !index.readPath(record, path)) return BookStatus::START;
+    }
+    const BookStatus status = readBookStatus(path);
+    statusKey[slot] = key;
+    statusVal[slot] = static_cast<uint8_t>(status);
+    return status;
+  };
   // Capture this after syncTabListViewport(), which may clamp nav.top.
   const int windowStart = static_cast<int>(props.topIndex);
   for (int entry = windowStart; entry < count && rows < static_cast<int>(cap); entry++) {
@@ -880,7 +923,11 @@ void LibraryListActivity::buildRows(UiScreen& screen) {
 
     item.label = title.c_str();
     // Group headings stay bare; every book row gets its file-type icon.
-    if (!groupsCollapsed && !rowFile.empty()) item.icon = listIconFor(UITheme::getFileIcon(rowFile), 32);
+    if (!groupsCollapsed && !rowFile.empty()) {
+      const BookStatus status = statusFor(entry);
+      item.icon = status != BookStatus::START ? bookStatusIconFor(status, 32)
+                                              : listIconFor(UITheme::getFileIcon(rowFile), 32);
+    }
     item.actionValue = static_cast<int16_t>(entry);
     winItems.push_back(item);
     rows++;

@@ -180,6 +180,10 @@ class LibraryListActivity final : public UiTabListActivity {
   // ascending, so unpinned entries map to sort rows with a <=10-step walk.
   uint16_t pinnedAscRows[RecentBooksStore::MAX_RECENT_BOOKS] = {};
   uint8_t pinnedStoreIdx[RecentBooksStore::MAX_RECENT_BOOKS] = {};  // pinned row -> RECENT_BOOKS index (AO3 skipped)
+  // Status cache keyed by index ordinal (0xF000+entry for pinned rows); 0xFFFF = empty slot.
+  static constexpr size_t STATUS_SLOTS = 64;
+  uint16_t statusKey[STATUS_SLOTS];
+  uint8_t statusVal[STATUS_SLOTS] = {};
   uint16_t overlapRows[RecentBooksStore::MAX_RECENT_BOOKS] = {};
   uint8_t pinnedTotal = 0;
   uint8_t overlapCount = 0;
