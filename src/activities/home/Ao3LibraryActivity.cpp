@@ -18,6 +18,8 @@
 #include "../../fontIds.h"
 #include "../../MappedInputManager.h"
 #include "../../components/UITheme.h"
+#include "../../components/HeaderBackTapTarget.h"
+#include "../../components/icons/headerIcons.h"
 #include "../../RecentBooksStore.h"
 #include "../../CrossPointState.h"
 // Silent restart to Dashboard or AO3 Library, depending on the hint set by the activity that called silentRestartToHint()
@@ -420,12 +422,14 @@ void Ao3LibraryActivity::loop() {
       };
 
       if (mappedInput.wasScreenTapped(tx, ty)) {
-        // Tapping anywhere in the 48px Top Header band opens the filter panel
+        // Tapping in the 48px Top Header band (outside back arrow) opens the filter panel
         if (ty < 48) {
-          screenState = ScreenState::FILTER_PANEL;
-          pendingState = activeState;
-          overlayRowIndex = 0;
-          requestUpdate(true);
+          if (!HeaderBackTapTarget::contains(tx, ty)) {
+            screenState = ScreenState::FILTER_PANEL;
+            pendingState = activeState;
+            overlayRowIndex = 0;
+            requestUpdate(true);
+          }
           return;
         }
         
@@ -942,7 +946,17 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
     }
     strcpy(headerTitle, cleanFandom.c_str());
   }
-  renderer.drawText(UI_12_FONT_ID, 15, 12, headerTitle, true, EpdFontFamily::BOLD);
+
+  int titleX = 15;
+  if (mappedInput.hasTouch()) {
+    renderer.drawIcon(icon_header_back_32.bits, 8, 8, 32);
+    HeaderBackTapTarget::set(0, 0, 48, 48);
+    titleX = 48;
+  } else {
+    HeaderBackTapTarget::clear();
+  }
+
+  renderer.drawText(UI_12_FONT_ID, titleX, 12, headerTitle, true, EpdFontFamily::BOLD);
   renderer.drawLine(0, 48, renderer.getScreenWidth(), 48);
 
   // States handling
