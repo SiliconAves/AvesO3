@@ -556,7 +556,7 @@ void Ao3TagMergeActivity::buildMainScreen(UiScreen& uiScreen) {
     uiScreen.insetContent(fui::Insets{-6, 0, 0, 0});
 
     fui::ListProps props;
-    syncTabListViewport(uiScreen, props, false);
+    syncTabListViewport(uiScreen, props);
 
     int count = static_cast<int>(displayItems.size());
     std::vector<fui::ListItem> items(count);

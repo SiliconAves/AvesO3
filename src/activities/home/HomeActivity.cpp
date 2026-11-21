@@ -749,8 +749,7 @@ void HomeActivity::render(RenderLock&&) {
     UITheme::getInstance().drawCoverGridHome(*coverGridUi);
     // Front Left/Right walk the tabs, so their hints read Left/Right; the
     // side page buttons (unhinted) walk the covers.
-    const auto labels = mappedInput.mapLabels(hasContinueReading ? tr(STR_RESUME) : "", tr(STR_SELECT),
-                                              tr(STR_DIR_LEFT), tr(STR_DIR_RIGHT));
+    const auto labels = mappedInput.mapLabels("", tr(STR_SELECT), tr(STR_DIR_LEFT), tr(STR_DIR_RIGHT));
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
     renderer.displayBuffer(cleanInitialRefresh && !firstRenderDone ? HalDisplay::HALF_REFRESH
                                                                    : HalDisplay::FAST_REFRESH);
@@ -799,7 +798,7 @@ void HomeActivity::render(RenderLock&&) {
   std::vector<UIIcon> menuIcons;
 
   if (menuPage == 0) {
-    menuItems = {"AO3 Library", "Dashboard", "AO3 Bookmarks", tr(STR_LIBRARY), tr(STR_FILE_TRANSFER)};
+    menuItems = {"AO3 Fanfiction", "Dashboard", "AO3 Bookmarks", tr(STR_LIBRARY), tr(STR_FILE_TRANSFER)};
     menuIcons = {Ao3Library, Recent, BookmarkHeart, Library, Transfer};
     if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
       menuItems.insert(menuItems.begin(), tr(STR_CONTINUE_READING));
