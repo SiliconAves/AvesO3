@@ -632,7 +632,6 @@ void FileBrowserActivity::drawFooter() {
 }
 
 size_t FileBrowserActivity::findEntry(const std::string& name) const {
-size_t FileBrowserActivity::findEntry(const std::string& name) const {
   const auto entry = std::find(files.begin(), files.end(), name);
   return entry != files.end() ? static_cast<size_t>(entry - files.begin()) : 0;
 }

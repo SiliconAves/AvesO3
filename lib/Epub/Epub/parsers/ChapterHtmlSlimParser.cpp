@@ -441,11 +441,6 @@ void ChapterHtmlSlimParser::emitHorizontalRule(const BlockStyle& blockStyle) {
     flushPartWordBuffer();
   }
 
-void ChapterHtmlSlimParser::emitHorizontalRule(const BlockStyle& blockStyle) {
-  if (partWordBufferIndex > 0) {
-    flushPartWordBuffer();
-  }
-
   auto centeredBlockStyle = BlockStyle();
   centeredBlockStyle.textAlignDefined = true;
   centeredBlockStyle.alignment = CssTextAlign::Center;
