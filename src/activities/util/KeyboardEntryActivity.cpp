@@ -525,7 +525,10 @@ fui::Rect KeyboardEntryActivity::keyboardRect() const {
   const int pageHeight = renderer.getScreenHeight();
   const int rows = currentLayout().rowCount;
   const int gap = metrics.keyboardKeySpacing;
-  const int height = rows * metrics.keyboardKeyHeight + (rows > 1 ? (rows - 1) * gap : 0);
+  // The 12-key PIN pad has only four rows, so its keys are twice the theme's height: bigger
+  // targets on the lock screen, with room left for the PIN field and its hint.
+  const int keyHeight = metrics.keyboardKeyHeight * (inputType == InputType::Pin ? 2 : 1);
+  const int height = rows * keyHeight + (rows > 1 ? (rows - 1) * gap : 0);
   const int width = pageWidth * metrics.keyboardWidthPercent / 100;
   const int x = (pageWidth - width) / 2;
   const int y =
