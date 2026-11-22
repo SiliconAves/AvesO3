@@ -10,10 +10,13 @@
 
 #include "MappedInputManager.h"
 #include "UITheme.h"
-#include "icons/blocks.h"
+#include "icons/ao3library.h"
 #include "icons/book.h"
+#include "icons/bookmarkheart.h"
 #include "icons/folder.h"
+#include "icons/globe.h"
 #include "icons/library.h"
+#include "icons/recent.h"
 #include "icons/settings2.h"
 #include "icons/transfer.h"
 #include "util/BookProgress.h"
@@ -25,7 +28,33 @@ constexpr fui::ActionId SELECT = 1;
 // inset so the cover columns land on the header chrome's inset line.
 constexpr int16_t COVER_CELL_INSET = 6;
 constexpr int COVER_ROW_EXTRA_HEIGHT = 8;
+
+// Indexed by CoverGridHomeUi::Tab (Next/Prev are drawn as chevrons, not icons).
+constexpr const uint8_t* TAB_ICONS[] = {Ao3libraryIcon, RecentIcon, LibraryIcon, BookmarkheartIcon,
+                                        TransferIcon,   FolderIcon, GlobeIcon,   Settings2Icon};
+static_assert(sizeof(TAB_ICONS) / sizeof(TAB_ICONS[0]) == static_cast<size_t>(CoverGridHomeUi::Tab::Next),
+              "TAB_ICONS must match the icon tabs in CoverGridHomeUi::Tab");
+
+// Tailless chevron in the 32 px icon box. The 3 px stroke comes from x offsets:
+// the strokes are steep, so a y offset would thin them out.
+void drawChevron(const GfxRenderer& r, fui::Rect b, bool right) {
+  const int cx = b.x + b.width / 2;
+  const int cy = b.y + b.height / 2;
+  const int dx = right ? -5 : 5;  // which side the tip points to
+  for (int o = -1; o <= 1; ++o) {
+    r.drawLine(cx + dx + o, cy - 10, cx - dx + o, cy);
+    r.drawLine(cx - dx + o, cy, cx + dx + o, cy + 10);
+  }
+}
 }  // namespace
+
+CoverGridHomeUi::Tab CoverGridHomeUi::tabAt(int page, int index, bool opds) {
+  using T = Tab;
+  static constexpr T PAGE0[] = {T::Ao3, T::Dashboard, T::Library, T::Bookmarks, T::Transfer, T::Next};
+  static constexpr T PAGE1[] = {T::Prev, T::Files, T::Opds, T::Settings};
+  if (page == 0) return PAGE0[index];
+  return (!opds && index >= 2) ? PAGE1[index + 1] : PAGE1[index];  // no OPDS: skip its slot
+}
 
 CoverGridHomeUi::CoverGridHomeUi(GfxRenderer& renderer)
     : UiAppHost(renderer), coverCache(renderer), renderer(renderer) {}
@@ -266,15 +295,12 @@ void CoverGridHomeUi::drawGrid(UiScreen& screen) {
 }
 
 void CoverGridHomeUi::drawTabs(UiScreen& screen, fui::Rect rect) {
-  static constexpr const uint8_t* ICONS[] = {FolderIcon, LibraryIcon, BlocksIcon, TransferIcon, Settings2Icon};
-  int count = 0;
-  for (int i = 0; i < 5; ++i) {
-    if (i == 2 && !hasOpds) continue;
-    auto& tab = tabItems[count];
-    tab.value = books->size() + count;
+    const int count = tabCount(menuPage, hasOpds);
+  for (int i = 0; i < count; ++i) {
+    auto& tab = tabItems[i];
+    tab.value = books->size() + i;
     tab.selected = selected == tab.value;
     tab.label = nullptr;
-    ++count;
   }
   tabs.tabs = tabItems.data();
   tabs.count = count;
@@ -284,10 +310,15 @@ void CoverGridHomeUi::drawTabs(UiScreen& screen, fui::Rect rect) {
   tabs.iconSize = 32;
   tabs.iconPainterUserData = this;
   tabs.iconPainter = [](fui::DrawTarget&, fui::Rect iconRect, const fui::TabItem& tab, uint8_t, void* user) {
+    using T = CoverGridHomeUi::Tab;
     const auto& self = *static_cast<CoverGridHomeUi*>(user);
     const int index = tab.value - static_cast<int>(self.books->size());
-    const int icon = !self.hasOpds && index >= 2 ? index + 1 : index;
-    self.renderer.drawIcon(ICONS[icon], iconRect.x, iconRect.y, iconRect.width);
+    const T t = CoverGridHomeUi::tabAt(self.menuPage, index, self.hasOpds);
+    if (t == T::Next || t == T::Prev) {
+      drawChevron(self.renderer, iconRect, t == T::Next);
+    } else {
+      self.renderer.drawIcon(TAB_ICONS[static_cast<int>(t)], iconRect.x, iconRect.y, iconRect.width);
+    }
     return true;
   };
   tabs.tabStyles.normal.background = fui::Paint::solid(fui::Color::White);

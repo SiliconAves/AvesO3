@@ -21,6 +21,11 @@ class CoverGridHomeUi final : public UiAppHost {
   explicit CoverGridHomeUi(GfxRenderer& renderer);
   void begin(const std::vector<RecentBook>& books, bool hasOpds, bool hasContinueReading);
   void refreshCoverPaths();
+  // Order of the first 8 values must match TAB_ICONS in the .cpp.
+  enum class Tab { Ao3, Dashboard, Library, Bookmarks, Transfer, Files, Opds, Settings, Next, Prev };
+  static int tabCount(int page, bool opds) { return page == 0 ? 6 : (opds ? 4 : 3); }
+  static Tab tabAt(int page, int index, bool opds);
+  void setMenuPage(int page) { menuPage = page; }
   void setSelection(int selection) { selected = selection; }
   int selectedAction(const MappedInputManager& input);
   // Exact generation height, shared by every slot and recorded during draw.
@@ -60,5 +65,6 @@ class CoverGridHomeUi final : public UiAppHost {
   freeink::ui::CoverGridProps grid;
   freeink::ui::Rect gridBounds{};
   freeink::ui::TabBarProps tabs;
-  std::array<freeink::ui::TabItem, 5> tabItems;
+  std::array<freeink::ui::TabItem, 6> tabItems;
+  int menuPage = 0;
 };

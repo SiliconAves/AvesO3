@@ -34,8 +34,7 @@ constexpr int kPageDotsFromBottom = 38;
 
 int HomeActivity::getMenuItemCount() const {
   if (coverGridUi) {
-    int count = 4 + (hasOpdsServers ? 1 : 0);
-    return count + static_cast<int>(recentBooks.size());
+    return static_cast<int>(recentBooks.size()) + CoverGridHomeUi::tabCount(menuPage, hasOpdsServers);
   }
 
   const auto& metrics = UITheme::getInstance().getMetrics();
@@ -371,25 +370,19 @@ void HomeActivity::loop() {
 
     const int menuIndex = selectorIndex - static_cast<int>(recentBooks.size());
 
-    if (coverGridUi) {
-      switch (indexToMenuItem(menuIndex, hasOpdsServers)) {
-        case HomeMenuItem::FILE_BROWSER:
-          onFileBrowserOpen();
-          break;
-        case HomeMenuItem::LIBRARY:
-          onLibraryOpen();
-          break;
-        case HomeMenuItem::OPDS_BROWSER:
-          onOpdsBrowserOpen();
-          break;
-        case HomeMenuItem::FILE_TRANSFER:
-          onFileTransferOpen();
-          break;
-        case HomeMenuItem::SETTINGS_MENU:
-          onSettingsOpen();
-          break;
-        default:
-          break;
+      if (coverGridUi) {
+      using T = CoverGridHomeUi::Tab;
+      switch (CoverGridHomeUi::tabAt(menuPage, menuIndex, hasOpdsServers)) {
+        case T::Ao3:       onAo3LibraryOpen(); break;
+        case T::Dashboard: onRecentsOpen(); break;
+        case T::Library:   onLibraryOpen(); break;
+        case T::Bookmarks: onBookmarksOpen(); break;
+        case T::Transfer:  onFileTransferOpen(); break;
+        case T::Files:     onFileBrowserOpen(); break;
+        case T::Opds:      onOpdsBrowserOpen(); break;
+        case T::Settings:  onSettingsOpen(); break;
+        case T::Next:      switchGridPage(1); break;
+        case T::Prev:      switchGridPage(0); break;
       }
       return;
     }
@@ -891,6 +884,14 @@ const char* backLabel = "";
     const int themeThumbHeight = GUI.homeCoverThumbHeight(renderer);
     loadRecentCovers(themeThumbHeight > 0 ? themeThumbHeight : metrics.homeCoverHeight);
   }
+}
+
+void HomeActivity::switchGridPage(int page) {
+  menuPage = page;
+  coverGridUi->setMenuPage(page);
+  // Land on the first real tab, not on the chevron that was just activated.
+  selectorIndex = static_cast<int>(recentBooks.size()) + (page == 1 ? 1 : 0);
+  requestUpdate();
 }
 
 void HomeActivity::onSelectBook(const std::string& path) { activityManager.goToReader(path); }

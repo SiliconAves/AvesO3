@@ -74,6 +74,7 @@ class HomeActivity final : public Activity {
   void onOpdsBrowserOpen();
   void onAo3LibraryOpen();
   void onBookmarksOpen();
+  void switchGridPage(int page);
 
   int getMenuItemCount() const;
   int getPage1ItemCount() const;
