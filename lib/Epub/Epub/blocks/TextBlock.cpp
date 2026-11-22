@@ -342,6 +342,24 @@ bool TextBlock::serialize(HalFile& file) const {
   return true;
 }
 
+namespace {
+// Ruby strings come straight from the section cache: never trust the stored
+// length beyond maxLen or the bytes left in the file.
+void readRubyString(HalFile& file, std::string& s, const uint32_t maxLen) {
+  uint32_t len = 0;
+  s.clear();
+  if (file.read(reinterpret_cast<uint8_t*>(&len), sizeof(len)) != sizeof(len) || len > maxLen) return;
+  const size_t pos = file.position();
+  const size_t size = file.size();
+  if (size < pos) return;
+  const size_t remaining = size - pos;
+  if (len == 0 || len > remaining) return;
+  s.resize(len);
+  const int bytesRead = file.read(&s[0], len);
+  if (bytesRead < 0 || static_cast<uint32_t>(bytesRead) != len) s.clear();
+}
+}  // namespace
+
 std::unique_ptr<TextBlock> TextBlock::deserialize(HalFile& file) {
   uint16_t wc;
   uint8_t hasFocus;
@@ -412,7 +430,7 @@ std::unique_ptr<TextBlock> TextBlock::deserialize(HalFile& file) {
   // overwrites every byte, so a moved-from value carries nothing into the next iteration.
   std::string scratch;
   for (uint16_t i = 0; i < wc; i++) {
-    serialization::readString(file, scratch);
+    readRubyString(file, scratch, 4096);
     if (scratch.empty()) continue;
     if (block->rubyTexts.empty()) {
       block->rubyTexts.resize(wc);

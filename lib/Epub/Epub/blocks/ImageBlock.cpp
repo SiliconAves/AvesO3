@@ -432,11 +432,27 @@ bool ImageBlock::serialize(HalFile& file) {
   return true;
 }
 
+// Read a length-prefixed path without trusting the stored length, so a damaged
+// section cache cannot size an allocation beyond maxLen or the bytes left in the file.
+void readImageString(HalFile& file, std::string& s, const uint32_t maxLen) {
+  uint32_t len = 0;
+  s.clear();
+  if (file.read(reinterpret_cast<uint8_t*>(&len), sizeof(len)) != sizeof(len) || len > maxLen) return;
+  const size_t pos = file.position();
+  const size_t size = file.size();
+  if (size < pos) return;
+  const size_t remaining = size - pos;
+  if (len == 0 || len > remaining) return;
+  s.resize(len);
+  const int bytesRead = file.read(&s[0], len);
+  if (bytesRead < 0 || static_cast<uint32_t>(bytesRead) != len) s.clear();
+}
+
 std::unique_ptr<ImageBlock> ImageBlock::deserialize(HalFile& file) {
   std::string path;
   std::string src;
-  serialization::readString(file, path);
-  serialization::readString(file, src);
+  readImageString(file, path, 4096);
+  readImageString(file, src, 4096);
   int16_t w, h;
   serialization::readPod(file, w);
   serialization::readPod(file, h);

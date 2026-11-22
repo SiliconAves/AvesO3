@@ -169,6 +169,22 @@ bool RecentBooksStore::loadFromFile() {
   return false;
 }
 
+// Read a length-prefixed string without trusting the stored length, so a damaged
+// recent.bin cannot size an allocation beyond maxLen or the bytes left in the file.
+void readRecentString(HalFile& file, std::string& s, const uint32_t maxLen) {
+  uint32_t len = 0;
+  s.clear();
+  if (file.read(reinterpret_cast<uint8_t*>(&len), sizeof(len)) != sizeof(len) || len > maxLen) return;
+  const size_t pos = file.position();
+  const size_t size = file.size();
+  if (size < pos) return;
+  const size_t remaining = size - pos;
+  if (len == 0 || len > remaining) return;
+  s.resize(len);
+  const int bytesRead = file.read(&s[0], len);
+  if (bytesRead < 0 || static_cast<uint32_t>(bytesRead) != len) s.clear();
+}
+
 bool RecentBooksStore::loadFromBinaryFile() {
   HalFile inputFile;
   if (!Storage.openFileForRead("RBS", "/.crosspoint/recent.bin", inputFile)) {
@@ -185,15 +201,15 @@ bool RecentBooksStore::loadFromBinaryFile() {
     recentBooks.reserve(count);
     for (uint8_t i = 0; i < count; i++) {
       std::string path;
-      serialization::readString(inputFile, path);
+      readRecentString(inputFile, path, 4096);
 
       // load book to get missing data
       RecentBook book = getDataFromBook(path);
       if (book.title.empty() && book.author.empty() && version == 2) {
         // Fall back to loading what we can from the store
         std::string title, author;
-        serialization::readString(inputFile, title);
-        serialization::readString(inputFile, author);
+        readRecentString(inputFile, title, 4096);
+        readRecentString(inputFile, author, 4096);
         recentBooks.push_back({path, title, author, ""});
       } else {
         recentBooks.push_back(book);
@@ -209,10 +225,10 @@ bool RecentBooksStore::loadFromBinaryFile() {
 
     for (uint8_t i = 0; i < count; i++) {
       std::string path, title, author, coverBmpPath;
-      serialization::readString(inputFile, path);
-      serialization::readString(inputFile, title);
-      serialization::readString(inputFile, author);
-      serialization::readString(inputFile, coverBmpPath);
+      readRecentString(inputFile, path, 4096);
+      readRecentString(inputFile, title, 4096);
+      readRecentString(inputFile, author, 4096);
+      readRecentString(inputFile, coverBmpPath, 4096);
 
       // Omit books with missing title (e.g. saved before metadata was available)
       if (title.empty()) {

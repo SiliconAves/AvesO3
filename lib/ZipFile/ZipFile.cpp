@@ -5,6 +5,7 @@
 #include <Logging.h>
 
 #include <algorithm>
+#include <cstring>
 
 struct ZipInflateCtx {
   HalFile* file = nullptr;
@@ -231,47 +232,105 @@ bool ZipFile::loadZipDetails() {
   const size_t fileSize = file.size();
   if (fileSize < 22) {
     LOG_ERR("ZIP", "File too small to be a valid zip");
+    lastFailure_ = fileSize == 0 ? Failure::Empty : Failure::NotAZip;
     return false;  // Minimum EOCD size is 22 bytes
   }
 
-  // We scan the last 1KB (or the whole file if smaller) for the EOCD signature
-  // 0x06054b50 is stored as 0x50, 0x4b, 0x05, 0x06 in little-endian
-  const int scanRange = fileSize > 1024 ? 1024 : fileSize;
-  const auto buffer = static_cast<uint8_t*>(malloc(scanRange));
+  // The end-of-central-directory record is the last 22 bytes plus an optional
+  // archive comment of up to 65535 bytes (some tools also leave trailing bytes).
+  // Scan backwards in 1 KB windows, reusing one buffer: healthy books end in the
+  // first window, so only unusual files pay for the wider search.
+  constexpr size_t WINDOW = 1024;
+  constexpr size_t MAX_SEARCH = 65535 + 22;
+  constexpr uint32_t signature = 0x06054b50;  // "PK\5\6", little-endian
+  const size_t searchStart = fileSize > MAX_SEARCH ? fileSize - MAX_SEARCH : 0;
+  const auto buffer = static_cast<uint8_t*>(malloc(WINDOW));
   if (!buffer) {
     LOG_ERR("ZIP", "Failed to allocate memory for EOCD scan buffer");
     return false;
   }
 
-  file.seek(fileSize - scanRange);
-  file.read(buffer, scanRange);
-
-  // Scan backwards for the signature
-  int foundOffset = -1;
-  for (int i = scanRange - 22; i >= 0; i--) {
-    constexpr uint32_t signature = 0x06054b50;
-    if (*reinterpret_cast<uint32_t*>(&buffer[i]) == signature) {
-      foundOffset = i;
-      break;
+  bool found = false;
+  size_t windowEnd = fileSize;  // exclusive
+  while (!found) {
+    const size_t windowStart = windowEnd - searchStart > WINDOW ? windowEnd - WINDOW : searchStart;
+    const size_t len = windowEnd - windowStart;
+    if (!file.seek(windowStart) || file.read(buffer, len) != static_cast<int>(len)) {
+      LOG_ERR("ZIP", "Failed to read zip end while searching for EOCD");
+      lastFailure_ = Failure::ReadError;
+      free(buffer);
+      return false;
     }
+    for (size_t i = len >= 4 ? len - 4 : 0; i + 1 > 0; i--) {
+      uint32_t word;
+      memcpy(&word, &buffer[i], sizeof(word));
+      const size_t recordPos = windowStart + i;
+      if (word != signature || recordPos + 22 > fileSize) {
+        if (i == 0) break;
+        continue;
+      }
+      uint8_t record[22];
+      if (!file.seek(recordPos) || file.read(record, sizeof(record)) != static_cast<int>(sizeof(record))) break;
+      uint16_t entries;
+      uint32_t cdSize;
+      uint32_t cdOffset;
+      memcpy(&entries, &record[10], sizeof(entries));
+      memcpy(&cdSize, &record[12], sizeof(cdSize));
+      memcpy(&cdOffset, &record[16], sizeof(cdOffset));
+      // A real record points at a central directory that ends before it; a
+      // stray "PK\5\6" inside a comment does not.
+      if (static_cast<uint64_t>(cdOffset) + cdSize <= recordPos) {
+        zipDetails.totalEntries = entries;
+        zipDetails.centralDirOffset = cdOffset;
+        found = true;
+        break;
+      }
+      if (i == 0) break;
+    }
+    if (found || windowStart == searchStart) break;
+    windowEnd = windowStart + 3;  // overlap so a signature across windows is seen
   }
+  free(buffer);
 
-  if (foundOffset == -1) {
-    LOG_ERR("ZIP", "EOCD signature not found in zip file");
-    free(buffer);
+  if (!found) {
+    lastFailure_ = classifyUnreadable(fileSize);
+    LOG_ERR("ZIP", "EOCD signature not found in zip file (%s)", describe(lastFailure_));
     return false;
   }
+  if (windowEnd != fileSize) LOG_DBG("ZIP", "EOCD found beyond the last 1 KB");
 
-  // Now extract the values we need from the EOCD record
-  // Relative positions within EOCD:
-  // Offset 10: Total number of entries (2 bytes)
-  // Offset 16: Offset of start of central directory with respect to the starting disk number (4 bytes)
-  zipDetails.totalEntries = *reinterpret_cast<uint16_t*>(&buffer[foundOffset + 10]);
-  zipDetails.centralDirOffset = *reinterpret_cast<uint32_t*>(&buffer[foundOffset + 16]);
   zipDetails.isSet = true;
-
-  free(buffer);
   return true;
+}
+
+ZipFile::Failure ZipFile::classifyUnreadable(const size_t fileSize) {
+  uint8_t head[16] = {};
+  const size_t want = fileSize < sizeof(head) ? fileSize : sizeof(head);
+  if (!file.seek(0) || file.read(head, want) != static_cast<int>(want)) return Failure::ReadError;
+  if (want >= 4 && head[0] == 'P' && head[1] == 'K' && head[2] == 3 && head[3] == 4) return Failure::NoEndRecord;
+  size_t i = 0;
+  if (want >= 3 && head[0] == 0xEF && head[1] == 0xBB && head[2] == 0xBF) i = 3;  // UTF-8 BOM
+  while (i < want && (head[i] == ' ' || head[i] == '\t' || head[i] == '\r' || head[i] == '\n')) i++;
+  if (i < want && head[i] == '<') return Failure::LooksLikeWebPage;
+  return Failure::NotAZip;
+}
+
+const char* ZipFile::describe(const Failure failure) {
+  switch (failure) {
+    case Failure::None:
+      return "unknown";
+    case Failure::Empty:
+      return "empty file";
+    case Failure::ReadError:
+      return "SD read error";
+    case Failure::NoEndRecord:
+      return "zip end missing: download incomplete or damaged";
+    case Failure::LooksLikeWebPage:
+      return "not an EPUB: looks like a web page";
+    case Failure::NotAZip:
+      return "not an EPUB: not a zip file";
+  }
+  return "unknown";
 }
 
 bool ZipFile::open() {
