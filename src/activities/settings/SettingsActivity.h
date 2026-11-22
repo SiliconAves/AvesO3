@@ -25,6 +25,7 @@ enum class SettingAction {
   DownloadFonts,
   TextSettings,
   KeyboardLayouts,
+  SetChangePin,
 };
 
 struct SettingInfo {
@@ -200,6 +201,9 @@ class SettingsActivity final : public UiTabListActivity {
   void enterCategory(int categoryIndex);
   void toggleCurrentSetting();
   void openSleepTimeoutPicker();
+  // Ask for the current PIN; on a match set pinLockEnabled to enableLock.
+  // retry re-prompts with "Incorrect PIN" after a mismatch.
+  void promptForPin(bool enableLock, bool retry);
   void rebuildSettingsLists();
   void syncQuickResumeTimeoutForSleepScreen(bool sleepScreenChanged, bool quickResumeTimeoutChanged);
 

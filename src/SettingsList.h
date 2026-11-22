@@ -247,6 +247,9 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         // applies it to every activity), so it lives in the Display category.
         SettingInfo::Toggle(StrId::STR_NIGHT_MODE, &CrossPointSettings::screenInverted, "screenInverted",
                             StrId::STR_CAT_DISPLAY),
+        // Parental PIN lock. No key: CrossPointSettings persists it beside the
+        // obfuscated PIN, and SettingsActivity gates the toggle behind the PIN.
+        SettingInfo::Toggle(StrId::STR_PIN_LOCK, &CrossPointSettings::pinLockEnabled, nullptr, StrId::STR_CAT_CONTROLS),
 
         // --- Reader ---
         // Built-in font-family entry. Replaced per-call with a registry-aware

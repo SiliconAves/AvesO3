@@ -91,7 +91,9 @@ void ActivityManager::loop() {
   }
 
   if (currentActivity) {
-    if (!currentActivity->isHomeActivity() && mappedInput.wasHomeGesture()) {
+    // The PIN lock must not be left through a global gesture.
+    const bool shortcutsBlocked = currentActivity->blocksGlobalShortcuts();
+    if (!shortcutsBlocked && !currentActivity->isHomeActivity() && mappedInput.wasHomeGesture()) {
       if (currentActivity->handleHomeGesture()) {
         return;
       }
@@ -111,7 +113,8 @@ void ActivityManager::loop() {
       int ty = 0;
       statusBarTap = mappedInput.wasScreenTapped(tx, ty) && ty < 44;
     }
-    if (currentActivity->name != "FrontlightPanel" && (statusBarTap || mappedInput.wasLightPanelGesture())) {
+    if (!shortcutsBlocked && currentActivity->name != "FrontlightPanel" &&
+        (statusBarTap || mappedInput.wasLightPanelGesture())) {
       pushActivity(std::make_unique<FrontlightPanelActivity>(renderer, mappedInput));
       return;
     }
@@ -340,6 +343,10 @@ void ActivityManager::popActivity() {
 }
 
 bool ActivityManager::preventAutoSleep() const { return currentActivity && currentActivity->preventAutoSleep(); }
+
+bool ActivityManager::blocksGlobalShortcuts() const {
+  return currentActivity && currentActivity->blocksGlobalShortcuts();
+}
 
 bool ActivityManager::requiresExclusiveStorageLoop() const {
   return currentActivity && currentActivity->requiresExclusiveStorageLoop();

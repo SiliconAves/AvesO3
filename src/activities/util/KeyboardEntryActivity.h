@@ -10,7 +10,8 @@
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
 
-enum class InputType { Text, Password, Url };
+// Pin: digits only, entered on a number pad, shown masked.
+enum class InputType { Text, Password, Url, Pin };
 
 // Text entry on the FreeInkUI keyboard component: the SDK layout tables and
 // keyboard() do the key rendering and hit-rect registration, InteractionBuffer
@@ -20,23 +21,28 @@ class KeyboardEntryActivity : public Activity {
  public:
   explicit KeyboardEntryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                  std::string title = "Enter Text", std::string initialText = "",
-                                 const size_t maxLength = 0, InputType inputType = InputType::Text)
+                                 const size_t maxLength = 0, InputType inputType = InputType::Text,
+                                 const bool blockGlobalShortcuts = false)
       : Activity("KeyboardEntry", renderer, mappedInput),
         title(std::move(title)),
         text(std::move(initialText)),
         maxLength(maxLength),
-        inputType(inputType) {}
+        inputType(inputType),
+        blockGlobalShortcuts(blockGlobalShortcuts) {}
 
   void onEnter() override;
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
+  bool blocksGlobalShortcuts() const override { return blockGlobalShortcuts; }
 
  private:
   std::string title;
   std::string text;
   size_t maxLength;
   InputType inputType;
+  // Set by a PIN lock so the power-button shortcut cannot leave it.
+  bool blockGlobalShortcuts;
   bool passwordVisible = false;
 
   ButtonNavigator buttonNavigator;

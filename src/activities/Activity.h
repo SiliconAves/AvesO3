@@ -43,6 +43,9 @@ class Activity {
 
   virtual bool skipLoopDelay() { return false; }
   virtual bool preventAutoSleep() { return false; }
+  // True while the activity must not be left through global shortcuts (e.g. the
+  // power-button AO3 Receive shortcut), such as an active PIN lock.
+  virtual bool blocksGlobalShortcuts() const { return false; }
   // Exclusive storage activities suspend global controls and normal activity
   // transitions so no filesystem code races a raw SD-card owner.
   virtual bool requiresExclusiveStorageLoop() const { return false; }
