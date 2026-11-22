@@ -7,6 +7,7 @@
 #include <I18n.h>
 #include "../../components/UITheme.h"
 #include "../../fontIds.h"
+#include "../Ao3ArchiveHelper.h"
 
 namespace {
 
@@ -427,7 +428,9 @@ void Ao3IndexActivity::tickDirDiscovery() {
     fullChildPath += name;
 
     if (file.isDirectory()) {
-      if (name[0] != '.' && entry.depth < 5 && strcmp(name, "System Volume Information") != 0 && strcmp(name, ".crosspoint") != 0) {
+      // The read folder holds archived books, which stay out of the library on purpose.
+      if (name[0] != '.' && entry.depth < 5 && strcmp(name, "System Volume Information") != 0 &&
+          strcmp(name, ".crosspoint") != 0 && fullChildPath != Ao3ArchiveHelper::READ_FOLDER_ROOT) {
         dirQueue.push_back({ fullChildPath, entry.depth + 1 });
       }
     } else {
@@ -438,7 +441,7 @@ void Ao3IndexActivity::tickDirDiscovery() {
         ext = nameStr.substr(dotPos + 1);
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
       }
-      if (ext == "epub") {
+      if (ext == "epub" && name[0] != '.') {  // hidden files (macOS "._" companions) are never books
         uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(fullChildPath));
         if (!std::binary_search(indexedHashes.begin(), indexedHashes.end(), hash)) {
           unindexedCount++;
@@ -497,7 +500,9 @@ void Ao3IndexActivity::startDirIndexing() {
       fullChildPath += name;
 
       if (file.isDirectory()) {
-        if (name[0] != '.' && entry.depth < 5 && strcmp(name, "System Volume Information") != 0 && strcmp(name, ".crosspoint") != 0) {
+        // The read folder holds archived books, which stay out of the library on purpose.
+        if (name[0] != '.' && entry.depth < 5 && strcmp(name, "System Volume Information") != 0 &&
+            strcmp(name, ".crosspoint") != 0 && fullChildPath != Ao3ArchiveHelper::READ_FOLDER_ROOT) {
           queue.push_back({ fullChildPath, entry.depth + 1 });
         }
       } else {
@@ -508,7 +513,7 @@ void Ao3IndexActivity::startDirIndexing() {
           ext = nameStr.substr(dotPos + 1);
           std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         }
-        if (ext == "epub") {
+        if (ext == "epub" && name[0] != '.') {  // hidden files (macOS "._" companions) are never books
           uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(fullChildPath));
           if (!std::binary_search(indexedHashes.begin(), indexedHashes.end(), hash)) {
             pendingBooks.push_back(fullChildPath);
