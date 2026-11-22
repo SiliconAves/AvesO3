@@ -279,6 +279,21 @@ static bool loadSleepFrameBuffer() {
   return true;
 }
 
+// Privacy on a power-button sleep: wipe the page off the screen with one fast refresh before
+// anything slow (saving, closing the screen, loading the sleep image) runs. Quick Resume and
+// Transparent are skipped, because their sleep screen is built from the current screen.
+void blankScreenForPowerSleep() {
+  if (SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::QUICK_RESUME ||
+      SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::TRANSPARENT_CUSTOM) {
+    return;
+  }
+  activityManager.suspendRenderingForSleep();
+  RenderLock lock;  // waits for a render in progress to finish
+  display.setInverted(false);
+  renderer.clearScreen();
+  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+}
+
 // Enter deep sleep mode
 void enterDeepSleep(bool fromTimeout = false) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
@@ -743,6 +758,7 @@ void loop() {
       return;
     }
     LOG_DBG("MAIN", "Power button held %lums, sleeping", gpio.getPowerButtonHeldTime());
+    blankScreenForPowerSleep();
     enterDeepSleep();
     // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
     return;
