@@ -18,6 +18,8 @@
 #include <WiFi.h>
 #include <XteinkDetect.h>
 #include <builtinFonts/all.h>
+#include <esp_log.h>
+#include <nvs.h>
 #if FREEINK_CAP_TOUCH
 #include <esp_sntp.h>
 #endif
@@ -367,8 +369,32 @@ void setupDisplayAndFonts(bool seamless = false) {
   LOG_DBG("MAIN", "Fonts setup");
 }
 
+// AvesO3 keeps Wi-Fi networks itself, encrypted (WifiCredentialStore, used with
+// WiFi.persistent(false)). Clear a station config that an earlier firmware left
+// readable in the Wi-Fi driver's NVS area; only writes when one is there.
+static void clearStaleWifiDriverConfig() {
+  nvs_handle_t handle;
+  if (nvs_open("nvs.net80211", NVS_READWRITE, &handle) != ESP_OK) return;
+  bool stale = false;
+  for (const char* key : {"sta.ssid", "sta.pswd"}) {
+    uint8_t value[68] = {};
+    size_t len = sizeof(value);
+    if (nvs_get_blob(handle, key, value, &len) != ESP_OK) continue;
+    for (size_t i = 0; i < len && !stale; i++) stale = value[i] != 0;
+  }
+  if (stale && nvs_erase_all(handle) == ESP_OK) {
+    nvs_commit(handle);
+    LOG_INF("MAIN", "Cleared a stored Wi-Fi config from the driver's NVS area");
+  }
+  nvs_close(handle);
+}
+
 void setup() {
   BoardConfig::holdPowerRails();
+  // The Wi-Fi driver logs the network name at info level when it connects; keep
+  // it to warnings so Wi-Fi details never reach the serial port.
+  esp_log_level_set("wifi", ESP_LOG_WARN);
+  clearStaleWifiDriverConfig();
 
 #ifdef ENABLE_SERIAL_LOG
 #ifdef CROSSPOINT_WAIT_FOR_USB_SERIAL

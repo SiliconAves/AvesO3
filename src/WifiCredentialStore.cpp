@@ -1,12 +1,49 @@
 #include "WifiCredentialStore.h"
 
 #include <CredentialIntegrity.h>
+#include <DeviceSecret.h>
 #include <Logging.h>
 #include <ObfuscationUtils.h>
 
 #include <algorithm>
 
 void WifiCredentialStore::toJson(JsonDocument& doc) const {
+  JsonDocument plain;
+  toPlainJson(plain);
+  std::string text;
+  serializeJson(plain, text);
+  const std::string sealed = device_secret::seal(text);
+  if (sealed.empty()) {
+    // Never fall back to a readable file; the networks would need re-entering.
+    LOG_ERR("WCS", "Could not encrypt saved Wi-Fi networks; not storing them");
+    return;
+  }
+  doc["version"] = 2;
+  doc["enc"] = sealed;
+}
+
+bool WifiCredentialStore::fromJson(JsonVariantConst doc) {
+  const char* sealed = doc["enc"] | static_cast<const char*>(nullptr);
+  if (!sealed) {
+    // Old readable format: load it, then write it back encrypted.
+    const bool hadData = !doc["credentials"].isNull() || !doc["lastConnectedSsid"].isNull();
+    const bool ok = fromPlainJson(doc);
+    if (hadData) requestResave();
+    return ok;
+  }
+  std::string text;
+  JsonDocument plain;
+  if (!device_secret::open(sealed, text) || deserializeJson(plain, text)) {
+    LOG_ERR("WCS", "Saved Wi-Fi networks could not be decrypted; starting with none");
+    std::lock_guard<std::mutex> lock(credentialMutex);
+    credentials.clear();
+    lastConnectedSsid.clear();
+    return true;
+  }
+  return fromPlainJson(plain.as<JsonVariantConst>());
+}
+
+void WifiCredentialStore::toPlainJson(JsonDocument& doc) const {
   std::lock_guard<std::mutex> lock(credentialMutex);
   doc["lastConnectedSsid"] = lastConnectedSsid;
 
@@ -23,7 +60,7 @@ void WifiCredentialStore::toJson(JsonDocument& doc) const {
   }
 }
 
-bool WifiCredentialStore::fromJson(JsonVariantConst doc) {
+bool WifiCredentialStore::fromPlainJson(JsonVariantConst doc) {
   std::lock_guard<std::mutex> lock(credentialMutex);
   lastConnectedSsid = doc["lastConnectedSsid"] | "";
 
@@ -44,13 +81,13 @@ bool WifiCredentialStore::fromJson(JsonVariantConst doc) {
     size_t expectedLength = 0;
     if (hasPasswordLength) {
       if (!passwordLength.is<size_t>()) {
-        LOG_ERR("WCS", "Discarding corrupted password for %s (invalid length)", cred.ssid.c_str());
+        LOG_ERR("WCS", "Discarding corrupted password for a saved network (invalid length)");
         needsResave = true;
         continue;
       }
       expectedLength = passwordLength.as<size_t>();
       if (expectedLength > MAX_PASSWORD_LENGTH) {
-        LOG_ERR("WCS", "Discarding oversized password for %s (%zu bytes)", cred.ssid.c_str(), expectedLength);
+        LOG_ERR("WCS", "Discarding oversized password for a saved network (%zu bytes)", expectedLength);
         needsResave = true;
         continue;
       }
@@ -59,7 +96,7 @@ bool WifiCredentialStore::fromJson(JsonVariantConst doc) {
     bool passwordValid = false;
     cred.password = extractPassword(obj, needsResave, MAX_PASSWORD_LENGTH, passwordValid);
     if (!passwordValid) {
-      LOG_ERR("WCS", "Discarding oversized password for %s", cred.ssid.c_str());
+      LOG_ERR("WCS", "Discarding oversized password for a saved network");
       needsResave = true;
       continue;
     }
@@ -67,7 +104,7 @@ bool WifiCredentialStore::fromJson(JsonVariantConst doc) {
     bool integrityValid = true;
     if (hasPasswordLength) {
       if (cred.password.size() != expectedLength) {
-        LOG_ERR("WCS", "Discarding corrupted password for %s (expected %zu bytes, decoded %zu)", cred.ssid.c_str(),
+        LOG_ERR("WCS", "Discarding corrupted password for a saved network (expected %zu bytes, decoded %zu)",
                 expectedLength, cred.password.size());
         integrityValid = false;
       }
@@ -80,7 +117,7 @@ bool WifiCredentialStore::fromJson(JsonVariantConst doc) {
     if (checksum.is<uint32_t>()) {
       const uint32_t expectedCrc32 = checksum.as<uint32_t>();
       if (credential_integrity::crc32(cred.password) != expectedCrc32) {
-        LOG_ERR("WCS", "Discarding corrupted password for %s (checksum mismatch)", cred.ssid.c_str());
+        LOG_ERR("WCS", "Discarding corrupted password for a saved network (checksum mismatch)");
         integrityValid = false;
       }
     } else if (checksum.isNull()) {
@@ -88,7 +125,7 @@ bool WifiCredentialStore::fromJson(JsonVariantConst doc) {
       // written by older firmware.
       needsResave = true;
     } else {
-      LOG_ERR("WCS", "Discarding corrupted password for %s (invalid checksum)", cred.ssid.c_str());
+      LOG_ERR("WCS", "Discarding corrupted password for a saved network (invalid checksum)");
       integrityValid = false;
     }
 
@@ -118,7 +155,7 @@ bool WifiCredentialStore::addCredential(const std::string& ssid, const std::stri
                               [&ssid](const WifiCredential& cred) { return cred.ssid == ssid; });
     if (cred != credentials.end()) {
       cred->password = password;
-      LOG_DBG("WCS", "Updated credentials for: %s", ssid.c_str());
+      LOG_DBG("WCS", "Updated credentials for a saved network");
     } else {
       // Check if we've reached the limit
       if (credentials.size() >= MAX_NETWORKS) {
@@ -128,7 +165,7 @@ bool WifiCredentialStore::addCredential(const std::string& ssid, const std::stri
 
       // Add new credential
       credentials.push_back({ssid, password});
-      LOG_DBG("WCS", "Added credentials for: %s", ssid.c_str());
+      LOG_DBG("WCS", "Added credentials for a new network");
     }
   }
   return saveToFile();
@@ -143,7 +180,7 @@ bool WifiCredentialStore::removeCredential(const std::string& ssid) {
       return false;  // Not found
     }
     credentials.erase(cred);
-    LOG_DBG("WCS", "Removed credentials for: %s", ssid.c_str());
+    LOG_DBG("WCS", "Removed credentials for a saved network");
     if (ssid == lastConnectedSsid) lastConnectedSsid.clear();
   }
   return saveToFile();
