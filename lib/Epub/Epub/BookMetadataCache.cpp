@@ -42,10 +42,34 @@ uint32_t writeTocEntryTo(F& file, const BookMetadataCache::TocEntry& entry) {
   return pos;
 }
 
+// Length-prefixed string read that rejects a stored length above maxLen or
+// beyond the end of the file, so a damaged book.bin cannot size an allocation.
+bool readCheckedString(HalFile& file, std::string& s, const uint32_t maxLen) {
+  uint32_t len = 0;
+  s.clear();
+  if (!serialization::readPod(file, len) || len > maxLen) return false;
+  const size_t pos = file.position();
+  const size_t size = file.size();
+  if (size < pos || size - pos < len) return false;
+  if (len == 0) return true;
+  s.resize(len);
+  const int bytesRead = file.read(&s[0], len);
+  if (bytesRead < 0 || static_cast<uint32_t>(bytesRead) != len) {
+    s.clear();
+    return false;
+  }
+  return true;
+}
+
+// Entry strings: the build-time buffered reader trusts its own temp files; the
+// book.bin reader bounds every string.
+void readEntryString(serialization::BufferedFileReader& in, std::string& s) { serialization::readString(in, s); }
+void readEntryString(HalFile& file, std::string& s) { readCheckedString(file, s, 4096); }
+
 template <typename F>
 BookMetadataCache::SpineEntry readSpineEntryFrom(F& file) {
   BookMetadataCache::SpineEntry entry;
-  serialization::readString(file, entry.href);
+  readEntryString(file, entry.href);
   serialization::readPod(file, entry.cumulativeSize);
   serialization::readPod(file, entry.tocIndex);
   return entry;
@@ -54,9 +78,9 @@ BookMetadataCache::SpineEntry readSpineEntryFrom(F& file) {
 template <typename F>
 BookMetadataCache::TocEntry readTocEntryFrom(F& file) {
   BookMetadataCache::TocEntry entry;
-  serialization::readString(file, entry.title);
-  serialization::readString(file, entry.href);
-  serialization::readString(file, entry.anchor);
+  readEntryString(file, entry.title);
+  readEntryString(file, entry.href);
+  readEntryString(file, entry.anchor);
   serialization::readPod(file, entry.level);
   serialization::readPod(file, entry.spineIndex);
   return entry;
@@ -461,32 +485,54 @@ void BookMetadataCache::createTocEntry(const std::string& title, const std::stri
 
 /* ============= READING / LOADING FUNCTIONS ================ */
 
-bool BookMetadataCache::load() {
+BookMetadataCache::LoadResult BookMetadataCache::load() {
   if (!Storage.openFileForRead("BMC", cachePath + bookBinFile, bookFile)) {
-    return false;
+    return LoadResult::Invalid;
   }
 
-  uint8_t version;
-  serialization::readPod(bookFile, version);
+  // Explicit close() required: member variable persists beyond function scope
+  const auto invalid = [this](const char* reason) {
+    LOG_ERR("BMC", "Invalid book cache: %s", reason);
+    bookFile.close();
+  };
+
+  uint8_t version = 0;
+  if (bookFile.read(&version, sizeof(version)) != sizeof(version)) {
+    invalid("truncated version");
+    return LoadResult::Invalid;
+  }
   if (version != BOOK_CACHE_VERSION) {
     LOG_DBG("BMC", "Cache version mismatch: expected %d, got %d", BOOK_CACHE_VERSION, version);
-    // Explicit close() required: member variable persists beyond function scope
     bookFile.close();
-    return false;
+    return LoadResult::VersionMismatch;
   }
 
-  serialization::readPod(bookFile, lutOffset);
-  serialization::readPod(bookFile, spineCount);
-  serialization::readPod(bookFile, tocCount);
+  if (!serialization::readPod(bookFile, lutOffset) || !serialization::readPod(bookFile, spineCount) ||
+      !serialization::readPod(bookFile, tocCount)) {
+    invalid("truncated header");
+    return LoadResult::Invalid;
+  }
 
-  serialization::readString(bookFile, coreMetadata.title);
-  serialization::readString(bookFile, coreMetadata.author);
-  serialization::readString(bookFile, coreMetadata.language);
-  serialization::readString(bookFile, coreMetadata.coverItemHref);
-  serialization::readString(bookFile, coreMetadata.textReferenceHref);
-  serialization::readString(bookFile, coreMetadata.ao3WorkId);
-  serialization::readString(bookFile, coreMetadata.ao3UpdateDate);
-  serialization::readPod(bookFile, coreMetadata.ao3IsCompleted);
+  if (!readCheckedString(bookFile, coreMetadata.title, 4096) ||
+      !readCheckedString(bookFile, coreMetadata.author, 4096) ||
+      !readCheckedString(bookFile, coreMetadata.language, 256) ||
+      !readCheckedString(bookFile, coreMetadata.coverItemHref, 4096) ||
+      !readCheckedString(bookFile, coreMetadata.textReferenceHref, 4096) ||
+      !readCheckedString(bookFile, coreMetadata.ao3WorkId, 128) ||
+      !readCheckedString(bookFile, coreMetadata.ao3UpdateDate, 64) ||
+      !serialization::readPod(bookFile, coreMetadata.ao3IsCompleted)) {
+    invalid("invalid metadata");
+    return LoadResult::Invalid;
+  }
+
+  // The LUTs must start after the header and fit inside the file.
+  const size_t fileSize = bookFile.size();
+  const uint64_t lutSize = (static_cast<uint64_t>(spineCount) + tocCount) * sizeof(uint32_t);
+  const size_t headerEnd = bookFile.position();
+  if (lutOffset < headerEnd || lutOffset > fileSize || fileSize - lutOffset < lutSize) {
+    invalid("invalid lookup table bounds");
+    return LoadResult::Invalid;
+  }
 
   // Cache cumulative spine sizes in RAM. The progress bar (every render) and percent
   // jumps otherwise pay 2 seeks + a heap-allocating SpineEntry read per access. Spine
@@ -494,15 +540,24 @@ bool BookMetadataCache::load() {
   // them in a single sequential pass.
   cumulativeSizes.clear();
   cumulativeSizes.reserve(spineCount);
-  const uint32_t lutSize = (static_cast<uint32_t>(spineCount) + tocCount) * sizeof(uint32_t);
-  bookFile.seek(lutOffset + lutSize);
+  if (!bookFile.seek(lutOffset + lutSize)) {
+    invalid("invalid spine offset");
+    return LoadResult::Invalid;
+  }
   for (uint16_t i = 0; i < spineCount; i++) {
-    cumulativeSizes.push_back(readSpineEntry(bookFile).cumulativeSize);
+    SpineEntry entry;
+    if (!readCheckedString(bookFile, entry.href, 4096) || !serialization::readPod(bookFile, entry.cumulativeSize) ||
+        !serialization::readPod(bookFile, entry.tocIndex)) {
+      cumulativeSizes.clear();
+      invalid("invalid spine entry");
+      return LoadResult::Invalid;
+    }
+    cumulativeSizes.push_back(entry.cumulativeSize);
   }
 
   loaded = true;
   LOG_DBG("BMC", "Loaded cache data: %d spine, %d TOC entries", spineCount, tocCount);
-  return true;
+  return LoadResult::Ok;
 }
 
 uint32_t BookMetadataCache::getCumulativeSize(const int index) const {

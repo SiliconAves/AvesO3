@@ -420,7 +420,8 @@ CssParser::ParseResult Epub::parseCssFiles(const CssParser::CacheStatus existing
 }
 
 // load in the meta data for the epub file
-bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const bool skipScraping) {
+bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const bool skipScraping,
+                const bool rebuildInvalidCache) {
   LOG_DBG("EBP", "Loading ePub: %s", filepath.c_str());
 
   // Initialize spine/TOC cache
@@ -429,7 +430,9 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const bool
   cssParser.reset(new CssParser(cachePath));
 
   // Try to load existing cache first
-  if (bookMetadataCache->load()) {
+  const bool cacheFileExists = Storage.exists((cachePath + "/book.bin").c_str());
+  const BookMetadataCache::LoadResult cacheLoad = bookMetadataCache->load();
+  if (cacheLoad == BookMetadataCache::LoadResult::Ok) {
     if (!skipLoadingCss) {
       const CssParser::CacheStatus cacheStatus = cssParser->inspectCache();
       CssParser::CacheLoadResult cacheLoadResult = CssParser::CacheLoadResult::Invalid;
@@ -458,7 +461,7 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const bool
         }
         bookMetadataCache.reset();
         bookMetadataCache.reset(new BookMetadataCache(cachePath));
-        if (!bookMetadataCache->load()) {
+        if (bookMetadataCache->load() != BookMetadataCache::LoadResult::Ok) {
           LOG_ERR("EBP", "Failed to reload cache after CSS rebuild");
           return false;
         }
@@ -495,8 +498,18 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const bool
     return true;
   }
 
-  // If we didn't load from cache above and we aren't allowed to build, fail now
-  if (!buildIfMissing) {
+  // A cache that exists but fails validation is only rebuilt when the caller allows it.
+  const bool invalidCache = cacheFileExists && cacheLoad == BookMetadataCache::LoadResult::Invalid;
+  const bool mayBuild = rebuildInvalidCache || !invalidCache;
+
+  if (buildIfMissing) {
+    if (!mayBuild) {
+      LOG_ERR("EBP", "Skipping EPUB with invalid metadata cache: %s", filepath.c_str());
+      return false;
+    }
+  } else {
+    // If we didn't load from cache above and we aren't allowed to build, fail now
+    if (!mayBuild) LOG_ERR("EBP", "Skipping EPUB with invalid metadata cache: %s", filepath.c_str());
     return false;
   }
 
@@ -592,7 +605,7 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss, const bool
 
   // Reload the cache from disk so it's in the correct state
   bookMetadataCache.reset(new BookMetadataCache(cachePath));
-  if (!bookMetadataCache->load()) {
+  if (bookMetadataCache->load() != BookMetadataCache::LoadResult::Ok) {
     LOG_ERR("EBP", "Failed to reload cache after writing");
     return false;
   }
@@ -1066,6 +1079,22 @@ int Epub::resolveHrefToSpineIndex(const std::string& href) const {
   return -1;
 }
 
+// Read a length-prefixed string without trusting the stored length: a damaged
+// sidecar must not size an allocation beyond maxLen or the bytes left in the file.
+void readBoundedString(HalFile& file, std::string& s, const uint32_t maxLen) {
+  uint32_t len = 0;
+  s.clear();
+  if (file.read(reinterpret_cast<uint8_t*>(&len), sizeof(len)) != sizeof(len) || len > maxLen) return;
+  const size_t pos = file.position();
+  const size_t size = file.size();
+  if (size < pos) return;
+  const size_t remaining = size - pos;
+  if (len == 0 || len > remaining) return;
+  s.resize(len);
+  const int bytesRead = file.read(&s[0], len);
+  if (bytesRead < 0 || static_cast<uint32_t>(bytesRead) != len) s.clear();
+}
+
 bool Epub::hasAo3Info() const { return Storage.exists((cachePath + "/ao3-info.bin").c_str()); }
 
 std::string Epub::getAo3WorkId() const {
@@ -1078,7 +1107,7 @@ std::string Epub::getAo3WorkId() const {
     bool completed;
     std::string id;
     serialization::readPod(f, completed);
-    serialization::readString(f, id);
+    readBoundedString(f, id, 4096);
     f.close();
     return id;
   }
@@ -1095,8 +1124,8 @@ std::string Epub::getAo3UpdateDate() const {
     bool completed;
     std::string id, date;
     serialization::readPod(f, completed);
-    serialization::readString(f, id);
-    serialization::readString(f, date);
+    readBoundedString(f, id, 4096);
+    readBoundedString(f, date, 4096);
     f.close();
     return date;
   }

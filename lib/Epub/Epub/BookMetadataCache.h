@@ -120,7 +120,10 @@ class BookMetadataCache {
   bool buildBookBin(const std::string& epubPath, const BookMetadata& metadata);
 
   // Reading phase (read mode)
-  bool load();
+  // Ok: loaded. Invalid: missing, unreadable or damaged (the file is closed).
+  // VersionMismatch: written by an older cache format.
+  enum class LoadResult : uint8_t { Ok, Invalid, VersionMismatch };
+  LoadResult load();
   SpineEntry getSpineEntry(int index);
   TocEntry getTocEntry(int index);
   // Cumulative byte size up to and including the given spine item (0 if out of range

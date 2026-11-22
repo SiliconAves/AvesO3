@@ -20,8 +20,8 @@ void readPod(std::istream& is, T& value) {
 }
 
 template <typename T>
-void readPod(HalFile& file, T& value) {
-  file.read(reinterpret_cast<uint8_t*>(&value), sizeof(T));
+bool readPod(HalFile& file, T& value) {
+  return file.read(reinterpret_cast<uint8_t*>(&value), sizeof(T)) == sizeof(T);
 }
 
 inline void writeString(std::ostream& os, const std::string& s) {
