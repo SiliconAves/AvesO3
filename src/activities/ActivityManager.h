@@ -66,6 +66,9 @@ class ActivityManager {
   // Whether to trigger a render after the current loop()
   // This variable must only be set by the main loop, to avoid race conditions
   std::atomic<bool> requestedUpdate{false};
+  // Set once sleep is committed: the render task stops drawing activities, so a queued
+  // redraw cannot repaint the screen after it was blanked. SleepActivity draws from onEnter.
+  std::atomic<bool> renderingSuspended{false};
 
  public:
   explicit ActivityManager(GfxRenderer& renderer, MappedInputManager& mappedInput)
@@ -91,6 +94,8 @@ class ActivityManager {
   void goToReader(std::string path, bool allowFastInitialRefresh = false);
     void goToAo3Library(size_t selectorIndex = 0, Ao3LibraryMode mode = Ao3LibraryMode::REGULAR);
   void goToSleep(bool fromTimeout = false);
+  // Stop the render task from drawing activities until the device sleeps.
+  void suspendRenderingForSleep() { renderingSuspended.store(true); }
   void goToBoot();
   void goToFullScreenMessage(std::string message, EpdFontFamily::Style style = EpdFontFamily::REGULAR);
   void goToCrashReport();
