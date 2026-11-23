@@ -7,6 +7,8 @@
 
 #include "UITheme.h"
 
+#include "icons/coverao3.h"
+
 namespace fui = freeink::ui;
 
 void HomeCoverCache::begin() {
@@ -37,7 +39,7 @@ void HomeCoverCache::prepare() {
   }
 }
 
-bool HomeCoverCache::paint(fui::Rect rect, size_t index, const std::string& path) {
+bool HomeCoverCache::paint(fui::Rect rect, size_t index, const std::string& path, bool isAo3) {
   if (index >= cachedCovers.size()) return false;
   auto& cached = cachedCovers[index];
   uint8_t* const cacheData = coverCache.get();
@@ -68,7 +70,7 @@ bool HomeCoverCache::paint(fui::Rect rect, size_t index, const std::string& path
     coverFile.close();
   }
   if (!drawn) {
-    GUI.drawCoverPlaceholder(renderer, Rect{rect.x, rect.y, rect.width, rect.height});
+    GUI.drawCoverPlaceholder(renderer, Rect{rect.x, rect.y, rect.width, rect.height}, isAo3 ? Ao3Icon : nullptr);
     renderer.drawRect(rect.x, rect.y, rect.width, rect.height);
   }
   if (coverCache) {

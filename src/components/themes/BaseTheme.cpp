@@ -116,6 +116,10 @@ void BaseTheme::drawBatteryLeft(const GfxRenderer& renderer, Rect rect, const bo
 }
 
 void BaseTheme::drawCoverPlaceholder(const GfxRenderer& renderer, Rect rect) {
+  drawCoverPlaceholder(renderer, rect, nullptr);
+}
+
+void BaseTheme::drawCoverPlaceholder(const GfxRenderer& renderer, Rect rect, const uint8_t* icon) {
   if (rect.width <= 0 || rect.height <= 0) return;
   const int topHeight = rect.height / 3;
   renderer.fillRect(rect.x, rect.y, rect.width, rect.height, false);
@@ -125,7 +129,7 @@ void BaseTheme::drawCoverPlaceholder(const GfxRenderer& renderer, Rect rect) {
   if (rect.width >= ICON_SIZE + 4 && topHeight >= ICON_SIZE + 4) {
     const int insetX = std::min(24, (rect.width - ICON_SIZE) / 2);
     const int insetY = std::min(24, (topHeight - ICON_SIZE) / 2);
-    renderer.drawIcon(CoverIcon, rect.x + insetX, rect.y + insetY, ICON_SIZE);
+    renderer.drawIcon(icon ? icon : CoverIcon, rect.x + insetX, rect.y + insetY, ICON_SIZE);
   }
 }
 

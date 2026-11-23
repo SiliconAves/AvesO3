@@ -21,6 +21,8 @@
 #include "icons/transfer.h"
 #include "util/BookProgress.h"
 
+#include "Ao3LibraryMetadata.h"
+
 namespace fui = freeink::ui;
 namespace {
 constexpr fui::ActionId SELECT = 1;
@@ -75,6 +77,18 @@ void CoverGridHomeUi::begin(const std::vector<RecentBook>& recent, bool opds, bo
 void CoverGridHomeUi::refreshCoverPaths() {
   coverCache.invalidate();
   for (size_t i = 0; i < books->size() && i < coverPaths.size(); ++i) refreshCoverPath(i);
+
+  for (size_t i = 0; i < books->size() && i < ao3Meta.size(); ++i) {
+    auto& meta = ao3Meta[i];
+    meta.isAo3 = false;
+    const auto& book = (*books)[i];
+
+    const std::string infoPath =
+        "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(book.path)) + "/ao3_library_info";
+    if (Storage.exists(infoPath.c_str())) {
+      meta.isAo3 = true;
+    }
+  }
 }
 
 void CoverGridHomeUi::refreshCoverPath(size_t index) {
@@ -335,6 +349,7 @@ bool CoverGridHomeUi::paintFramedCover(fui::DrawTarget& target, fui::Rect rect, 
   target.fill(fui::Rect{static_cast<int16_t>(rect.x + SHADOW_OFFSET), rect.bottom(), rect.width, SHADOW_OFFSET}, ink);
   // The false spine draws inside the cover paint (HomeCoverCache), glued to
   // the art's left edge, so it stays aligned whatever each cover's margin is.
-  const bool drawn = index < coverPaths.size() && coverCache.paint(rect, index, coverPaths[index]);
+  const bool isAo3 = index < ao3Meta.size() && ao3Meta[index].isAo3;
+  const bool drawn = index < coverPaths.size() && coverCache.paint(rect, index, coverPaths[index], isAo3);
   return drawn;
 }

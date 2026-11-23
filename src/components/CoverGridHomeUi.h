@@ -47,6 +47,11 @@ class CoverGridHomeUi final : public UiAppHost {
   bool paintFramedCover(freeink::ui::DrawTarget& target, freeink::ui::Rect rect, size_t index);
   void refreshCoverPath(size_t index);
   void noteThumbHeight(int slotHeight);
+  struct Ao3SlotMeta {
+    bool isAo3 = false;
+  };
+  std::array<Ao3SlotMeta, MAX_BOOKS> ao3Meta;
+
 
   HomeCoverCache coverCache;
   GfxRenderer& renderer;

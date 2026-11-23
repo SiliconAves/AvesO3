@@ -237,6 +237,7 @@ class BaseTheme {
 
   // Component drawing methods
   static void drawCoverPlaceholder(const GfxRenderer& renderer, Rect rect);
+  static void drawCoverPlaceholder(const GfxRenderer& renderer, Rect rect, const uint8_t* icon);
   // Draws a pre-dithered cover thumb 1:1, centered and clipped to fill the
   // slot. Rescaling a dithered bitmap aliases badly, so overflow is cropped.
   static bool drawCoverThumbFill(const GfxRenderer& renderer, const Bitmap& bitmap, Rect slot, int xOffset = 0);
