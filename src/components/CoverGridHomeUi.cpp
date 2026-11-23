@@ -350,6 +350,7 @@ bool CoverGridHomeUi::paintFramedCover(fui::DrawTarget& target, fui::Rect rect, 
   // The false spine draws inside the cover paint (HomeCoverCache), glued to
   // the art's left edge, so it stays aligned whatever each cover's margin is.
   const bool isAo3 = index < ao3Meta.size() && ao3Meta[index].isAo3;
-  const bool drawn = index < coverPaths.size() && coverCache.paint(rect, index, coverPaths[index], isAo3);
+  const RecentBook* book = (books && index < books->size()) ? &(*books)[index] : nullptr;
+  const bool drawn = index < coverPaths.size() && coverCache.paint(rect, index, coverPaths[index], isAo3, book);
   return drawn;
 }

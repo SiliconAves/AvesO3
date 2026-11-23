@@ -9,6 +9,7 @@
 #include <string>
 
 class GfxRenderer;
+struct RecentBook;
 
 // Screen-lifetime thumbnail decoding and PSRAM region snapshots.
 class HomeCoverCache {
@@ -19,7 +20,8 @@ class HomeCoverCache {
   void prepare();
   void invalidate();
   void invalidate(size_t index);
-  bool paint(freeink::ui::Rect rect, size_t index, const std::string& path, bool isAo3 = false);
+  bool paint(freeink::ui::Rect rect, size_t index, const std::string& path, bool isAo3 = false,
+             const RecentBook* book = nullptr);
 
  private:
   struct CachedCover {

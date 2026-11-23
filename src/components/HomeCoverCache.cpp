@@ -4,9 +4,12 @@
 #include <Logging.h>
 
 #include <algorithm>
+#include "RecentBooksStore.h"
+
 
 #include "UITheme.h"
 
+#include "fontIds.h"
 #include "icons/coverao3.h"
 
 namespace fui = freeink::ui;
@@ -39,7 +42,8 @@ void HomeCoverCache::prepare() {
   }
 }
 
-bool HomeCoverCache::paint(fui::Rect rect, size_t index, const std::string& path, bool isAo3) {
+bool HomeCoverCache::paint(fui::Rect rect, size_t index, const std::string& path, bool isAo3,
+                           const RecentBook* book) {
   if (index >= cachedCovers.size()) return false;
   auto& cached = cachedCovers[index];
   uint8_t* const cacheData = coverCache.get();
@@ -71,6 +75,33 @@ bool HomeCoverCache::paint(fui::Rect rect, size_t index, const std::string& path
   }
   if (!drawn) {
     GUI.drawCoverPlaceholder(renderer, Rect{rect.x, rect.y, rect.width, rect.height}, isAo3 ? Ao3Icon : nullptr);
+    if (isAo3 && book) {
+      constexpr int PAD = 10;  // inside the black area, all four sides
+      constexpr int GAP = 4;  // minimum space between the title block and the author
+      const int maxW = rect.width - 2 * PAD;
+      const int lh = renderer.getLineHeight(SMALL_FONT_ID);
+      const int titleTop = rect.y + rect.height / 3 + PAD;  // the black area starts at height / 3
+      const int bottom = rect.y + rect.height - PAD;
+      const bool hasAuthor = !book->author.empty();
+      const int authorY = bottom - lh - GAP;  // fixed, so it is at the same height on every cover
+
+      const auto drawCentered = [&](const std::string& s, int y) {
+        const int tw = renderer.getTextWidth(SMALL_FONT_ID, s.c_str());
+        renderer.drawText(SMALL_FONT_ID, rect.x + (rect.width - tw) / 2, y, s.c_str(), false);
+      };
+
+      // The title gets the room above the author, up to 3 lines (wrappedText adds the ".." itself).
+      const int titleBottom = hasAuthor ? authorY - GAP : bottom;
+      const int maxLines = std::clamp((titleBottom - titleTop) / lh, 1, 3);
+      int curY = titleTop;
+      for (const auto& line : renderer.wrappedText(SMALL_FONT_ID, book->title.c_str(), maxW, maxLines)) {
+        drawCentered(line, curY);
+        curY += lh;
+      }
+      if (hasAuthor && authorY >= curY) {  // skipped only if the cover is too short to fit both
+        drawCentered(renderer.truncatedText(SMALL_FONT_ID, book->author.c_str(), maxW), authorY);
+      }
+    }
     renderer.drawRect(rect.x, rect.y, rect.width, rect.height);
   }
   if (coverCache) {
