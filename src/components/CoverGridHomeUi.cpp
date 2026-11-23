@@ -2,14 +2,17 @@
 
 #include <BoardConfig.h>
 #include <GfxRenderer.h>
+#include <HalStorage.h>
 #include <I18n.h>
 
 #include <algorithm>
 #include <cstdio>
+#include <memory>
 #include <utility>
 
 #include "MappedInputManager.h"
 #include "UITheme.h"
+#include "fontIds.h"
 #include "icons/ao3library.h"
 #include "icons/book.h"
 #include "icons/bookmarkheart.h"
@@ -78,6 +81,11 @@ void CoverGridHomeUi::refreshCoverPaths() {
   coverCache.invalidate();
   for (size_t i = 0; i < books->size() && i < coverPaths.size(); ++i) refreshCoverPath(i);
 
+  if (books->empty()) {
+    cachedHeroBookPath.clear();
+    heroFandom.clear();
+  }
+
   for (size_t i = 0; i < books->size() && i < ao3Meta.size(); ++i) {
     auto& meta = ao3Meta[i];
     meta.isAo3 = false;
@@ -87,6 +95,23 @@ void CoverGridHomeUi::refreshCoverPaths() {
         "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(book.path)) + "/ao3_library_info";
     if (Storage.exists(infoPath.c_str())) {
       meta.isAo3 = true;
+      if (i == 0 && book.path != cachedHeroBookPath) {
+        cachedHeroBookPath = book.path;
+        heroFandom.clear();
+        HalFile f;
+        if (Storage.openFileForRead("HOME", infoPath, f)) {
+          auto ao3meta = std::unique_ptr<Ao3LibraryMetadata>(new Ao3LibraryMetadata());
+          if (f.read(reinterpret_cast<uint8_t*>(ao3meta.get()), sizeof(Ao3LibraryMetadata)) ==
+                  sizeof(Ao3LibraryMetadata) &&
+              ao3meta->isValid() && ao3meta->fandom[0]) {
+            heroFandom = ao3meta->fandom;
+          }
+          f.close();
+        }
+      }
+    } else if (i == 0) {
+      cachedHeroBookPath = book.path;
+      heroFandom.clear();
     }
   }
 }
@@ -254,6 +279,21 @@ void CoverGridHomeUi::drawCurrent(UiScreen& screen, fui::Rect rect, const int co
     return static_cast<CoverGridHomeUi*>(user)->paintFramedCover(target, cover, 0);
   };
   fui::bookCard(screen.frame(), rect, card);
+
+  if (!heroFandom.empty()) {
+    const int textX = rect.x + 6 + card.coverSize.width + card.gap;
+    const int textWidth = rect.right() - 6 - textX;
+    const int titleH = fui::measureWrappedText(screen.target(), card.title, card.titleText, textWidth).height;
+    const int authorH = card.author ? card.textGap + screen.target().lineHeight(card.authorText.font) : 0;
+    const int coverY = rect.y + (rect.height - card.coverSize.height) / 2;
+    const int titleY = coverY + (card.coverSize.height - titleH - authorH) / 2;
+    const int pillY = std::max<int>(rect.y, titleY - 20 - 11);
+
+    const std::string truncatedFandom = renderer.truncatedText(SMALL_FONT_ID, heroFandom.c_str(), textWidth - 16);
+    const int pillW = renderer.getTextWidth(SMALL_FONT_ID, truncatedFandom.c_str()) + 16;
+    renderer.drawRoundedRect(textX, pillY, pillW, 20, 1, 6, true);
+    renderer.drawText(SMALL_FONT_ID, textX + 8, pillY - 2, truncatedFandom.c_str(), true);
+  }
 
   if (selected == 0 && !BoardConfig::hasTouch()) {
     // Button boards only: a vertical accent bar left of the card, cover-height

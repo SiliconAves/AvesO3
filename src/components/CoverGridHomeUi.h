@@ -51,6 +51,8 @@ class CoverGridHomeUi final : public UiAppHost {
     bool isAo3 = false;
   };
   std::array<Ao3SlotMeta, MAX_BOOKS> ao3Meta;
+  std::string heroFandom;
+  std::string cachedHeroBookPath;
 
 
   HomeCoverCache coverCache;
