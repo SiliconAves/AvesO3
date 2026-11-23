@@ -425,6 +425,14 @@ void HomeActivity::loop() {
   };
 
   if (coverGridUi) {
+    int lx = 0;
+    int ly = 0;
+    // Live position first: wasScreenLongPress() suppresses the whole contact once consumed.
+    if (mappedInput.isScreenTouchHeld(lx, ly) && coverGridUi->isHero(lx, ly) &&
+        mappedInput.wasScreenLongPress(lx, ly)) {
+      openHeroPinPopup();
+      return;
+    }
     const int touched = coverGridUi->selectedAction(mappedInput);
     if (touched >= 0 && touched < menuCount) {
       selectorIndex = touched;
@@ -891,6 +899,23 @@ void HomeActivity::switchGridPage(int page) {
   coverGridUi->setMenuPage(page);
   // Land on the first real tab, not on the chevron that was just activated.
   selectorIndex = static_cast<int>(recentBooks.size()) + (page == 1 ? 1 : 0);
+  requestUpdate();
+}
+
+void HomeActivity::openHeroPinPopup() {
+  if (recentBooks.empty()) return;
+  // Pinned books sort first, so an unpinned hero means nothing is pinned: no cap check needed.
+  const RecentBook& hero = recentBooks.front();
+  const char* label = I18N.get(hero.pinned ? StrId::STR_UNPIN : StrId::STR_PIN);
+  coverGridUi->app.clearTapFlash();  // the suppressed release never reaches the grid's routing
+  optionPopup.show("Pin/Unpin to Home", &label, 1, 0, [this, path = hero.path](int) {
+    RECENT_BOOKS.togglePinned(path);
+    RenderLock lock(*this);
+    if (!recentBooks.empty() && recentBooks.front().path == path) {
+      // Mirror the store, so the dot only shows if the pin really took.
+      recentBooks.front().pinned = RECENT_BOOKS.isPinned(path);
+    }
+  });
   requestUpdate();
 }
 

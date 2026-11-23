@@ -27,6 +27,11 @@ class CoverGridHomeUi final : public UiAppHost {
   static Tab tabAt(int page, int index, bool opds);
   void setMenuPage(int page) { menuPage = page; }
   void setSelection(int selection) { selected = selection; }
+  // Last drawn hero card, for the long-press hit test in HomeActivity.
+  bool isHero(int x, int y) const {
+    return x >= heroRect.x && x < heroRect.x + heroRect.width && y >= heroRect.y &&
+           y < heroRect.y + heroRect.height;
+  }
   int selectedAction(const MappedInputManager& input);
   // Exact generation height, shared by every slot and recorded during draw.
   // Thumbs must be generated at the drawn size: rescaling a dithered 1-bit
@@ -63,6 +68,8 @@ class CoverGridHomeUi final : public UiAppHost {
   bool thumbHeightChanged = false;
   int selected = 0;
   int pending = -1;
+  freeink::ui::Rect heroRect{};
+  std::string heroTitle;  // title with the pin mark prepended
   int progress = -1;
   bool hasOpds = false;
   bool hasContinueReading = false;

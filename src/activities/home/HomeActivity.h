@@ -75,6 +75,7 @@ class HomeActivity final : public Activity {
   void onAo3LibraryOpen();
   void onBookmarksOpen();
   void switchGridPage(int page);
+  void openHeroPinPopup();
 
   int getMenuItemCount() const;
   int getPage1ItemCount() const;

@@ -229,7 +229,13 @@ void CoverGridHomeUi::drawEmpty(UiScreen& screen) {
 void CoverGridHomeUi::drawCurrent(UiScreen& screen, fui::Rect rect, const int coverRowHeight) {
   const auto& theme = screen.theme();
   const auto& book = books->front();
-  card.title = book.title.c_str();
+  if (book.pinned) {
+    heroTitle = "\xE2\x80\xA2 ";  // same bullet the other themes prepend
+    heroTitle += book.title;
+    card.title = heroTitle.c_str();
+  } else {
+    card.title = book.title.c_str();
+  }
   card.author = book.author.empty() ? nullptr : book.author.c_str();
   card.meta = nullptr;
   card.progressLabel = progress >= 0 ? progressText : nullptr;
@@ -249,7 +255,7 @@ void CoverGridHomeUi::drawCurrent(UiScreen& screen, fui::Rect rect, const int co
   card.styles.selected.border = fui::Paint::dither(fui::Color::LightGray);
   card.styles.selected.foreground = fui::Paint::solid(fui::Color::Black);
   card.styles.selected.radius = theme.listRowRadius;
-  card.styles.active = card.styles.selected;
+  card.styles.active = card.styles.normal;
   card.titleText = theme.bodyText;
   card.titleText.maxLines = renderer.getScreenWidth() > renderer.getScreenHeight() ? 1 : 2;
   card.authorText = theme.smallText;
@@ -267,6 +273,7 @@ void CoverGridHomeUi::drawCurrent(UiScreen& screen, fui::Rect rect, const int co
   gridBounds = layoutGrid(screen.body());
   rect.x = gridBounds.x;
   rect.width = gridBounds.width;
+  heroRect = rect;
   card.coverPainterUserData = this;
   card.coverPainter = [](fui::DrawTarget& target, fui::Rect cover, const fui::BookCardProps&, void* user) {
     return static_cast<CoverGridHomeUi*>(user)->paintFramedCover(target, cover, 0);
