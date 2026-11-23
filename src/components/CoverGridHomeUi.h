@@ -49,10 +49,10 @@ class CoverGridHomeUi final : public UiAppHost {
   void noteThumbHeight(int slotHeight);
   struct Ao3SlotMeta {
     bool isAo3 = false;
+    std::string cachedPath;
+    std::string fandom;
   };
   std::array<Ao3SlotMeta, MAX_BOOKS> ao3Meta;
-  std::string heroFandom;
-  std::string cachedHeroBookPath;
 
 
   HomeCoverCache coverCache;

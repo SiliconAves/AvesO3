@@ -21,7 +21,7 @@ class HomeCoverCache {
   void invalidate();
   void invalidate(size_t index);
   bool paint(freeink::ui::Rect rect, size_t index, const std::string& path, bool isAo3 = false,
-             const RecentBook* book = nullptr);
+             const RecentBook* book = nullptr, const std::string& fandom = {});
 
  private:
   struct CachedCover {

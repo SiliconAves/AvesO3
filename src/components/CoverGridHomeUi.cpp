@@ -1,6 +1,7 @@
 #include "CoverGridHomeUi.h"
 
 #include <BoardConfig.h>
+#include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
@@ -81,37 +82,29 @@ void CoverGridHomeUi::refreshCoverPaths() {
   coverCache.invalidate();
   for (size_t i = 0; i < books->size() && i < coverPaths.size(); ++i) refreshCoverPath(i);
 
-  if (books->empty()) {
-    cachedHeroBookPath.clear();
-    heroFandom.clear();
-  }
-
   for (size_t i = 0; i < books->size() && i < ao3Meta.size(); ++i) {
     auto& meta = ao3Meta[i];
-    meta.isAo3 = false;
     const auto& book = (*books)[i];
+    if (meta.cachedPath == book.path) continue;
+    meta.cachedPath = book.path;
+    meta.isAo3 = false;
+    meta.fandom.clear();
+    if (!FsHelpers::hasEpubExtension(book.path)) continue;
 
     const std::string infoPath =
         "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(book.path)) + "/ao3_library_info";
-    if (Storage.exists(infoPath.c_str())) {
-      meta.isAo3 = true;
-      if (i == 0 && book.path != cachedHeroBookPath) {
-        cachedHeroBookPath = book.path;
-        heroFandom.clear();
-        HalFile f;
-        if (Storage.openFileForRead("HOME", infoPath, f)) {
-          auto ao3meta = std::unique_ptr<Ao3LibraryMetadata>(new Ao3LibraryMetadata());
-          if (f.read(reinterpret_cast<uint8_t*>(ao3meta.get()), sizeof(Ao3LibraryMetadata)) ==
-                  sizeof(Ao3LibraryMetadata) &&
-              ao3meta->isValid() && ao3meta->fandom[0]) {
-            heroFandom = ao3meta->fandom;
-          }
-          f.close();
-        }
+    if (!Storage.exists(infoPath.c_str())) continue;
+
+    meta.isAo3 = true;
+    HalFile f;
+    if (Storage.openFileForRead("HOME", infoPath, f)) {
+      auto ao3meta = std::unique_ptr<Ao3LibraryMetadata>(new Ao3LibraryMetadata());
+      if (ao3meta && f.read(reinterpret_cast<uint8_t*>(ao3meta.get()), sizeof(Ao3LibraryMetadata)) ==
+                         sizeof(Ao3LibraryMetadata) &&
+          ao3meta->isValid() && ao3meta->fandom[0]) {
+        meta.fandom = ao3meta->fandom;
       }
-    } else if (i == 0) {
-      cachedHeroBookPath = book.path;
-      heroFandom.clear();
+      f.close();
     }
   }
 }
@@ -280,6 +273,7 @@ void CoverGridHomeUi::drawCurrent(UiScreen& screen, fui::Rect rect, const int co
   };
   fui::bookCard(screen.frame(), rect, card);
 
+  const auto& heroFandom = ao3Meta[0].fandom;
   if (!heroFandom.empty()) {
     const int textX = rect.x + 6 + card.coverSize.width + card.gap;
     const int textWidth = rect.right() - 6 - textX;
@@ -390,7 +384,8 @@ bool CoverGridHomeUi::paintFramedCover(fui::DrawTarget& target, fui::Rect rect, 
   // The false spine draws inside the cover paint (HomeCoverCache), glued to
   // the art's left edge, so it stays aligned whatever each cover's margin is.
   const bool isAo3 = index < ao3Meta.size() && ao3Meta[index].isAo3;
+  const std::string& fandom = isAo3 ? ao3Meta[index].fandom : std::string();
   const RecentBook* book = (books && index < books->size()) ? &(*books)[index] : nullptr;
-  const bool drawn = index < coverPaths.size() && coverCache.paint(rect, index, coverPaths[index], isAo3, book);
+  const bool drawn = index < coverPaths.size() && coverCache.paint(rect, index, coverPaths[index], isAo3, book, fandom);
   return drawn;
 }

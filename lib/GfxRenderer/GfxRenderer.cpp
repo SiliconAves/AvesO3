@@ -2475,7 +2475,7 @@ void GfxRenderer::getOrientedViewableTRBL(int* outTop, int* outRight, int* outBo
   }
 }
 
-void GfxRenderer::drawBitmap1BitStencil(const Bitmap& bmp, int x, int y, int dstW, int dstH) const {
+void GfxRenderer::drawBitmap1BitStencil(const Bitmap& bmp, int x, int y, int dstW, int dstH, bool black) const {
   if (fontCacheManager_ && fontCacheManager_->isScanning()) return;
   const int srcW = bmp.getWidth(), srcH = bmp.getHeight();
   if (dstW <= 0 || dstH <= 0) return;
@@ -2492,8 +2492,8 @@ void GfxRenderer::drawBitmap1BitStencil(const Bitmap& bmp, int x, int y, int dst
       for (int dx = 0; dx < dstW; dx++) {
         const int sx = dx * srcW / dstW;
         const uint8_t v = (out[sx / 4] >> (6 - ((sx * 2) % 8))) & 0x3;
-        if (v < 3) drawPixel(x + dx, y + ry, false);              // dark source px -> white ink
-      }                                                           // light px left alone (black shows through)
+        if (v < 3) drawPixel(x + dx, y + ry, black);              // dark source px -> black or white ink
+      }                                                           // light px left alone (background shows through)
     }
   }
   free(out); free(row);

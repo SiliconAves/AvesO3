@@ -8,19 +8,18 @@
 #include "Ao3LibraryMetadata.h"
 
 namespace {
-constexpr int MAX_SRC  = 256;   // sanity limit on the source file
-constexpr int MAX_LOGO = 80;    // largest displayed size
-constexpr int PAD      = 8;     // margin inside the black rect
+constexpr int MAX_SRC = 256;   // sanity limit on the source file
 }
 
 bool drawFandomLogo(const GfxRenderer& renderer, const std::string& fandom,
-                    int rectX, int rectY, int rectW, int rectH) {
+                    int rectX, int rectY, int rectW, int rectH,
+                    int maxLogo, bool black, int pad) {
   if (fandom.empty()) return false;
   const std::string* file = Ao3FandomCoverStore::getInstance().find(fandom.c_str());
   if (!file || file->empty()) return false;
 
-  const int boxW = std::min(MAX_LOGO, rectW - 2 * PAD);
-  const int boxH = std::min(MAX_LOGO, rectH - 2 * PAD);
+  const int boxW = std::min(maxLogo, rectW - 2 * pad);
+  const int boxH = std::min(maxLogo, rectH - 2 * pad);
   if (boxW <= 0 || boxH <= 0) return false;
 
   HalFile f;
@@ -37,7 +36,8 @@ bool drawFandomLogo(const GfxRenderer& renderer, const std::string& fandom,
         else                        { dw = dw * boxH / dh; dh = boxH; }
       }
       dw = std::max(dw, 1); dh = std::max(dh, 1);
-      renderer.drawBitmap1BitStencil(bmp, rectX + (rectW - dw) / 2, rectY + (rectH - dh) / 2, dw, dh);
+      if (black) renderer.fillRect(rectX, rectY, rectW, rectH, false);
+      renderer.drawBitmap1BitStencil(bmp, rectX + (rectW - dw) / 2, rectY + (rectH - dh) / 2, dw, dh, black);
       drawn = true;
     }
   }
@@ -46,7 +46,8 @@ bool drawFandomLogo(const GfxRenderer& renderer, const std::string& fandom,
 }
 
 bool drawFandomLogoForBook(const GfxRenderer& renderer, const std::string& epubPath,
-                           int rectX, int rectY, int rectW, int rectH) {
+                           int rectX, int rectY, int rectW, int rectH,
+                           int maxLogo, bool black, int pad) {
   const std::string info =
       "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(epubPath)) + "/ao3_library_info";
   std::string fandom;
@@ -58,5 +59,5 @@ bool drawFandomLogoForBook(const GfxRenderer& renderer, const std::string& epubP
         meta->isValid() && meta->fandom[0]) fandom = meta->fandom;
     f.close();
   }
-  return drawFandomLogo(renderer, fandom, rectX, rectY, rectW, rectH);
+  return drawFandomLogo(renderer, fandom, rectX, rectY, rectW, rectH, maxLogo, black, pad);
 }

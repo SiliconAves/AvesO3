@@ -308,7 +308,7 @@ class GfxRenderer {
   bool drawBitmap(const Bitmap& bitmap, int x, int y, int maxWidth, int maxHeight, float cropX = 0, float cropY = 0,
                   bool whiteAsTransparent = false) const;
   bool drawBitmap1Bit(const Bitmap& bitmap, int x, int y, int maxWidth, int maxHeight) const;
-  void drawBitmap1BitStencil(const Bitmap& bitmap, int x, int y, int dstW, int dstH) const;
+  void drawBitmap1BitStencil(const Bitmap& bitmap, int x, int y, int dstW, int dstH, bool black = false) const;
   // Counter-invert content images in the logical framebuffer so output-level
   // dark mode leaves their original polarity unchanged.
   void preserveImagePolarity(int x, int y, int width, int height) const;

@@ -8,6 +8,7 @@
 
 
 #include "UITheme.h"
+#include "activities/home/Ao3FandomLogo.h"
 
 #include "fontIds.h"
 #include "icons/coverao3.h"
@@ -43,7 +44,7 @@ void HomeCoverCache::prepare() {
 }
 
 bool HomeCoverCache::paint(fui::Rect rect, size_t index, const std::string& path, bool isAo3,
-                           const RecentBook* book) {
+                           const RecentBook* book, const std::string& fandom) {
   if (index >= cachedCovers.size()) return false;
   auto& cached = cachedCovers[index];
   uint8_t* const cacheData = coverCache.get();
@@ -75,6 +76,16 @@ bool HomeCoverCache::paint(fui::Rect rect, size_t index, const std::string& path
   }
   if (!drawn) {
     GUI.drawCoverPlaceholder(renderer, Rect{rect.x, rect.y, rect.width, rect.height}, isAo3 ? Ao3Icon : nullptr);
+    if (isAo3 && !fandom.empty()) {
+      const int topHeight = rect.height / 3;
+      if (rect.width >= 36 && topHeight >= 36) {
+        const int insetX = std::min(24, (rect.width - 32) / 2);
+        const int insetY = std::min(24, (topHeight - 32) / 2);
+        const int box = (insetX >= 3 && insetY >= 3) ? 36 : 32;
+        const int off = (box - 32) / 2;
+        drawFandomLogo(renderer, fandom, rect.x + insetX - off, rect.y + insetY - off, box, box, box, true, 0);
+      }
+    }
     if (isAo3 && book) {
       constexpr int PAD = 10;  // inside the black area, all four sides
       constexpr int GAP = 4;  // minimum space between the title block and the author
