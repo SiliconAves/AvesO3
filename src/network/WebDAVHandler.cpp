@@ -4,6 +4,10 @@
 #include <HalStorage.h>
 #include <Logging.h>
 
+#include <functional>
+#include <string>
+
+#include "Ao3Librarian.h"
 #include "util/BookCacheUtils.h"
 #include "util/TaskWatchdog.h"
 
@@ -14,6 +18,13 @@ constexpr const char* HIDDEN_ITEMS[] = {"System Volume Information", "XTCache"};
 // ESP32 doesn't have real-time clock set by default, so we use a fixed epoch date
 // as a fallback. The date is not critical for WebDAV Class 1 operations.
 const char* FIXED_DATE = "Thu, 01 Jan 2024 00:00:00 GMT";
+
+bool hasAo3Sidecar(const String& path) {
+  if (!FsHelpers::hasEpubExtension(path)) return false;
+  const std::string infoPath =
+      "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(path.c_str())) + "/ao3_library_info";
+  return Storage.exists(infoPath.c_str());
+}
 }  // namespace
 
 // ── RequestHandler interface ─────────────────────────────────────────────────
@@ -434,8 +445,12 @@ void WebDAVHandler::handleDelete(WebServer& s) {
     }
   } else {
     file.close();
+    const bool wasAo3 = hasAo3Sidecar(path);
     clearBookCache(path.c_str());
     if (Storage.remove(path.c_str())) {
+      if (wasAo3) {
+        Ao3Librarian::tombstoneRecord(path.c_str());
+      }
       s.send(204);
     } else {
       s.send(500, "text/plain", "Failed to delete file");
@@ -543,11 +558,15 @@ void WebDAVHandler::handleMove(WebServer& s) {
     return;
   }
 
+  const bool wasAo3 = hasAo3Sidecar(srcPath);
   clearBookCache(srcPath.c_str());
   bool success = file.rename(dstPath.c_str());
   file.close();
 
   if (success) {
+    if (wasAo3) {
+      Ao3Librarian::tombstoneRecord(srcPath.c_str());
+    }
     s.send(dstExists ? 204 : 201);
   } else {
     s.send(500, "text/plain", "Move failed");

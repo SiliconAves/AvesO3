@@ -13,8 +13,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <functional>
 
 #include "CrossPointSettings.h"
+#include "Ao3Librarian.h"
 #include "FontInstaller.h"
 #include "OpdsServerStore.h"
 #include "SdCardFontSystem.h"
@@ -100,6 +102,13 @@ inline void clearUploadedBookCache(const char* path) {
     return;
   }
   clearBookCache(path);
+}
+
+bool hasAo3Sidecar(const String& path) {
+  if (!FsHelpers::hasEpubExtension(path)) return false;
+  const std::string infoPath =
+      "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(path.c_str())) + "/ao3_library_info";
+  return Storage.exists(infoPath.c_str());
 }
 }  // namespace
 
@@ -978,11 +987,15 @@ void CrossPointWebServer::handleRename() const {
     return;
   }
 
+  const bool wasAo3 = hasAo3Sidecar(itemPath);
   clearBookCache(itemPath.c_str());
   const bool success = file.rename(newPath.c_str());
   file.close();
 
   if (success) {
+    if (wasAo3) {
+      Ao3Librarian::tombstoneRecord(itemPath.c_str());
+    }
     LOG_DBG("WEB", "Renamed file: %s -> %s", itemPath.c_str(), newPath.c_str());
     server->send(200, "text/plain", "Renamed successfully");
   } else {
@@ -1071,11 +1084,15 @@ void CrossPointWebServer::handleMove() const {
     return;
   }
 
+  const bool wasAo3 = hasAo3Sidecar(itemPath);
   clearBookCache(itemPath.c_str());
   const bool success = file.rename(newPath.c_str());
   file.close();
 
   if (success) {
+    if (wasAo3) {
+      Ao3Librarian::tombstoneRecord(itemPath.c_str());
+    }
     LOG_DBG("WEB", "Moved file: %s -> %s", itemPath.c_str(), newPath.c_str());
     server->send(200, "text/plain", "Moved successfully");
   } else {
@@ -1184,8 +1201,12 @@ void CrossPointWebServer::handleDelete() const {
     } else {
       // It's a file (or couldn't open as dir) — remove file
       if (f) f.close();
+      const bool wasAo3 = hasAo3Sidecar(itemPath);
       success = Storage.remove(itemPath.c_str());
       clearBookCache(itemPath.c_str());
+      if (success && wasAo3) {
+        Ao3Librarian::tombstoneRecord(itemPath.c_str());
+      }
     }
 
     if (!success) {

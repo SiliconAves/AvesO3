@@ -233,14 +233,14 @@ std::string archiveFic(const std::string& srcPath) {
         return "";
     }
 
-    // 1. Tombstone before the rename — uses original path hash for lookup.
-    Ao3Librarian::tombstoneRecord(srcPath);
-
-    // 2. Move the .epub file.
+    // 1. Move the .epub file.
     if (!Storage.rename(srcPath.c_str(), dstPath.c_str())) {
         LOG_ERR("AO3ARC", "Rename failed: %s -> %s", srcPath.c_str(), dstPath.c_str());
         return "";
     }
+
+    // 2. Tombstone before the rename — uses original path hash for lookup.
+    Ao3Librarian::tombstoneRecord(srcPath);
 
     // 3. Re-key cache directory — same pattern as moveFinishedBookToReadFolder.
     const std::string oldCachePath = "/.crosspoint/epub_" +
