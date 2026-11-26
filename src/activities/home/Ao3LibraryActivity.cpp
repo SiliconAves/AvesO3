@@ -256,10 +256,18 @@ void Ao3LibraryActivity::loop() {
       if (pendingTransferScan && !full) {
         pendingTransferScan = false; // Reset the flag so it won't scan again until a new book is added
         autoIndexLaunched_ = true;
+        LOG_INF("AO3L", "pre-free  maxAlloc=%u free=%u n=%u", (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getFreeHeap(), (unsigned)viewEntries.size());
+        Ao3TagMergeStore::unload();
+        MARKED_FOR_LATER_STORE.clearEntries();
+        allowedHashes.clear();
+        allowedHashes.shrink_to_fit();
         viewEntries.clear();
         viewEntries.shrink_to_fit();
+        LOG_INF("AO3L", "post-free maxAlloc=%u free=%u", (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getFreeHeap());
         auto handler = [this](const ActivityResult&) {
           g_silentReturnHint = {};
+          Ao3TagMergeStore::load();
+          MARKED_FOR_LATER_STORE.loadFromFile();
           indexState = IndexState::UNKNOWN;
           rebuildViewEntries();
           requestUpdate();
@@ -867,13 +875,28 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
           };
           startActivityForResult(std::make_unique<Ao3LibrarySettingsActivity>(renderer, mappedInput), handler);
         } else {
-          // Unload ViewEntry vector to free RAM, then launch Ao3IndexActivity
+          // Unload stores and vectors to free RAM, then launch Ao3IndexActivity
+          Ao3TagMergeStore::unload();
+          MARKED_FOR_LATER_STORE.clearEntries();
+          for (auto& v : wrappedSummary) {
+            v.clear();
+            v.shrink_to_fit();
+          }
+          allowedHashes.clear();
+          allowedHashes.shrink_to_fit();
+          pickerItems.clear();
+          pickerItems.shrink_to_fit();
+          uniqueFandoms.clear();
+          uniqueFandoms.shrink_to_fit();
           viewEntries.clear();
           viewEntries.shrink_to_fit();
+          cachedPage = -1;
           indexState = IndexState::UNKNOWN; // mark for rebuild on return
           screenState = ScreenState::LIBRARY;
           auto handler = [this](const ActivityResult&) {
             g_silentReturnHint = {};
+            Ao3TagMergeStore::load();
+            MARKED_FOR_LATER_STORE.loadFromFile();
             rebuildViewEntries();
             requestUpdate(true);
           };
@@ -978,7 +1001,7 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
       renderer.truncatedText(UI_12_FONT_ID, rawTitle, maxTitleWidth, EpdFontFamily::BOLD);
 
   renderer.drawText(UI_12_FONT_ID, titleX, 12, headerTitle.c_str(), true, EpdFontFamily::BOLD);
-  renderer.drawLine(0, 48, renderer.getScreenWidth(), 48);
+  renderer.drawLine(0, 48, renderer.getScreenWidth() - 1, 48);
 
   // States handling
   if (indexState == IndexState::UNKNOWN) {

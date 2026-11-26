@@ -824,7 +824,7 @@ bool Ao3Librarian::parseTitlePage(const Epub& epub,
     std::string href = epub.getSpineItem(i).href;
     auto scraper = std::unique_ptr<HtmlScraper>(new HtmlScraper(meta));
 
-    if (epub.readItemContentsToStream(href, *scraper, 8192)) {
+    if (epub.readItemContentsToStream(href, *scraper, 1024)) {
       scraper->processBuffer();
 
       // workId/date may be in a different spine (e.g. native AO3 preface) —
@@ -849,7 +849,6 @@ bool Ao3Librarian::parseTitlePage(const Epub& epub,
       }
     }
   }
-
   return meta.wordCount > 0;
 }
 
