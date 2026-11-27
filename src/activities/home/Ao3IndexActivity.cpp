@@ -14,6 +14,28 @@ namespace {
   constexpr uint32_t MIN_BLOCK_DIR    = 48 * 1024;
   constexpr uint32_t MIN_BLOCK_SINGLE = 48 * 1024;
   constexpr uint32_t MIN_FREE_HEAP    = 64 * 1024;
+  constexpr size_t   DIR_ARENA_BYTES  = 24 * 1024;
+
+  bool pushArenaDir(std::string& arena, const char* relPath, size_t len) {
+    if (arena.size() + len + 1 > arena.capacity()) {
+      return false;
+    }
+    arena.append(relPath, len);
+    arena.push_back('\0');
+    return true;
+  }
+
+  bool popArenaDir(std::string& arena, std::string& outRel) {
+    if (arena.empty()) return false;
+    const size_t endPos = arena.size() - 1;
+    size_t startPos = endPos;
+    while (startPos > 0 && arena[startPos - 1] != '\0') {
+      startPos--;
+    }
+    outRel.assign(arena.data() + startPos, endPos - startPos);
+    arena.resize(startPos);
+    return true;
+  }
 
 bool isLibraryFull(const char* indexPath = Ao3Paths::MAIN_INDEX) {
   if (!Storage.exists(indexPath)) return false;
@@ -384,18 +406,19 @@ void Ao3IndexActivity::tickSingleScraping() {
 void Ao3IndexActivity::tickDirDiscovery() {
   if (!initialized) {
     buildIndexedHashes();
-    dirQueue.clear();
-    dirQueue.push_back({ ao3Folder, 0 });
+    std::string().swap(dirArena);
+    dirArena.reserve(DIR_ARENA_BYTES);
+    pushArenaDir(dirArena, "", 0);
     unindexedCount = 0;
     initialized = true;
     requestUpdate(true);
     return;
   }
 
-  if (dirQueue.empty()) {
-    indexedHashes.clear();
-    indexedHashes.shrink_to_fit();
-    dirQueue.shrink_to_fit();
+  std::string relDir;
+  if (!popArenaDir(dirArena, relDir)) {
+    std::string().swap(dirArena);
+    std::vector<uint32_t>().swap(indexedHashes);
     if (unindexedCount == 0) {
       if (autoFinishIfEmpty_) {
         // Stay on current screen without requesting a render update,
@@ -415,21 +438,28 @@ void Ao3IndexActivity::tickDirDiscovery() {
     return;
   }
 
-  QueueEntry entry = dirQueue.back();
-  dirQueue.pop_back();
+  std::string baseFolder = ao3Folder;
+  while (baseFolder.size() > 1 && baseFolder.back() == '/') baseFolder.pop_back();
+  const std::string basePrefix = (baseFolder == "/") ? "" : baseFolder;
+
+  std::string entryPath = relDir.empty() ? baseFolder : (basePrefix + "/" + relDir);
+  const int depth = relDir.empty() ? 0 : (1 + static_cast<int>(std::count(relDir.begin(), relDir.end(), '/')));
 
   // Skip exclusions, hidden folders, crosspoint dirs
-  if (isExcluded(entry.path) || entry.path.find("/.") != std::string::npos || entry.path.find(".crosspoint") != std::string::npos) {
+  if (isExcluded(entryPath) || entryPath.find("/.") != std::string::npos || entryPath.find(".crosspoint") != std::string::npos) {
     yield();
     return;
   }
 
-  auto root = Storage.open(entry.path.c_str());
+  auto root = Storage.open(entryPath.c_str());
   if (!root || !root.isDirectory()) {
     if (root) root.close();
     yield();
     return;
   }
+
+  std::string childScratch;
+  childScratch.reserve(192);
 
   root.rewindDirectory();
   char name[256];
@@ -437,29 +467,32 @@ void Ao3IndexActivity::tickDirDiscovery() {
   while (file = root.openNextFile()) {
     file.getName(name, sizeof(name));
 
-    std::string fullChildPath = entry.path;
-    if (fullChildPath.back() != '/') fullChildPath += "/";
-    fullChildPath += name;
-
     if (file.isDirectory()) {
-      if (name[0] != '.' && entry.depth < 5 && strcmp(name, "System Volume Information") != 0 && strcmp(name, ".crosspoint") != 0) {
-        dirQueue.push_back({ fullChildPath, entry.depth + 1 });
+      if (name[0] != '.' && depth < 5 && strcmp(name, "System Volume Information") != 0 && strcmp(name, ".crosspoint") != 0) {
+        childScratch.clear();
+        if (!relDir.empty()) {
+          childScratch.append(relDir);
+          childScratch.push_back('/');
+        }
+        childScratch.append(name);
+        pushArenaDir(dirArena, childScratch.data(), childScratch.size());
       }
     } else {
-      std::string nameStr(name);
-      std::string ext = "";
-      size_t dotPos = nameStr.find_last_of('.');
-      if (dotPos != std::string::npos) {
-        ext = nameStr.substr(dotPos + 1);
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-      }
-      if (ext == "epub") {
-        uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(fullChildPath));
+      const char* dot = strrchr(name, '.');
+      if (dot != nullptr && strcasecmp(dot + 1, "epub") == 0) {
+        childScratch.assign(basePrefix);
+        childScratch.push_back('/');
+        if (!relDir.empty()) {
+          childScratch.append(relDir);
+          childScratch.push_back('/');
+        }
+        childScratch.append(name);
+        uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(childScratch));
         if (!std::binary_search(indexedHashes.begin(), indexedHashes.end(), hash)) {
           unindexedCount++;
           if (indexedHashes.size() + unindexedCount >= MAX_LIBRARY_BOOKS) {
             file.close();
-            dirQueue.clear();
+            std::string().swap(dirArena);
             break;
           }
         }
@@ -468,7 +501,6 @@ void Ao3IndexActivity::tickDirDiscovery() {
     file.close();
   }
   root.close();
-  requestUpdate(true);
 }
 
 void Ao3IndexActivity::startDirIndexing() {
@@ -488,23 +520,41 @@ void Ao3IndexActivity::startDirIndexing() {
     }
   }
 
-  // Collect up to targetBatch unindexed paths. This walk is synchronous because it does
-  // no epub loading — just filename hashing — and is bounded by targetBatch entries.
+  // Collect up to targetBatch unindexed paths using a single pre-reserved 24 KB
+  // packed arena so scanning more than 512 folders never triggers vector doubling.
   pendingBooks.clear();
   pendingBooks.reserve(targetBatch);
 
-  std::vector<QueueEntry> queue;
-  queue.push_back({ ao3Folder, 0 });
+  std::string baseFolder = ao3Folder;
+  while (baseFolder.size() > 1 && baseFolder.back() == '/') baseFolder.pop_back();
+  const std::string basePrefix = (baseFolder == "/") ? "" : baseFolder;
 
-  while (!queue.empty() && pendingBooks.size() < targetBatch) {
-    QueueEntry entry = queue.back();
-    queue.pop_back();
+  std::string arena;
+  arena.reserve(DIR_ARENA_BYTES);
+  pushArenaDir(arena, "", 0);
 
-    if (isExcluded(entry.path) || entry.path.find("/.") != std::string::npos || entry.path.find(".crosspoint") != std::string::npos) {
+  std::string relDir;
+  std::string entryPath;
+  std::string childScratch;
+  relDir.reserve(96);
+  entryPath.reserve(128);
+  childScratch.reserve(192);
+
+  while (pendingBooks.size() < targetBatch && popArenaDir(arena, relDir)) {
+    if (relDir.empty()) {
+      entryPath = baseFolder;
+    } else {
+      entryPath.assign(basePrefix);
+      entryPath.push_back('/');
+      entryPath.append(relDir);
+    }
+    const int depth = relDir.empty() ? 0 : (1 + static_cast<int>(std::count(relDir.begin(), relDir.end(), '/')));
+
+    if (isExcluded(entryPath) || entryPath.find("/.") != std::string::npos || entryPath.find(".crosspoint") != std::string::npos) {
       continue;
     }
 
-    auto root = Storage.open(entry.path.c_str());
+    auto root = Storage.open(entryPath.c_str());
     if (!root || !root.isDirectory()) {
       if (root) root.close();
       continue;
@@ -516,26 +566,29 @@ void Ao3IndexActivity::startDirIndexing() {
     while (file = root.openNextFile()) {
       file.getName(name, sizeof(name));
 
-      std::string fullChildPath = entry.path;
-      if (fullChildPath.back() != '/') fullChildPath += "/";
-      fullChildPath += name;
-
       if (file.isDirectory()) {
-        if (name[0] != '.' && entry.depth < 5 && strcmp(name, "System Volume Information") != 0 && strcmp(name, ".crosspoint") != 0) {
-          queue.push_back({ fullChildPath, entry.depth + 1 });
+        if (name[0] != '.' && depth < 5 && strcmp(name, "System Volume Information") != 0 && strcmp(name, ".crosspoint") != 0) {
+          childScratch.clear();
+          if (!relDir.empty()) {
+            childScratch.append(relDir);
+            childScratch.push_back('/');
+          }
+          childScratch.append(name);
+          pushArenaDir(arena, childScratch.data(), childScratch.size());
         }
       } else {
-        std::string nameStr(name);
-        std::string ext = "";
-        size_t dotPos = nameStr.find_last_of('.');
-        if (dotPos != std::string::npos) {
-          ext = nameStr.substr(dotPos + 1);
-          std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        }
-        if (ext == "epub") {
-          uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(fullChildPath));
+        const char* dot = strrchr(name, '.');
+        if (dot != nullptr && strcasecmp(dot + 1, "epub") == 0) {
+          childScratch.assign(basePrefix);
+          childScratch.push_back('/');
+          if (!relDir.empty()) {
+            childScratch.append(relDir);
+            childScratch.push_back('/');
+          }
+          childScratch.append(name);
+          uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(childScratch));
           if (!std::binary_search(indexedHashes.begin(), indexedHashes.end(), hash)) {
-            pendingBooks.push_back(fullChildPath);
+            pendingBooks.push_back(childScratch);
           }
         }
       }
@@ -546,8 +599,8 @@ void Ao3IndexActivity::startDirIndexing() {
     yield();
   }
 
-  indexedHashes.clear();
-  indexedHashes.shrink_to_fit();
+  std::string().swap(arena);
+  std::vector<uint32_t>().swap(indexedHashes);
 
   if (pendingBooks.empty()) {
     // No more unindexed books remain — all done.

@@ -48,11 +48,7 @@ class Ao3IndexActivity final : public Activity, private UiAppHost {
   std::vector<std::string> excludedFolders;
 
   // Discovery / Scan state variables
-  struct QueueEntry {
-    std::string path;
-    int depth;
-  };
-  std::vector<QueueEntry> dirQueue;
+  std::string dirArena;
   std::vector<uint32_t> indexedHashes;
   std::vector<std::string> pendingBooks;
 
